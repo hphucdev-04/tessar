@@ -2,21 +2,21 @@ import { createSqliteBackend } from "@tesseract/storage-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync,writeFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
-import { EngineHarness } from "@tesseract/core/testing";
+import { AgentHarness } from "@tesseract/core/testing";
 import { AgentEvents,AssistantMessage,HumanMessage,MessageCodec,createTool,toolResult } from "@tesseract/core";
 import { appendFileSync } from "node:fs";
 const filename=process.argv[2]!,participant=process.argv[3]!;
 const backend=await createSqliteBackend({filename});
 if(participant.startsWith("crash-")){
- const harness=await EngineHarness.create({backend,plugins:[
-  {id:"tools",apiVersion:1,setup(api){api.tools.register(createTool({name:"write",description:"write",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{appendFileSync(filename+".effects","write\n");if(participant==="crash-tool-dispatch")process.exit(0);return toolResult("done");}}));}},
-  {id:"crash-observer",apiVersion:1,setup(api){
-   api.on(AgentEvents.StreamStarted,event=>{writeFileSync(filename+".execution",JSON.stringify({threadId:event.threadId,streamId:event.streamId}));});
-   api.on(AgentEvents.MessageCommitted,event=>{if(participant==="crash-model-result"&&event.payload.message.role==="assistant")process.exit(0);});
+ const harness=await AgentHarness.create({backend,plugins:[
+  {id:"tools",setup(tesseract){tesseract.tools.register(createTool({name:"write",description:"write",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{appendFileSync(filename+".effects","write\n");if(participant==="crash-tool-dispatch")process.exit(0);return toolResult("done");}}));}},
+  {id:"crash-observer",setup(tesseract){
+   tesseract.hook(AgentEvents.StreamStarted,event=>{writeFileSync(filename+".execution",JSON.stringify({threadId:event.threadId,streamId:event.streamId}));});
+   tesseract.hook(AgentEvents.MessageCommitted,event=>{if(participant==="crash-model-result"&&event.payload.message.role==="assistant")process.exit(0);});
   }}
  ],modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"c",name:"write",arguments:{}}]))}}]});
  const thread=await harness.createThread();
- await harness.collect(harness.engine.start({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("write"))],model:{providerId:"scripted",modelId:"test"}}));
+ await harness.collect(harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("write"))],model:{providerId:"scripted",modelId:"test"}}));
  throw Error("Expected crash boundary was not reached");
 }
 writeFileSync(filename+"."+participant+".ready","ready");

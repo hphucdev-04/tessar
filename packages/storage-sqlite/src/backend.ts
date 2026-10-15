@@ -3,7 +3,7 @@ import { canonicalJson,validateBatch,fail,immutable,matchesScope,type CommitBatc
 import { initializeSchema,recordTables } from "./schema.js";
 import { assertOwnership,createOwnership,transaction } from "./ownership.js";
 export async function createSqliteBackend(options:{filename:string}):Promise<StorageBackend> {
- const db=new DatabaseSync(options.filename);try{initializeSchema(db);}catch(error){db.close();throw error;}
+ const db=new DatabaseSync(options.filename);try{await initializeSchema(db);}catch(error){db.close();throw error;}
  let closed=false;
  const getJson=<T>(sql:string,...values:(string|number)[]):T|null=>{const row=db.prepare(sql).get(...values) as {body:string}|undefined;return row?immutable(JSON.parse(row.body)) as T:null;};
  const head=(id:string)=>getJson<ThreadInfo>("SELECT body FROM threads WHERE id=?",id);

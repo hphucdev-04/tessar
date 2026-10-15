@@ -1,10 +1,12 @@
-# Tesseract Durable Engine Implementation Plan
+# Tesseract Durable Agent Loop Implementation Plan
+
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Chạy model/tool turns trên canonical state, hỗ trợ checkpoint/HITL/recovery và public extension primitives qua cùng engine.
 
-**Architecture:** Engine tiêu thụ contracts/storage từ phần A, không biết Controller/Session hoặc provider SDK. Tất cả side-effect dispatch có durable pre-dispatch boundary; results chỉ tiếp tục sau commit. Stream là attachment cho durable execution, không thêm Run class.
+**Architecture:** Agent trực tiếp sở hữu loop và dùng contracts/storage từ phần A. Controller quản lý lifecycle/resources; Session là API tương tác trên cùng Agent trong core. Tất cả side-effect dispatch có durable pre-dispatch boundary; results chỉ tiếp tục sau commit. Stream là attachment cho durable execution, không thêm class execution trung gian.
 
 **Tech Stack:** Pure TypeScript core, Vitest scripted providers/fault injection; SQLite cross-process suite từ A.
 
@@ -31,23 +33,24 @@
 
 ---
 
-## Files và common engine interfaces
+## Files và agent execution interfaces
 
-Create packages/core/src/engine/{engine,context,tool-executor,interrupt,resume,
-recovery,delivery,tracked-effects}.ts và packages/core/src/testing/harness.ts.
-Các files chia theo dispatch/checkpoint boundary, không theo plugin feature.
+Loop thuộc packages/core/src/agent.ts; các helpers hiện có ở
+packages/core/src/engine/{context,tool-executor,interrupt,resume,recovery,delivery,
+tracked-effects}.ts. Không tạo class engine bọc bên dưới Agent. Giữ helpers
+khi chúng có trách nhiệm rõ ràng, không tách file chỉ để giảm số dòng.
 
-Internal interfaces dưới đây được export từ /testing khi harness cần, engine
-implementation không export trong normal barrel; plugin-facing types export public.
+Agent và các plugin-facing types được export từ @tesseract/core. Các execution
+helpers/internal admission chỉ phục vụ core và testing harness; không tạo thêm
+runtime port hoặc bắt application dựng backend/registry để new Agent.
 
 ~~~ts
-interface EngineOptions {
-  backend: StorageBackend;
-  registry: PluginHost;
-  instructions: Instruction;
-  limits: StreamLimits;
-  clock: Clock;
-  ids: IdGenerator;
+interface AgentOptions {
+  id: string;
+  model?: Model | ModelRef;
+  instructions?: string | Instruction;
+  plugins?: readonly Plugin[];
+  limits?: Partial<StreamLimits>;
 }
 type ExecutionRequest =
   | { kind: "input"; threadId: string; input: readonly MessageData[]; model: ModelRef;
@@ -58,11 +61,11 @@ type ExecutionRequest =
 interface ExecutionOrigin {
   parentStreamId: string; parentToolExecutionId?: string; dispatchId: string;
 }
-class AgentEngine {
-  constructor(options: EngineOptions);
-  start(request: ExecutionRequest, delivery?: DeliveryTarget): Stream;
-  cancel(threadId: string, streamId: string, reason?: string): Promise<void>;
-  shutdown(): Promise<void>;
+class Agent {
+  constructor(options: AgentOptions);
+  readonly id: string;
+  stream(options: AgentExecutionOptions): Stream;
+  generate(options: AgentExecutionOptions): Promise<GenerateOutcome>;
 }
 ~~~
 
@@ -73,7 +76,8 @@ AsyncIterable. Engine đặt handle identity trước I/O; không claim durable 
 cho đến StreamStarted. Failed admission phát StreamError, không StreamEnd giả.
 
 Harness.create({modelScripts?, plugins?, backend?, limits?, ids?, clock?})
-→ Promise<EngineHarness>; harness exposes engine, queries, provider, backend,
+→ Promise<EngineHarness>; harness exposes agent, queries, provider, backend,
+admit(request) → Stream (testing-only, đi vào cùng Agent loop),
 createThread(options?) → Promise<ThreadInfo>, collect(stream) → Promise<StreamEvent[]>,
 records(streamId) → Promise<ExecutionRecords>, checkpoint(threadId),
 atBoundary(phase,callback), crashAt(phase), dispose().
@@ -84,17 +88,17 @@ Fixtures trong tests tự dùng stable scripts, không gọi Internet và không
 
 **Files**
 
-- Create: packages/core/src/engine/{engine,context,tool-executor}.ts.
+- Create: packages/core/src/agent.ts, packages/core/src/engine/{context,tool-executor}.ts.
 - Create: packages/core/src/testing/harness.ts.
-- Test: packages/core/src/engine/{engine,context}.test.ts.
+- Test: packages/core/src/agent-loop.test.ts, packages/core/src/engine/context.test.ts.
 - Modify: packages/core/src/index.ts, packages/core/package.json, packages/core/src/events/catalog.ts.
 
 **Interfaces**
 
 - Consumes: A1–A5 schemas, models/tools, hooks, state, coordinator, usage.
-- Produces: AgentEngine, ExecutionRequest, StreamLimits default32/64/128;
+- Produces: Agent trực tiếp chạy loop, ExecutionRequest, StreamLimits default32/64/128;
   ExecutionContext {signal, identities, context, state, models} (tracked methods B5).
-- B1 Stream delivery dùng minimal queue trong engine.ts; B4 tách sang delivery.ts
+- B1 Stream delivery dùng minimal queue trong Agent; B4 dùng helper delivery.ts
   và thêm đầy đủ bounds/detach semantics. Không import delivery.ts chưa tồn tại.
 - Produces: ContextAssembler.build(checkpoint, instructions, selectedTools, model)
   → ModelRequest; public ContextPrepare transform observes effective immutable context.
@@ -107,7 +111,7 @@ Fixtures trong tests tự dùng stable scripts, không gọi Internet và không
       response1 chứa tool call; response2 text final. Assert:
 
 ~~~ts
-const events = await harness.collect(harness.engine.start(inputRequest));
+const events = await harness.collect(harness.admit(inputRequest));
 const records = await harness.records(events.find(e => e.is(AgentEvents.StreamStarted))!.streamId);
 expect(harness.provider.calls).toHaveLength(2);
 expect(tool.execute).toHaveBeenCalledTimes(1);
@@ -124,7 +128,7 @@ expect(events.filter(e => e.is(AgentEvents.StreamEnd))).toHaveLength(1);
       with actual boundary invocation and payload type (no mere catalog presence).
       Input handled results: no model attempt, committed structured output, known0
       usage. Deny chain cannot be overridden; selected tool must be registered.
-- [ ] **Step 2:** pnpm exec vitest run packages/core/src/engine/engine.test.ts packages/core/src/engine/context.test.ts — FAIL AgentEngine missing.
+- [ ] **Step 2:** pnpm exec vitest run packages/core/src/agent-loop.test.ts packages/core/src/engine/context.test.ts — FAIL Agent loop missing.
 - [ ] **Step 3:** Implement admission, full context assembly, attempt and tool
       pre-dispatch commits, streamed deltas, response transforms + validation,
       committed tool messages, continuation and terminal barriers. Persist budget
@@ -136,7 +140,7 @@ expect(events.filter(e => e.is(AgentEvents.StreamEnd))).toHaveLength(1);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/core/src/engine/engine.ts packages/core/src/engine/context.ts packages/core/src/engine/tool-executor.ts packages/core/src/engine/engine.test.ts packages/core/src/engine/context.test.ts packages/core/src/testing/harness.ts packages/core/src/index.ts packages/core/package.json packages/core/src/events/catalog.ts
+git add packages/core/src/agent.ts packages/core/src/engine/context.ts packages/core/src/engine/tool-executor.ts packages/core/src/agent-loop.test.ts packages/core/src/engine/context.test.ts packages/core/src/testing/harness.ts packages/core/src/index.ts packages/core/package.json packages/core/src/events/catalog.ts
 git commit -m "feat(core): run checkpointed model and tool turns"
 ~~~
 
@@ -146,7 +150,7 @@ git commit -m "feat(core): run checkpointed model and tool turns"
 
 - Create: packages/core/src/engine/{interrupt,resume}.ts.
 - Test: packages/core/src/engine/interrupt.test.ts.
-- Modify: packages/core/src/engine/{engine,context}.ts, packages/core/src/plugins/context.ts, packages/core/src/index.ts, packages/core/src/events/catalog.ts.
+- Modify: packages/core/src/agent.ts, packages/core/src/engine/context.ts, packages/core/src/plugins/context.ts, packages/core/src/index.ts, packages/core/src/events/catalog.ts.
 
 **Interfaces**
 
@@ -165,7 +169,7 @@ git commit -m "feat(core): run checkpointed model and tool turns"
 - [ ] **Step 1:** Approval là external test plugin, không engine feature:
 
 ~~~ts
-const firstEvents = await harness.collect(harness.engine.start(inputRequest));
+const firstEvents = await harness.collect(harness.admit(inputRequest));
 const pending = firstEvents.find(e => e.is(AgentEvents.StreamSuspended))!;
 expect((await harness.queries.getInterrupt(threadId, pending.payload.interrupt.id))!.status)
   .toBe("pending");
@@ -196,7 +200,7 @@ expect(firstHandleId).not.toBe(resumedHandleId);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/core/src/engine/interrupt.ts packages/core/src/engine/resume.ts packages/core/src/engine/interrupt.test.ts packages/core/src/engine/engine.ts packages/core/src/engine/context.ts packages/core/src/plugins/context.ts packages/core/src/index.ts packages/core/src/events/catalog.ts
+git add packages/core/src/engine/interrupt.ts packages/core/src/engine/resume.ts packages/core/src/engine/interrupt.test.ts packages/core/src/agent.ts packages/core/src/engine/context.ts packages/core/src/plugins/context.ts packages/core/src/index.ts packages/core/src/events/catalog.ts
 git commit -m "feat(core): persist interruptions and consume responses atomically"
 ~~~
 
@@ -206,7 +210,7 @@ git commit -m "feat(core): persist interruptions and consume responses atomicall
 
 - Create: packages/core/src/engine/recovery.ts.
 - Test: packages/core/src/engine/recovery.test.ts.
-- Modify: packages/core/src/engine/{engine,tool-executor}.ts, packages/core/src/tools/tool.ts, packages/core/src/testing/harness.ts.
+- Modify: packages/core/src/agent.ts, packages/core/src/engine/tool-executor.ts, packages/core/src/tools/tool.ts, packages/core/src/testing/harness.ts.
 - Modify: tests/fixtures/sqlite-worker.ts, tests/integration/sqlite-process.test.ts.
 
 **Interfaces**
@@ -256,7 +260,7 @@ expect(await crashAndRecover("publish-ack-lost")).toMatchObject({
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/core/src/engine/recovery.ts packages/core/src/engine/recovery.test.ts packages/core/src/engine/engine.ts packages/core/src/engine/tool-executor.ts packages/core/src/tools/tool.ts packages/core/src/testing/harness.ts tests/fixtures/sqlite-worker.ts tests/integration/sqlite-process.test.ts
+git add packages/core/src/engine/recovery.ts packages/core/src/engine/recovery.test.ts packages/core/src/agent.ts packages/core/src/engine/tool-executor.ts packages/core/src/tools/tool.ts packages/core/src/testing/harness.ts tests/fixtures/sqlite-worker.ts tests/integration/sqlite-process.test.ts
 git commit -m "feat(core): recover executions without replaying unknown effects"
 ~~~
 
@@ -266,7 +270,7 @@ git commit -m "feat(core): recover executions without replaying unknown effects"
 
 - Create: packages/core/src/engine/delivery.ts.
 - Test: packages/core/src/engine/delivery.test.ts.
-- Modify: packages/core/src/engine/{engine,resume,recovery}.ts, packages/core/src/index.ts.
+- Modify: packages/core/src/agent.ts, packages/core/src/engine/{resume,recovery}.ts, packages/core/src/index.ts.
 
 **Interfaces**
 
@@ -308,7 +312,7 @@ expect(resumedModelSignal.aborted).toBe(false);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/core/src/engine/delivery.ts packages/core/src/engine/delivery.test.ts packages/core/src/engine/engine.ts packages/core/src/engine/resume.ts packages/core/src/engine/recovery.ts packages/core/src/index.ts
+git add packages/core/src/engine/delivery.ts packages/core/src/engine/delivery.test.ts packages/core/src/agent.ts packages/core/src/engine/resume.ts packages/core/src/engine/recovery.ts packages/core/src/index.ts
 git commit -m "feat(core): bound stream delivery and separate detach from abort"
 ~~~
 
@@ -370,7 +374,7 @@ expect(dispatchChild).toHaveBeenCalledTimes(1);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/core/src/engine/tracked-effects.ts packages/core/src/engine/tracked-effects.test.ts packages/core/src/engine/plugin-continuity.test.ts packages/core/src/engine/context.ts packages/core/src/engine/engine.ts packages/core/src/plugins/context.ts packages/core/src/index.ts packages/core/src/state/schema.ts packages/core/src/models/contract.ts
+git add packages/core/src/engine/tracked-effects.ts packages/core/src/engine/tracked-effects.test.ts packages/core/src/engine/plugin-continuity.test.ts packages/core/src/engine/context.ts packages/core/src/agent.ts packages/core/src/plugins/context.ts packages/core/src/index.ts packages/core/src/state/schema.ts packages/core/src/models/contract.ts
 git commit -m "feat(core): track plugin effects auxiliary calls and child lineage"
 ~~~
 

@@ -2,7 +2,7 @@ import { expect,it } from "vitest";
 import { mkdtemp,rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { storageConformance,initialBatch } from "../../core/src/testing/storage-conformance.js";
+import { storageConformance,initialBatch } from "@tesseract/core/testing/storage-conformance";
 import { CommitCoordinator } from "@tesseract/core";
 import { createSqliteBackend } from "./backend.js";
 storageConformance("sqlite",async()=>createSqliteBackend({filename:":memory:"}));

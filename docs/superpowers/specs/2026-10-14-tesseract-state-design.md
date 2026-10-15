@@ -1,5 +1,7 @@
 # Tesseract state: hội thoại, execution trace và usage
 
+> Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
+
 Runtime ownership đã chốt sau review: Controller initialize và sở hữu
 storage/registry/resources; Session thao tác Thread qua session.thread.*.
 Agent vẫn cung cấp cùng core loop/contracts. Schema state bên dưới không

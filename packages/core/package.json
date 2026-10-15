@@ -4,15 +4,24 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./testing": { "types": "./dist/testing/index.d.ts", "import": "./dist/testing/index.js" },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing/storage-conformance": {
+      "types": "./dist/testing/storage-conformance.d.ts",
+      "import": "./dist/testing/storage-conformance.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }
-

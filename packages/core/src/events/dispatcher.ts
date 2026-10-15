@@ -5,6 +5,7 @@ import {
   type EventContext,
   type PayloadOf,
   type ResultOf,
+  type EventKind,
 } from "./definition.js";
 import type { HookContext } from "../plugins/context.js";
 import type { RegistryLease } from "../plugins/registry.js";
@@ -14,28 +15,36 @@ export async function dispatch<D extends AnyEvent>(
   payload: PayloadOf<D>,
   context: HookContext & EventContext,
   diagnostics: (error: ReturnType<typeof errorInfo>) => void,
+  kind: EventKind = "notification",
 ): Promise<ResultOf<D>> {
   let current: unknown =
-    definition.kind === "transformation" ? payload : context.initialDecision;
-  let handlerIndex=-1;
-  for (const registration of lease.handlers.filter(
-    (h) => h.definition.id === definition.id,
-  )) {
+    kind === "transformation" ? payload : context.initialDecision;
+  let handlerIndex = -1;
+  const allowed = context.allowedHandlerIds as readonly string[] | undefined;
+  const handlers = lease.handlers.filter(
+    (h) => h.name === definition && (!allowed || allowed.includes(h.id)),
+  );
+  if (allowed)
+    handlers.sort((a, b) => allowed.indexOf(a.id) - allowed.indexOf(b.id));
+  for (const registration of handlers) {
     handlerIndex++;
-    if(handlerIndex<((context.startIndex as number|undefined)??0))continue;
-    if(context.allowedHandlerIds && !(context.allowedHandlerIds as readonly string[]).includes(registration.id))continue;
-    if (context.signal?.aborted && definition.kind !== "notification" && definition.kind !== "barrier")
+    if (handlerIndex < ((context.startIndex as number | undefined) ?? 0))
+      continue;
+    if (
+      context.signal?.aborted &&
+      kind !== "notification" &&
+      kind !== "barrier"
+    )
       throw new TesseractError("Cancelled", "Execution cancelled");
     try {
       const event = new EventEnvelope(
         definition,
-        definition.kind === "transformation" ? current : payload,
+        kind === "transformation" ? current : payload,
         context,
       );
       const result = await registration.handler(event, context);
-      if (definition.kind === "transformation" && result !== undefined)
-        current = result;
-      if (definition.kind === "decision" && result !== undefined) {
+      if (kind === "transformation" && result !== undefined) current = result;
+      if (kind === "decision" && result !== undefined) {
         const previous = current as { decision?: string } | undefined;
         if (
           !previous ||
@@ -44,17 +53,34 @@ export async function dispatch<D extends AnyEvent>(
           )
         )
           current = result;
-        if(context.onDecision)await (context.onDecision as (entry:{handlerId:string;index:number;decision:unknown})=>Promise<void>)({handlerId:registration.id,index:handlerIndex,decision:current});
+        if (context.onDecision)
+          await (
+            context.onDecision as (entry: {
+              handlerId: string;
+              index: number;
+              decision: unknown;
+            }) => Promise<void>
+          )({
+            handlerId: registration.id,
+            index: handlerIndex,
+            decision: current,
+          });
         if ((result as { decision?: string }).decision === "suspend") break;
       }
     } catch (cause) {
-      if(cause instanceof TesseractError && ["StorageUnavailable","CommitConflict","OwnershipLost"].includes(cause.code))throw cause;
+      if (
+        cause instanceof TesseractError &&
+        ["StorageUnavailable", "CommitConflict", "OwnershipLost"].includes(
+          cause.code,
+        )
+      )
+        throw cause;
       const error = new TesseractError("PluginError", "Plugin handler failed", {
         pluginId: registration.pluginId,
-        eventId: definition.id,
+        eventId: definition,
         cause: errorInfo(cause),
       });
-      if (definition.kind !== "notification") throw error;
+      if (kind !== "notification") throw error;
       try {
         diagnostics(error.toJSON());
       } catch {

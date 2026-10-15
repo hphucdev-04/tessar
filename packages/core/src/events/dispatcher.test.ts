@@ -1,35 +1,28 @@
-import { expect, it } from "vitest";
-import { defineEvent, EventEnvelope } from "./definition.js";
-import { PluginHost } from "../plugins/host.js";
-const Transform = defineEvent<string, string, "transformation">({ id: "test.transform", owner: "test", version: 1, kind: "transformation" });
-const Decide = defineEvent<{}, {decision: "allow" | "deny"}, "decision">({ id: "test.decide", owner: "test", version: 1, kind: "decision" });
-const Notice = defineEvent<string, void, "notification">({ id: "test.notice", owner: "test", version: 1, kind: "notification" });
-it("exports identity metadata without leaking runtime capabilities into event envelopes",()=>{
- const event=new EventEnvelope(Notice,"hello",{threadId:"t",state:{secret:"private"},effects:{execute:()=>{}}} as never);
- expect(event.threadId).toBe("t");
- expect(Object.hasOwn(event,"state")).toBe(false);
- expect(Object.hasOwn(event,"effects")).toBe(false);
+import {expect,it} from "vitest";
+import {EventEnvelope,type HookSpec} from "./definition.js";
+import {PluginHost} from "../plugins/host.js";
+declare module "./definition.js" {interface EventMap {
+ "test.transform":HookSpec<string,string>;"test.decide":HookSpec<{}, {decision:"allow"|"deny"}>;"test.notice":HookSpec<string>;
+}}
+const Transform="test.transform",Decide="test.decide",Notice="test.notice";
+it("exports identity metadata without leaking runtime capabilities",()=>{
+ const event=new EventEnvelope(Notice,"hello",{threadId:"t",state:{secret:true},effects:{execute:()=>{}}} as never);
+ expect(event.type).toBe(Notice);expect(event.threadId).toBe("t");expect(Object.hasOwn(event,"state")).toBe(false);expect(Object.hasOwn(event,"effects")).toBe(false);
 });
-it("chains transformations and never overturns a denial", async () => {
-  const host = new PluginHost();
-  await host.initialize([{ id: "test", apiVersion: 1, setup(api) {
-    api.on(Transform, e => e.payload + "A");
-    api.on(Transform, e => e.payload + "B");
-    api.on(Decide, () => ({ decision: "deny" as const }));
-    api.on(Decide, () => ({ decision: "allow" as const }));
-  } }]);
-  expect(await host.dispatch(Transform, "x")).toBe("xAB");
-  expect(await host.dispatch(Decide, {})).toEqual({ decision: "deny" });
-  await host.dispose();
+it("chains transformations and never overturns a denial",async()=>{
+ const host=new PluginHost();await host.initialize([{id:"test",setup(tesseract){
+  tesseract.hook(Transform,e=>e.payload+"A",{kind:"transformation"});tesseract.hook(Transform,e=>e.payload+"B");
+  tesseract.hook(Decide,()=>({decision:"deny"}),{kind:"decision"});tesseract.hook(Decide,()=>({decision:"allow"}));
+ }}]);expect(await host.dispatch(Transform,"x")).toBe("xAB");expect(await host.dispatch(Decide,{})).toEqual({decision:"deny"});await host.dispose();
 });
-it("looks definitions up by stable ID and reports observer failures without changing outcome", async () => {
-  const diagnostics: string[] = [];
-  const host = new PluginHost({ diagnostics: e => diagnostics.push(e.code) });
-  await host.initialize([{ id: "test", apiVersion: 1, setup(api) { api.on(Notice, () => { throw Error("observer"); }); } }]);
-  const equivalent = defineEvent<string, void, "notification">({ id: "test.notice", owner: "test", version: 1, kind: "notification" });
-  await expect(host.dispatch(equivalent, "x")).resolves.toBeUndefined();
-  expect(diagnostics).toEqual(["PluginError"]);
-  const envelope = new EventEnvelope(Notice, "hello");
-  expect(envelope.is(equivalent)).toBe(true);
-  await host.dispose();
+it("looks hooks up by string and isolates observer errors",async()=>{
+ const diagnostics:string[]=[];const host=new PluginHost({diagnostics:e=>diagnostics.push(e.code)});
+ await host.initialize([{id:"test",setup(tesseract){tesseract.hook(Notice,()=>{throw Error("observer");});}}]);
+ await expect(host.dispatch("test.notice","x")).resolves.toBeUndefined();expect(diagnostics).toEqual(["PluginError"]);expect(new EventEnvelope(Notice,"hello").is(Notice)).toBe(true);await host.dispose();
+});
+it("continues handlers in saved manifest order after plugin reordering",async()=>{
+ const seen:string[]=[];const host=new PluginHost();
+ for(const id of ["b","a"])await host.attach({id,setup(tesseract){tesseract.hook(Decide,()=>{seen.push(id);return {decision:"allow"};},{kind:"decision"});}});
+ await host.dispatch(Decide,{}, {allowedHandlerIds:["a:test.decide:0","b:test.decide:0"],startIndex:1});
+ expect(seen).toEqual(["b"]);await host.dispose();
 });

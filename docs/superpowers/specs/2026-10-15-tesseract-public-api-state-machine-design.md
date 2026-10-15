@@ -1,10 +1,26 @@
 # Tesseract: public API và state machine
 
+> Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
+
 Ngày: 2026-10-15.
 
-Trạng thái: người dùng đã chốt thiết kế và yêu cầu viết implementation plan
-ngày 2026-10-15. Chưa implement. Các chi tiết kỹ thuật ở kế hoạch là lựa chọn
-triển khai có thể review, không phải bằng chứng runtime đã hoạt động.
+Trạng thái: đang triển khai theo thiết kế đã chốt ngày 2026-10-15. Các chi
+tiết kỹ thuật ở kế hoạch là lựa chọn triển khai có thể review, không phải
+bằng chứng runtime đã hoạt động.
+
+Cập nhật 2026-10-15: ponytail (full) áp dụng từ đầu, gồm cả code đã viết.
+Giữ hành vi đã chốt, xét lại abstraction và file không cần thiết. Event
+names là strings, constants và type map cung cấp autocomplete/type safety.
+Quyết định này thay các snippets event definition objects trong tài liệu cũ;
+code hiện tại cần được chuyển sang contract này và kiểm thử lại.
+
+Package chính đã chốt: `@tesseract/core` export trực tiếp Agent, Controller,
+Session, Thread, messages, createTool và plugin APIs. SDK là public API của
+nền tảng; không tách package @tesseract/sdk hoặc thêm SDK runtime/RuntimePort.
+Provider/storage adapters là packages plugin riêng, memory backend có sẵn.
+Agent trực tiếp sở hữu loop; Controller sở hữu lifecycle/resources và Session
+tương tác với cùng Agent. Không thêm class engine bên dưới Agent.
+Đây là package contract để triển khai; chưa phải thông báo npm release.
 
 Cập nhật đã chốt sau review: Controller sở hữu initialization/runtime;
 controller.createSession tạo Session; thread operations ở session.thread;
@@ -39,10 +55,10 @@ Những ranh giới đã xác nhận:
 | Phần | Chủ sở hữu |
 | --- | --- |
 | Agent loop, logical state/schema, commit, checkpoint, suspend/resume, recovery, fork | Core |
-| Runtime ownership, initialization, plugin resources, model registry và Session factory | Controller sử dụng các cơ chế core |
+| Runtime ownership, initialization, plugin resources, model registry và Session factory | Controller trong core |
 | Backend trong bộ nhớ mặc định | Core storage |
 | Nơi lưu SQLite/Postgres/MongoDB/file hoặc backend khác | Storage backend plugin |
-| Model/provider contracts, registry và normalized profile | Core/SDK |
+| Model/provider contracts, registry và normalized profile | Core, export qua public SDK |
 | Provider protocol, auth và metadata acquisition | Provider plugins dùng SDK helpers/adapters |
 | Permissions, context policies, orchestration, external telemetry | Plugins |
 | UI, routes, authentication, authorization và transport | Application/host |
@@ -308,7 +324,7 @@ class Session {
 
   readonly thread: SessionThreadApi;
   subscribe(handler: SessionEventObserver): Disposer;
-  subscribe<D extends EventDefinition>(definition: D, handler: EventObserver<D>): Disposer;
+  subscribe<N extends keyof SessionEventMap>(name: N, handler: EventObserver<N>): Disposer;
   resume(options: SessionResumeOptions): Promise<ExecutionReceipt>;
   recover(options: SessionRecoverOptions): Promise<ExecutionReceipt>;
   abort(reason?: string): Promise<void>;
@@ -719,9 +735,12 @@ execution đã chạy hoặc ID đó đã có durable record.
 
 ### 6.1. Typed events
 
-SDK export AgentEvents và tagged StreamEvent union. Discriminant trên event
-là definition có type; consumer có thể dùng event.is(AgentEvents.MessageDelta)
-để narrow payload. Không yêu cầu nhớ hoặc gõ event-name strings.
+SDK export AgentEvents dưới dạng constants có giá trị string và type map
+ánh xạ event name tới payload/context/result. `api.on(AgentEvents.MessageDelta,
+handler)` và `api.on("core.message.delta", handler)` cùng được suy luận type.
+StreamEvent là tagged union với `event.type` làm discriminant; consumer dùng
+`event.type === AgentEvents.MessageDelta` để narrow payload. Không cần
+object/class riêng cho từng event name.
 
 Mỗi execution event có streamId, threadId, handleId, sequence và timestamp;
 StreamError trước lookup/admission cho phép streamId null. Sequence
@@ -1163,7 +1182,7 @@ session-owned có lifetime riêng và không bị rewind theo Thread.
 
 ### 11.2. Events và quyết định
 
-Typed event definitions, custom plugin events và bốn kinds notification/
+Event names dạng string, type map, custom plugin events và bốn kinds notification/
 transformation/decision/barrier giữ theo core design. Registration order là
 handler order. Transformations nhận kết quả handler trước; deny/stop không
 bị handler sau đổi thành allow/continue. Cancellation và hard limits có
@@ -1298,7 +1317,7 @@ const thread = await session.thread.create();
 const pending: InterruptRecord[] = [];
 const unsubscribe = session.subscribe((event) => {
   renderOrForward(event);
-  if (event.is(AgentEvents.StreamSuspended)) {
+  if (event.type === AgentEvents.StreamSuspended) {
     pending.push(event.payload.interrupt);
   }
 });
@@ -1433,20 +1452,21 @@ về scope, transitions, API examples và links trước khi đưa người dùn
 ## 16. Baseline kỹ thuật cho implementation plan
 
 Các lựa chọn triển khai này được ghi ngày 2026-10-15, tách khỏi bằng chứng
-implementation. Workspace hiện chỉ có docs, chưa có Git repository/source.
+implementation. Workspace hiện đã có source/Git và các kiểm thử trong quá
+trình triển khai; tiến độ thực tế theo execution ledger, không suy từ spec.
 
 - Runtime baseline: Node.js >=24.14.0; pnpm 11.5.3.
 - TypeScript 7.0.2, Vitest 5.0.4; ESM/NodeNext, strict, declaration exports.
 - Core không có third-party production dependencies, không import filesystem,
-  provider SDK, SQLite, Controller hoặc Session implementation.
+  provider SDK hoặc SQLite. Agent/Controller/Session nằm trong core.
 - Storage/checkpoint luôn có sẵn; memory backend default, SQLite reference
   backend qua node:sqlite trong package riêng, không bắt core import Node API.
 - OpenAI SDK 7.34.0 là provider integration tham chiếu đầu tiên. Không tuyên bố
   đã có Anthropic/Google adapters; normalized contract giữ được extension này.
 - Root scripts chuẩn: build, typecheck, test, test:integration, check:boundaries.
 - Test default offline/deterministic; live provider smoke opt-in theo environment.
-- Workspace packages dùng tên @tesseract/core, @tesseract/sdk,
-  @tesseract/storage-sqlite và @tesseract/provider-openai; chưa publish npm.
+- Package chính là @tesseract/core; integrations dùng @tesseract/storage-sqlite
+  và @tesseract/openai. Không cần package @tesseract/sdk; chưa publish npm.
 - SQLite dùng parameterized SQL, WAL, busy timeout 5000 ms, BEGIN IMMEDIATE.
   DatabaseSync là synchronous và node:sqlite còn active development ở baseline;
   đây là reference backend phase này, không hứa throughput server production.

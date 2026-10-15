@@ -1,5 +1,7 @@
 # Tesseract Core Contracts and Storage Implementation Plan
 
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Cung cấp primitives, plugin contracts và core state management có memory/SQLite backend cùng semantics.
@@ -12,7 +14,7 @@
 
 ## Global Constraints
 
-- Core không có third-party production dependencies, không import filesystem, provider SDK, SQLite, Controller hoặc Session implementation.
+- Core không có third-party production dependencies, không import filesystem, provider SDK hoặc SQLite. Agent/Controller/Session được triển khai trong core ở phần C.
 - Storage/checkpoint luôn có sẵn; memory backend default, SQLite reference backend qua node:sqlite trong package riêng.
 - Scope là flat scalar equality + AND; pagination 50 mặc định, tối đa 200.
 - Canonical writes là required; staged data chưa publish không phải committed.

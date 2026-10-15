@@ -24,7 +24,34 @@ importers:
         specifier: 5.0.4
         version: 5.0.4(@types/node@24.19.2)(vite@8.3.4(@types/node@24.19.2))
 
+  examples/cli:
+    dependencies:
+      '@tesseract/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@tesseract/openai':
+        specifier: workspace:*
+        version: link:../../packages/openai
+      '@tesseract/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/storage-sqlite
+
+  examples/headless:
+    dependencies:
+      '@tesseract/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   packages/core: {}
+
+  packages/openai:
+    dependencies:
+      '@tesseract/core':
+        specifier: workspace:*
+        version: link:../core
+      openai:
+        specifier: 7.34.0
+        version: 7.34.0
 
   packages/storage-sqlite:
     dependencies:
@@ -414,6 +441,30 @@ packages:
     resolution: {integrity: sha512-5vvB5+W7ePv+p3uqxi+RcW1XAzLW0/hxt3/4X4Lc4qHudzOhmBiBwOY6DRob4WnanAEGvNcLjF+KNOufrUoEQw==}
     engines: {node: '>=12.20.0'}
 
+  openai@7.34.0:
+    resolution: {integrity: sha512-PMwuTQ/3cVyWZJOVpb6bzlrQj17uImlnUGQWqh5zHlN/snwK5ww4ZUHW8NYGtH6f9PQOEPxyD/f8WJVIHp1q2A==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      undici: '>=5 <9'
+      ws: ^8.21.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      undici:
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -767,6 +818,8 @@ snapshots:
   nanoid@3.3.20: {}
 
   obug@3.0.0: {}
+
+  openai@7.34.0: {}
 
   picocolors@1.1.1: {}
 

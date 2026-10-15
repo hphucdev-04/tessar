@@ -1,10 +1,12 @@
-# Tesseract SDK and Integrations Implementation Plan
+# Tesseract Public API and Integrations Implementation Plan
+
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship public Agent/Controller/Session APIs, automatic model profiles, reference provider và examples chứng minh khả năng viết plugins độc lập.
 
-**Architecture:** SDK compose core engine qua RuntimePort, không có vòng lặp thứ hai. Provider protocol và SQLite là packages riêng. External plugin proofs import public exports; host tự sở hữu CLI/UI/backend/transport.
+**Architecture:** @tesseract/core cung cấp trực tiếp Agent/Controller/Session/Thread cùng agent loop, model registry và public plugin APIs. SDK là các public exports này; không thêm package hoặc bridge runtime trung gian. Provider protocol và SQLite là packages riêng. Host tự sở hữu CLI/UI/backend/transport.
 
 **Tech Stack:** Node.js >=24.14.0; pnpm 11.5.3; TypeScript 7.0.2; Vitest 5.0.4; OpenAI SDK 7.34.0; compiled ESM examples.
 
@@ -19,7 +21,7 @@
 - Scope là flat scalar metadata/filter, không phải identity hay authorization.
 - Model.profile tự resolve, getter snapshot đồng bộ, TTL 24 giờ, unknown null.
 - Storage/checkpoint luôn có sẵn; memory backend default.
-- Core không có third-party production dependencies, không import filesystem, provider SDK, SQLite, Controller hoặc Session implementation.
+- Core không có third-party production dependencies, không import filesystem, provider SDK hoặc SQLite; Agent/Controller/Session nằm trong core.
 - Test default offline/deterministic; live provider smoke opt-in theo environment.
 - TD-001 và migration Cube/full CLI/app backend không thuộc phase này.
 
@@ -35,10 +37,12 @@
 
 ## Files và package boundaries
 
-SDK src gồm controller.ts, runtime.ts, thread.ts, session.ts, session-thread.ts,
-session-events.ts; models/{registry,resolver,cache,catalog}.ts. Core agent.ts chỉ
-giữ config và RuntimePort delegation. Model types nằm core; registry/resolution
-nằm SDK. Provider package chỉ phụ thuộc core + official SDK, không import Session.
+Core src gồm agent.ts, controller.ts, thread.ts, session.ts, session-thread.ts,
+session-events.ts và model registry/resolution. Controller dùng trực tiếp cùng
+agent loop trong package. Không tạo RuntimePort, bindRuntime, /runtime export
+hoặc package @tesseract/sdk. Provider package chỉ phụ thuộc core + official SDK.
+Các file hiện ở packages/sdk là implementation cũ cần chuyển vào core, sửa
+internal imports và kiểm thử trước khi xóa package cũ; không bỏ logic đã test.
 
 Root examples là workspace packages có scripts build/start; compile TypeScript
 bằng tsc, chạy dist qua Node; không thêm tsx runtime loader. Root tests integration
@@ -48,11 +52,11 @@ thực thi built exports riêng với source-alias tests.
 
 **Files**
 
-- Create: packages/sdk/{package.json,tsconfig.json}.
-- Create: packages/sdk/src/models/{registry,resolver,cache,catalog}.ts.
-- Create: packages/sdk/src/models/catalog.snapshot.json, packages/sdk/src/models/catalog.LICENSE.
-- Create: packages/sdk/src/index.ts, scripts/update-model-catalog.mjs.
-- Test: packages/sdk/src/models/{registry,resolver}.test.ts.
+- Reuse: packages/core/{package.json,tsconfig.json}.
+- Create: packages/core/src/models/{registry,resolver,cache,catalog}.ts.
+- Create: packages/core/src/models/catalog.snapshot.json, packages/core/src/models/catalog.LICENSE.
+- Create: packages/core/src/index.ts, scripts/update-model-catalog.mjs.
+- Test: packages/core/src/models/{registry,resolver}.test.ts.
 - Modify: pnpm-lock.yaml.
 
 **Interfaces**
@@ -88,7 +92,7 @@ expect(accountA.profile).not.toEqual(accountB.profile);
       gateway no fuzzy/pricing borrowing, tiered pricing, explicit alias version,
       provider facts absent fields do not overwrite known snapshot with fake values.
       Failed refresh metadata diagnostics, model inference still available.
-- [ ] **Step 2:** pnpm exec vitest run packages/sdk/src/models/registry.test.ts packages/sdk/src/models/resolver.test.ts — FAIL missing SDK registry.
+- [ ] **Step 2:** pnpm exec vitest run packages/core/src/models/registry.test.ts packages/core/src/models/resolver.test.ts — FAIL missing SDK registry.
 - [ ] **Step 3:** Implement resolver/cache immutable replacement. Vendor catalog with
       pinned source revision/hash/license via update script, checked in artifact,
       no network build step. Runtime background refresh bounded/abortable, coalesce
@@ -98,7 +102,7 @@ expect(accountA.profile).not.toEqual(accountB.profile);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/sdk/package.json packages/sdk/tsconfig.json packages/sdk/src/models/registry.ts packages/sdk/src/models/resolver.ts packages/sdk/src/models/cache.ts packages/sdk/src/models/catalog.ts packages/sdk/src/models/catalog.snapshot.json packages/sdk/src/models/catalog.LICENSE packages/sdk/src/models/registry.test.ts packages/sdk/src/models/resolver.test.ts packages/sdk/src/index.ts scripts/update-model-catalog.mjs pnpm-lock.yaml
+git add packages/core/package.json packages/core/tsconfig.json packages/core/src/models/registry.ts packages/core/src/models/resolver.ts packages/core/src/models/cache.ts packages/core/src/models/catalog.ts packages/core/src/models/catalog.snapshot.json packages/core/src/models/catalog.LICENSE packages/core/src/models/registry.test.ts packages/core/src/models/resolver.test.ts packages/core/src/index.ts scripts/update-model-catalog.mjs pnpm-lock.yaml
 git commit -m "feat(sdk): resolve immutable model profiles automatically"
 ~~~
 
@@ -106,9 +110,9 @@ git commit -m "feat(sdk): resolve immutable model profiles automatically"
 
 **Files**
 
-- Create: packages/provider-openai/{package.json,tsconfig.json}.
-- Create: packages/provider-openai/src/{plugin,adapter,codec,metadata,index}.ts.
-- Test: packages/provider-openai/src/{adapter,codec,metadata}.test.ts.
+- Create: packages/openai/{package.json,tsconfig.json}.
+- Create: packages/openai/src/{plugin,adapter,codec,metadata,index}.ts.
+- Test: packages/openai/src/{adapter,codec,metadata}.test.ts.
 - Modify: pnpm-lock.yaml.
 
 **Interfaces**
@@ -146,7 +150,7 @@ expect(usage.totalTokens).toBe(130);
       final snapshot, empty/incomplete response, HTTP429/error stream, abort,
       unsupported context rejects before HTTP, missing usage null.
       Metadata API lacking context/pricing leaves fallback/null, never dev-entered profile.
-- [ ] **Step 2:** pnpm exec vitest run packages/provider-openai/src/adapter.test.ts packages/provider-openai/src/codec.test.ts packages/provider-openai/src/metadata.test.ts — FAIL missing adapter.
+- [ ] **Step 2:** pnpm exec vitest run packages/openai/src/adapter.test.ts packages/openai/src/codec.test.ts packages/openai/src/metadata.test.ts — FAIL missing adapter.
 - [ ] **Step 3:** Implement isolated official SDK mapping and register helper APIs.
       Version codec data in providerState; unknown protocol fields preserved only
       if needed for round-trip, redact credentials/raw headers from ErrorInfo.
@@ -157,7 +161,7 @@ expect(usage.totalTokens).toBe(130);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/provider-openai/package.json packages/provider-openai/tsconfig.json packages/provider-openai/src/plugin.ts packages/provider-openai/src/adapter.ts packages/provider-openai/src/codec.ts packages/provider-openai/src/metadata.ts packages/provider-openai/src/index.ts packages/provider-openai/src/adapter.test.ts packages/provider-openai/src/codec.test.ts packages/provider-openai/src/metadata.test.ts pnpm-lock.yaml
+git add packages/openai/package.json packages/openai/tsconfig.json packages/openai/src/plugin.ts packages/openai/src/adapter.ts packages/openai/src/codec.ts packages/openai/src/metadata.ts packages/openai/src/index.ts packages/openai/src/adapter.test.ts packages/openai/src/codec.test.ts packages/openai/src/metadata.test.ts pnpm-lock.yaml
 git commit -m "feat(provider): add OpenAI streaming helper and profile resolver"
 ~~~
 
@@ -165,29 +169,25 @@ git commit -m "feat(provider): add OpenAI streaming helper and profile resolver"
 
 **Files**
 
-- Create: packages/core/src/{agent.ts,runtime/port.ts}.
-- Create: packages/core/src/runtime/index.ts.
-- Create: packages/sdk/src/{controller,runtime,thread}.ts.
-- Test: packages/sdk/src/{controller,agent,thread}.test.ts.
-- Modify: packages/core/src/index.ts, packages/core/package.json, packages/sdk/src/index.ts.
+- Create: packages/core/src/{agent,controller,thread}.ts.
+- Test: packages/core/src/{controller,agent,thread}.test.ts.
+- Modify: packages/core/src/index.ts, packages/core/package.json.
 
 **Interfaces**
 
-- Consumes: B AgentEngine, A StateQueries/ForkService/PluginHost, C1 ModelRegistry.
+- Consumes: Agent loop từ B, A StateQueries/ForkService/PluginHost, C1 ModelRegistry.
 - Produces: Agent({id, model?, instructions?, plugins?, limits?}) with stream(options)
   → Stream; generate(options) → Promise<GenerateOutcome>. Options.input required,
   model optional, scope/context/signal/limits optional. Model resolution explicit
   override → Agent default → MissingModel.
-- Produces: core RuntimePort interface execute(agentConfig, options, delivery):Stream;
-  bindRuntime(agent, port) is SDK integration subpath export, not normal user API.
-  One binding per Agent instance; binding second controller rejects.
-- Produces: @tesseract/core/runtime exports AgentEngine, bindRuntime và RuntimePort
-  qua runtime/index.ts. SDK imports integration entry này; không import private
-  engine source hoặc testing subpath để chạy production.
+- Produces: Controller sở hữu và dùng trực tiếp cùng core agent loop.
+  Một Agent instance gắn với một Controller; Controller thứ hai bị từ chối.
+  Agent/Controller/Thread được export trực tiếp từ @tesseract/core, không cần
+  bridge runtime hoặc testing subpath để chạy production.
 - Produces: Controller({id,agent}), initialize():Promise<void>, dispose():Promise<void>,
   models, plugins, create/get/list/delete/forkThread exact signatures public spec.
   createSession added C4; no public Agent.initialize/dispose.
-- Produces: SDK Thread implements public §5 query/stream/cancelStream/dispose APIs;
+- Produces: core Thread implements public §5 query/stream/cancelStream/dispose APIs;
   ThreadStreamOptions accepts optional origin:ExecutionOrigin for child admissions.
   New input low-level requires explicit model; resume/recover inherit checkpoint.
 - GenerateOutcome {threadId,streamId,status,output:readonly Message[],usage:UsageSummary,
@@ -216,8 +216,8 @@ expect(agentDefaultRef).toEqual(originalDefaultRef);
       Thread scope mismatch read-null/mutation rejection and all trace query methods.
       Initialization rollback/disposer reverse, backend conflict, attach backend
       after ready rejected, dispose idempotent/active work stopped/pending durable kept.
-- [ ] **Step 2:** pnpm exec vitest run packages/sdk/src/controller.test.ts packages/sdk/src/agent.test.ts packages/sdk/src/thread.test.ts — FAIL constructors/port absent.
-- [ ] **Step 3:** Implement core config/port delegation and SDK runtime composition.
+- [ ] **Step 2:** pnpm exec vitest run packages/core/src/controller.test.ts packages/core/src/agent.test.ts packages/core/src/thread.test.ts — FAIL constructors absent.
+- [ ] **Step 3:** Implement Agent/Controller/Thread trực tiếp trong core, cùng loop.
       Constructor no I/O. initialize shares Promise and publishes ready after setup;
       failed init cleanup, explicit failure state, recreate controller to retry.
       Controller.id preserved independent of unique process owner tokens.
@@ -229,7 +229,7 @@ expect(agentDefaultRef).toEqual(originalDefaultRef);
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/core/src/agent.ts packages/core/src/runtime/port.ts packages/core/src/runtime/index.ts packages/core/src/index.ts packages/core/package.json packages/sdk/src/controller.ts packages/sdk/src/runtime.ts packages/sdk/src/thread.ts packages/sdk/src/controller.test.ts packages/sdk/src/agent.test.ts packages/sdk/src/thread.test.ts packages/sdk/src/index.ts
+git add packages/core/src/agent.ts packages/core/src/index.ts packages/core/package.json packages/core/src/controller.ts packages/core/src/thread.ts packages/core/src/controller.test.ts packages/core/src/agent.test.ts packages/core/src/thread.test.ts
 git commit -m "feat(sdk): compose Agent Controller and low-level Thread APIs"
 ~~~
 
@@ -237,9 +237,9 @@ git commit -m "feat(sdk): compose Agent Controller and low-level Thread APIs"
 
 **Files**
 
-- Create: packages/sdk/src/{session,session-thread,session-events}.ts.
-- Test: packages/sdk/src/{session,session-thread,session-queue}.test.ts.
-- Modify: packages/sdk/src/{controller,runtime,index}.ts.
+- Create: packages/core/src/{session,session-thread,session-events}.ts.
+- Test: packages/core/src/{session,session-thread,session-queue}.test.ts.
+- Modify: packages/core/src/{controller,index}.ts.
 
 **Interfaces**
 
@@ -287,7 +287,7 @@ await expect(a.thread.switch(otherThread.id)).rejects.toMatchObject({ code: "Ses
       Events Created queued after factory, per-instance routing even same scope,
       ModelChanged snapshot, handler throw diagnostics, BeforeClose awaited,
       active dispose SessionBusy, suspended dispose durable state unchanged.
-- [ ] **Step 2:** pnpm exec vitest run packages/sdk/src/session.test.ts packages/sdk/src/session-thread.test.ts packages/sdk/src/session-queue.test.ts — FAIL Session absent.
+- [ ] **Step 2:** pnpm exec vitest run packages/core/src/session.test.ts packages/core/src/session-thread.test.ts packages/core/src/session-queue.test.ts — FAIL Session absent.
 - [ ] **Step 3:** Implement façade/queue and per-instance subscription routing on
       shared typed dispatcher. Resolve default model at createSession; missing
       default+option throws MissingModel, do not guess. Bind foreground identity
@@ -299,7 +299,7 @@ await expect(a.thread.switch(otherThread.id)).rejects.toMatchObject({ code: "Ses
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/sdk/src/session.ts packages/sdk/src/session-thread.ts packages/sdk/src/session-events.ts packages/sdk/src/session.test.ts packages/sdk/src/session-thread.test.ts packages/sdk/src/session-queue.test.ts packages/sdk/src/controller.ts packages/sdk/src/runtime.ts packages/sdk/src/index.ts
+git add packages/core/src/session.ts packages/core/src/session-thread.ts packages/core/src/session-events.ts packages/core/src/session.test.ts packages/core/src/session-thread.test.ts packages/core/src/session-queue.test.ts packages/core/src/controller.ts packages/core/src/index.ts
 git commit -m "feat(sdk): add scoped sessions subscriptions and follow-up queue"
 ~~~
 
@@ -314,7 +314,7 @@ git commit -m "feat(sdk): add scoped sessions subscriptions and follow-up queue"
 
 **Interfaces**
 
-- Consumes: only public @tesseract/sdk, @tesseract/core, /testing and storage-sqlite
+- Consumes: only public @tesseract/core, /testing and storage-sqlite
   exports; no imports to src paths/engine implementation.
 - Produces: createSkillsPlugin({load:()=>Promise<SkillData[]>}), SkillData {id,content};
   inject via ContextPrepare, loader owns source, no core SKILL.md parser.
@@ -382,8 +382,8 @@ git commit -m "test(sdk): prove external skill memory command and subagent plugi
   offline mode mandatory; OpenAI env opt-in; no full coding agent/TUI claims.
 - Produces: headless example uses Agent.generate/stream on same initialized runtime
   and scoped Session example, no HTTP framework/auth/server included.
-- Produces: npm package exports '.', './testing', core './runtime' integration
-  entry as appropriate; public import smoke runs outside source alias resolver.
+- Produces: @tesseract/core exports '.' cho public APIs và './testing' cho test
+  helpers; public import smoke runs outside source alias resolver.
 - Produces: check:boundaries rejects core Node/platform/provider imports, cycles,
   external examples importing private src paths, executable barrels.
 

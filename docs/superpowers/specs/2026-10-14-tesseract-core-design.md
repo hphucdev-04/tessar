@@ -1,5 +1,7 @@
 # Tesseract: core, SDK và hệ sinh thái plugin
 
+> Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
+
 Cập nhật sau review: đã chốt Controller sở hữu public initialize/runtime,
 controller.createSession và nhóm session.thread.* cùng subscribe/abort/followUp.
 Các đoạn Agent lifecycle/new Session/direct Session thread methods trong

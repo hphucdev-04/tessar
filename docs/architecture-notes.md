@@ -2,6 +2,38 @@
 
 Ngày ghi nhận: 2026-10-14.
 
+## Cập nhật 2026-10-15: ponytail áp dụng từ đầu
+
+Áp dụng ponytail (full) cho toàn bộ thiết kế, plan và code đã viết, kể cả
+những task đã đánh dấu hoàn thành. Không chỉ áp dụng cho phần viết tiếp.
+Các yêu cầu người dùng đã chốt vẫn giữ nguyên; cách triển khai phải được
+xét lại nếu thêm tầng, class, interface hoặc file mà chưa có nhu cầu thực tế.
+
+Ưu tiên tái sử dụng code hiện có, thư viện chuẩn và dependency đã cài.
+Không viết lại toàn bộ hoặc chia nhỏ file chỉ để giảm số dòng mỗi file.
+Agent loop phải thể hiện rõ luồng turn → model → tools → tiếp tục/dừng;
+phần hỗ trợ chỉ tách khi có trách nhiệm và dependency rõ ràng.
+Giữ storage/checkpoint, validation và các bảo đảm chống mất dữ liệu đã chốt.
+
+## Core và SDK: package chính đã chốt
+
+`@tesseract/core` cung cấp trực tiếp `Agent`, `Controller`, `Session`,
+`Thread`, message constructors, `createTool`, instructions và plugin APIs.
+Dev cài package chính và import các API này từ `@tesseract/core`;
+Session thường được tạo qua `controller.createSession()`.
+
+Core là phần thực thi nền tảng; SDK là bộ API công khai để sử dụng và mở
+rộng nền tảng đó. Không tách thành package `@tesseract/sdk` hoặc tạo
+SDK runtime/RuntimePort chỉ để nối Agent với Controller/Session.
+Agent trực tiếp sở hữu loop; Controller sở hữu lifecycle/resources và Session
+tương tác với cùng Agent. Không thêm class engine để Agent gọi qua.
+Provider protocol/credentials và các storage adapters nằm trong packages
+plugin riêng; memory storage mặc định có sẵn trong core.
+Provider OpenAI dùng package `@tesseract/openai` trong `packages/openai`.
+
+Đây là contract mới để sửa source/plan hiện có; chưa phải bằng chứng các
+exports đã được implement hoặc package đã publish lên npm.
+
 ## Lưu ý quan trọng: độc lập với Cube
 
 Tesseract là framework và SDK độc lập. Thiết kế của Tesseract không được lấy
@@ -281,14 +313,16 @@ trọng các đơn vị dữ liệu mà adapter yêu cầu giữ nguyên.
 
 ## Event API dễ khám phá
 
-Người viết application/plugin không phải nhớ hoặc tự gõ event-name strings
-để subscribe. Public API phải cung cấp identifiers có autocomplete và type
-inference cho payload, execution context và handler result. Các plugin cũng
-phải cung cấp event definitions công khai khi mở rộng hệ sinh thái.
+Event name là string ở runtime. SDK cung cấp constants và type map để có
+autocomplete, suy luận payload/context/result khi viết plugin. Constants
+trỏ tới chính string đó; không tạo object/class đại diện riêng cho mỗi event.
 
-Đề xuất đang thảo luận: typed event definitions như
-`api.on(AgentEvents.MessageDelta, handler)`; custom plugin events dùng cùng
-cơ chế, ví dụ `api.on(MemoryEvents.RecallEnd, handler)`.
+Ví dụ `api.on(AgentEvents.MessageDelta, handler)` và
+`api.on("core.message.delta", handler)` dùng cùng một event và cùng type map.
+Custom plugin events dùng cùng cơ chế, ví dụ `MemoryEvents.RecallEnd`.
+Metadata điều phối hooks nằm trong registry; không biến event name thành
+một runtime abstraction mới. Quyết định này thay hướng event definition
+objects trong các bản thiết kế trước.
 
 ## Quan hệ với Mastra
 
@@ -360,6 +394,14 @@ Phase hiện tại chỉ nhận plugin instances do application import/khởi t�
 và truyền qua public SDK. Plugin local không bắt buộc đóng thành npm package;
 dependencies do project/application quản lý bằng công cụ sẵn có. Không xây
 installer, package manager hoặc dynamic code loader trong phase này.
+
+Làm rõ việc phân phối: CLI đóng gói/cài một lệnh mang theo dependencies của
+chính CLI; người dùng cuối không cần cài lại core riêng. Nếu host hỗ trợ
+plugin file tại root, file chỉ dùng API host truyền vào và không import
+package ngoài thì không cần npm install thêm. Package mà file plugin import
+phải có trong môi trường resolve của plugin; dependency mới có thể cần cài
+local hoặc qua công cụ host. Scan/load root và cách cài dependencies thuộc
+CLI/application, không phải hành vi tự động của core. TD-001 vẫn được hoãn.
 
 Khoản nợ này không hoãn plugin contract, registration hay các quy tắc
 attach/detach đã chốt. Không coi khả năng nhận plugin instances là bằng

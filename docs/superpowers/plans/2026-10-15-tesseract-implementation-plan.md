@@ -1,19 +1,33 @@
 # Tesseract Framework and SDK Implementation Plan
 
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Xây framework/SDK độc lập để dev tạo CLI agent hoặc nhúng agent vào application qua cùng Agent engine, state và plugin ecosystem.
 
-**Architecture:** Core sở hữu loop, state, typed extension points và durable execution. SDK cung cấp Controller/Session; provider và nơi lưu state là integrations qua public contracts. Thực hiện ba kế hoạch nối tiếp; mỗi phần có deliverable và test gate riêng.
+**Architecture:** Package @tesseract/core sở hữu Agent/Controller/Session/Thread, loop, state, typed extension points và durable execution; public exports là SDK cho dev. Provider protocol và nơi lưu state là integrations qua public contracts. Thực hiện ba kế hoạch nối tiếp; mỗi phần có deliverable và test gate riêng.
 
 **Tech Stack:** Node.js >=24.14.0, pnpm 11.5.3, TypeScript 7.0.2, Vitest 5.0.4, ESM/NodeNext; node:sqlite và OpenAI SDK 7.34.0 chỉ ở integration packages.
 
 **Spec:** [Public API/state machine](../specs/2026-10-15-tesseract-public-api-state-machine-design.md), [core](../specs/2026-10-14-tesseract-core-design.md), [state](../specs/2026-10-14-tesseract-state-design.md), [notes](../../architecture-notes.md). Khi snippets cũ xung đột, public API/state machine là contract ưu tiên.
 
+**Cập nhật 2026-10-15 — ponytail từ đầu:** Rà lại cả A/B/C đã viết theo
+ponytail (full), giữ các hành vi người dùng đã chốt. Danh sách file và các
+abstraction trong subplans là lựa chọn triển khai để xét lại, không phải
+yêu cầu tạo đủ tầng. Event names là strings; constants và type map phục vụ
+autocomplete/type safety, thay event definition objects. Giảm code và
+dependency thực tế; chia file hoặc đổi tên đơn thuần không thay thế việc
+giản lược. Không xóa code hoặc làm lại workspace từ đầu theo nghĩa vật lý.
+Các kết quả kiểm thử cũ chỉ chứng minh phiên bản đã chạy; mọi thay đổi cần
+kiểm tra lại hành vi bị tác động.
+
 ## Global Constraints
 
 - Tesseract độc lập Cube/Mastra/Pi; không dùng engine của các framework đó.
-- Core không có third-party production dependencies, không import filesystem, provider SDK, SQLite, Controller hoặc Session implementation.
+- Core không có third-party production dependencies, không import filesystem, provider SDK hoặc SQLite; Agent/Controller/Session nằm trong core.
+- Một package chính @tesseract/core cung cấp SDK; không tạo @tesseract/sdk, SDK runtime hoặc RuntimePort để nối các thành phần core.
+- Agent trực tiếp sở hữu loop; Controller sở hữu lifecycle/resources; Session tương tác với cùng Agent. Không tạo class engine bọc bên dưới Agent.
 - Storage/checkpoint luôn có sẵn; memory backend default, SQLite reference backend qua node:sqlite trong package riêng.
 - Agent và Controller bắt buộc id do dev định danh; Session không có public id.
 - Agent có immutable default model; Session có model selection riêng; không truyền model lặp lại ở mỗi call.
@@ -38,9 +52,10 @@
 
 ## Hiện trạng và cách thực hiện
 
-Workspace đang có bốn tài liệu thiết kế; chưa có source, package, database hay
-Git repository. Kế hoạch này chưa được chạy. Không diễn giải check Markdown
-thành kết quả build/runtime.
+Đây là plan gốc trước khi triển khai. Workspace hiện đã có source và Git;
+tiến độ cùng bằng chứng kiểm thử được ghi trong execution ledger. Cập nhật
+ponytail ở trên áp dụng cả các phần đã triển khai. Không diễn giải check
+Markdown thành kết quả build/runtime.
 
 Thực hiện A → B → C theo thứ tự; không làm song song các phần đang thay đổi
 contracts chung. Mỗi task có vòng test fail → implement → pass → commit.
@@ -62,24 +77,19 @@ packages/core/
   src/messages/{message,parts,codec}.ts
   src/instructions/instruction.ts
   src/tools/{tool,input-definition}.ts
-  src/models/{contract,profile}.ts
+  src/models/{contract,profile,registry,resolver,cache,catalog}.ts
+  src/models/catalog.snapshot.json
   src/events/{definition,catalog,dispatcher}.ts
   src/plugins/{context,host,registry}.ts
   src/state/{schema,scope,storage-ports,memory-backend,commit,queries,fork,plugin-state}.ts
   src/trace/{records,usage}.ts
-  src/engine/{engine,context,tool-executor,interrupt,resume,recovery,delivery,tracked-effects}.ts
-  src/runtime/{port,index}.ts
-  src/agent.ts
+  src/engine/{context,tool-executor,interrupt,resume,recovery,delivery,tracked-effects}.ts
+  src/{agent,controller,thread,session,session-thread,session-events}.ts
   src/testing/{scripted-provider,harness,storage-conformance}.ts
   src/{index,errors,json}.ts
 packages/storage-sqlite/
   src/{backend,schema,ownership,index}.ts
-packages/sdk/
-  src/{controller,thread,session,session-thread,session-events,index}.ts
-  src/runtime.ts
-  src/models/{registry,resolver,cache,catalog}.ts
-  src/models/catalog.snapshot.json
-packages/provider-openai/
+packages/openai/
   src/{plugin,adapter,codec,metadata,index}.ts
 examples/
   cli/{package.json,tsconfig.json,src/main.ts}
@@ -92,8 +102,9 @@ README.md, docs/plugin-authoring.md, .github/workflows/ci.yml
 
 Mỗi package có package.json/tsconfig.json và test files do subplan chỉ rõ.
 Mỗi nhóm có một trách nhiệm; index.ts chỉ reexport, không initialize hoặc I/O.
-Core Agent chỉ phụ thuộc RuntimePort; SDK runtime implements port đó. Core
-engine không import Controller/Session, providers hoặc database drivers.
+Agent/Controller/Session và Thread dùng trực tiếp cùng agent loop trong core.
+Không thêm bridge runtime hoặc package trung gian. Core không import provider
+protocol implementations hoặc database drivers.
 Testing exports nằm ở subpath /testing, không tràn vào production barrel.
 
 Dependency DAG:
@@ -101,13 +112,12 @@ Dependency DAG:
 ~~~text
 storage-sqlite → core ← provider-openai
                     ↑
-                   sdk
-                    ↑
       examples / external plugin proofs / integration tests
 ~~~
 
-Provider helper dùng normalized core metadata/resolver contracts; SDK thực
-hiện orchestration/cache. Không tạo dependency từ core về SDK để lấy profile.
+Provider helper dùng normalized core metadata/resolver contracts; core cung
+cấp model registry/cache qua public SDK. Source đang ở packages/sdk cần được
+chuyển vào core và kiểm thử trước khi bỏ package trung gian đó.
 Tên package dùng trong workspace, chưa phải cam kết publish npm scope.
 
 ## Quy ước test, build và commits

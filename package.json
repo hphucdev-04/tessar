@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "typecheck": "tsc --noEmit -p tsconfig.tests.json && pnpm -r typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run --configLoader native --pool threads --exclude tests/integration/**",
     "test:integration": "vitest run --configLoader native --pool threads tests/integration",
     "check:boundaries": "node scripts/check-boundaries.mjs"

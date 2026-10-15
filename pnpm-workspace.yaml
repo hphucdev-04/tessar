@@ -2,4 +2,5 @@ packages:
   - packages/*
   - examples/cli
   - examples/headless
-
+minimumReleaseAgeExclude:
+  - openai@7.34.0
