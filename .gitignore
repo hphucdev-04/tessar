@@ -3,7 +3,8 @@ dist/
 .superpowers/
 .worktrees/
 .agents/
-examples
+docs/
+examples/
 *.db
 *.db-shm
 *.db-wal

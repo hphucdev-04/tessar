@@ -10,7 +10,8 @@ been published to npm, and Cube has not been migrated.
 | --- | --- |
 | `@tesseract/core` | Agent, Controller, Session, Thread, messages, tools, hooks, state, checkpoints and default memory storage |
 | `@tesseract/openai` | OpenAI Responses adapter and provider metadata integration |
-| `@tesseract/storage-sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
+| `@tesseract/plugins` | Optional Node host utilities for discovery, loading and npm package management; logger plugin at `/logger` |
+| `@tesseract/sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
 
 ## Public API
 
@@ -21,7 +22,7 @@ import { OpenAIPlugin } from "@tesseract/openai";
 const agent = new Agent({
   id: "assistant",
   model: { providerId: "openai", modelId: process.env.OPENAI_MODEL! },
-  plugins: [OpenAIPlugin({ apiKey: process.env.OPENAI_API_KEY! })],
+  plugins: [new OpenAIPlugin({ apiKey: process.env.OPENAI_API_KEY! })],
 });
 const controller = new Controller({ id: "application", agent });
 await controller.initialize();
@@ -54,29 +55,70 @@ send or stream method. Controller and Agent require developer-assigned IDs.
 
 ## Plugins
 
-```ts
-import { AgentEvents, type Plugin } from "@tesseract/core";
+Import tool APIs directly when defining tools:
 
-const blockWrite: Plugin = {
-  id: "block-write",
-  setup(tesseract) {
+```ts
+import { createTool, toolResult, type ToolDefinition } from "@tesseract/core/tool";
+```
+
+```ts
+import { AgentEvents, type Plugin, type PluginContext } from "@tesseract/core";
+
+class BlockWritePlugin implements Plugin {
+  readonly id = "block-write";
+  setup(tesseract: PluginContext): void {
     tesseract.hook(AgentEvents.BeforeTool, event => {
       if (event.payload.tool.name === "write") {
         return { decision: "deny", reason: "Write tool disabled" };
       }
     });
-  },
-};
+  }
+}
+
+const blockWrite = new BlockWritePlugin();
 ```
 
 Event constants are strings, such as `AgentEvents.BeforeTool === "tool.before"`.
 Types provide autocomplete and inferred payloads/results. Plugins do not declare
-apiVersion. Add imported plugin instances to Agent options or use
+apiVersion. Built-in and custom plugins use classes instantiated with `new`.
+`Plugin` describes the instance's ID and setup contract; no base class is required.
+Add imported plugin instances to Agent options or use
 `controller.plugins.attach(plugin)` / `detach(id)` while ready.
 
 [Plugin authoring](docs/plugin-authoring.md) describes tools, state, cleanup and
-durability boundaries. Discovering/loading/installing plugin code after packaging
-is deferred as TD-001. Core does not scan root directories or install dependencies.
+durability boundaries. `@tesseract/plugins` provides opt-in discovery/loading and
+npm install/update/remove for Node hosts. Core does not scan root directories or
+install dependencies.
+
+```ts
+import { PluginManager } from "@tesseract/plugins";
+import { resolve } from "node:path";
+
+const manager = new PluginManager({
+  directory: resolve(".tesseract"),
+  hostUrl: import.meta.url,
+});
+// Pass await manager.load() to Agent's plugins.
+// In finally: await controller.dispose(), then manager.dispose().
+```
+
+Put a default-exported plugin in `.tesseract/plugins/example.mjs` (or erasable
+`.ts`). It imports the host's `@tesseract/core` without a separate SDK install.
+Additional dependencies use normal Node resolution from the plugin environment.
+
+## Logging
+
+Add `new LoggerPlugin()` from `@tesseract/plugins/logger` to the Agent's `plugins` for JSON
+logs on stderr. Supply `new LoggerPlugin({ write: entry => yourLogger.write(entry) })`
+to choose another destination. Entries include event type, timestamp and execution
+identity. Error payloads identify their source: `tesseract`, `provider`, `plugin`,
+`tool`, `storage` or `application`, with the relevant provider/plugin/tool identity.
+SDK exceptions keep their original object when thrown; trace/state store JSON error
+records. Diagnostic hook failures are isolated to prevent recursive logging.
+The subpath also default-exports the stderr logger plugin for
+`PluginManager.load(["@tesseract/plugins/logger"])` when the package is available
+in the configured plugin directory. Core is an optional peer dependency; the
+loader supplies the host's SDK without npm installing another copy.
 
 ## Storage, models and recovery
 
@@ -111,9 +153,14 @@ pnpm check:boundaries
 node examples/headless/dist/main.js
 node examples/cli/dist/main.js hello
 node examples/cli/dist/main.js hello --db ./state.db --approval
+node examples/cli/dist/main.js plugins list
+node examples/cli/dist/main.js plugins install example-plugin
+node examples/cli/dist/main.js plugins update example-plugin
+node examples/cli/dist/main.js plugins remove example-plugin
 ```
 
-The last command prints a suspended execution with Thread/interrupt IDs. Resume
+The `hello --db ./state.db --approval` command prints a suspended execution with
+Thread/interrupt IDs. Resume
 in a new process with `--db ./state.db --thread <id> --resume <interrupt-id> --approval`.
 CLI uses a scripted provider by default; `--openai` requires OPENAI_API_KEY and
 OPENAI_MODEL. No live API is required by the default checks.
@@ -121,3 +168,6 @@ OPENAI_MODEL. No live API is required by the default checks.
 Current authority: [English spec](docs/superpowers/specs/2026-10-15-tesseract-minimal-core-design.md)
 and [English plan](docs/superpowers/plans/2026-10-15-tesseract-minimal-core-plan.md).
 Earlier design documents are historical and are superseded by these documents.
+[Plugin distribution spec](docs/superpowers/specs/2026-10-15-plugin-distribution-design.md)
+and [plan](docs/superpowers/plans/2026-10-15-plugin-distribution-plan.md) extend them
+for Node/npm hosts. Standalone executable packaging requires its own runtime proof.

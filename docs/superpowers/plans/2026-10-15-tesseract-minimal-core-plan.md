@@ -1,6 +1,6 @@
 # Tesseract Minimal Core Implementation Plan
 
-> **For agentic workers:** Use superpowers:executing-plans to implement this plan natively, task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use superpowers:executing-plans to implement this plan natively, task by task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deliver the agreed core package and plugin API with a working Agent,
 Controller and Session, preserving tested persistence and provider behavior.
@@ -44,11 +44,11 @@ agent.ts and engine/{resume,delivery,tracked-effects}.ts; existing event/plugin 
 Produces: AgentEvents string constants, EventMap/StreamEvent, PluginContext.hook,
 Plugin {id,setup}; per-host hook kind/version metadata; immutable event identities.
 
-- [ ] Add tests for string constants, inferred hook payload/result, no mandatory apiVersion,
+- [x] Add tests for string constants, inferred hook payload/result, no mandatory apiVersion,
   custom hooks and saved-order continuation. Run them and observe failures.
-- [ ] Replace definition objects with strings/types and per-host registration metadata;
+- [x] Replace definition objects with strings/types and per-host registration metadata;
   migrate all source/tests to setup(tesseract) and hook. Remove old aliases/prefixes.
-- [ ] Run event/plugin tests and strict typecheck; existing behavior tests stay meaningful.
+- [x] Run event/plugin tests and strict typecheck; existing behavior tests stay meaningful.
 
 ## Task 2: Agent, Controller and Thread in core
 
@@ -59,12 +59,12 @@ Produces: Agent(options).stream/generate; Controller.initialize/create/get/list/
 forkThread/models/plugins/dispose; scoped Thread APIs from the spec. Agent directly
 contains the existing execution logic. Helpers may be plain functions where justified.
 
-- [ ] Run existing constructor/lifecycle/parity/query tests and observe missing implementations.
-- [ ] Complete the interrupted source migration, fix internal imports, and remove old SDK
+- [x] Run existing constructor/lifecycle/parity/query tests and observe missing implementations.
+- [x] Complete the interrupted source migration, fix internal imports, and remove old SDK
   package aliases/files. Compose resources directly in Controller with no intermediary port.
-- [ ] Ensure asynchronous Thread preparation still returns one Stream attachment immediately;
+- [x] Ensure asynchronous Thread preparation still returns one Stream attachment immediately;
   input admission checks readiness/scope/limits before dispatch and preserves cleanup.
-- [ ] Run focused tests, full core tests, strict typecheck, build and SQLite process tests.
+- [x] Run focused tests, full core tests, strict typecheck, build and SQLite process tests.
 
 ## Task 3: Session interaction and queue
 
@@ -73,11 +73,11 @@ Files: core/{session,session-thread,session-events,controller,index}.ts and focu
 Produces: createSession({scope?,model?}), typed subscribe, enqueue receipts, resume/recover
 admission receipts, abort/dispose, selected Thread facade and per-instance events.
 
-- [ ] Add gated-model tests: FIFO, captured model, suspension hold/resume drain, failed/cancelled
+- [x] Add gated-model tests: FIFO, captured model, suspension hold/resume drain, failed/cancelled
   discard, same-scope isolation, switch failure, safe fork and active disposal refusal. Run RED.
-- [ ] Implement the facade on the existing Agent admission/delivery paths, without another loop.
-- [ ] Add public compile assertions excluding id/send/stream/initialize/per-method scope overrides.
-- [ ] Run Session tests, full unit suite, strict typecheck, build and process recovery tests.
+- [x] Implement the facade on the existing Agent admission/delivery paths, without another loop.
+- [x] Add public compile assertions excluding id/send/stream/initialize/per-method scope overrides.
+- [x] Run Session tests, full unit suite, strict typecheck, build and process recovery tests.
 
 ## Task 4: Public consumers, examples and final verification
 
@@ -87,9 +87,27 @@ docs/plugin-authoring.md, scripts/check-boundaries.mjs and CI workflow.
 Produces: offline CLI/headless consumers using public imports; a concise plugin example
 using tesseract.hook and real tool registration; source/package boundary checks and CI.
 
-- [ ] Add failing black-box tests for built core exports and offline example processes.
-- [ ] Implement minimal hosts/docs and boundary checks; no filesystem plugin loader/installer.
-- [ ] Verify pnpm install --frozen-lockfile, typecheck, build, test, test:integration,
+- [x] Add failing black-box tests for built core exports and offline example processes.
+- [x] Implement minimal hosts/docs and boundary checks; no filesystem plugin loader/installer.
+- [x] Verify pnpm install --frozen-lockfile, typecheck, build, test, test:integration,
   check:boundaries and git diff --check. Report scripted/SSE/process evidence separately.
-- [ ] Perform one fresh whole-change review as required by native execution, fix important
+- [x] Perform one fresh whole-change review as required by native execution, fix important
   findings with regression checks, and record any actual limitations. No release claim.
+
+## Implementation result
+
+All four tasks are implemented. Local Windows gates passed: frozen installation,
+typecheck, five package/example builds, 97 unit tests, 7 integration tests,
+package boundaries and diff whitespace checks. The package dry-run includes the
+models.dev MIT license alongside the bundled catalog. Examples are visible to Git.
+
+Fresh review confirmed ignored BeforeTool stop decisions, swallowed policy errors
+and work admitted during Session close. These plus unfinished terminal turn records
+were reproduced RED and fixed GREEN. The reviewer exhausted its usage limit before
+delivering a final report; remaining inspection was performed by the implementer,
+not a second independent reviewer. No live OpenAI call or hosted CI run is claimed.
+
+The previously deferred initialize-after-dispose minor is fixed by the
+[debt repayment plan](2026-10-15-plugin-distribution-plan.md), which also addresses
+TD-001 for Node/npm hosts. Final fixes remain in the worktree; Git writes
+are restricted by the current permission profile.

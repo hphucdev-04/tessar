@@ -36,7 +36,7 @@ export function createDelivery(
   ids: IdGenerator,
   target: DeliveryTarget,
   external?: AbortSignal,
-  diagnostics: (error: ErrorInfo) => void = () => {},
+  diagnostics: (error: ErrorInfo, context?: EventContext) => void = () => {},
   limits = { maxEvents: 512, maxBytes: 4 * 1024 * 1024 },
 ): Attachment {
   const controller = new AbortController(),
@@ -49,9 +49,9 @@ export function createDelivery(
     lastCheckpoint: string | null = null;
   const queue: { event: EventEnvelope; bytes: number }[] = [],
     waiting: ((value: IteratorResult<EventEnvelope>) => void)[] = [];
-  const report = (error: ErrorInfo) => {
+  const report = (error: ErrorInfo, context?: EventContext) => {
     try {
-      diagnostics(error);
+      diagnostics(error, context);
     } catch {
       /* diagnostics cannot control execution */
     }
@@ -128,10 +128,10 @@ export function createDelivery(
             typeof (result as PromiseLike<unknown>).then === "function"
           )
             void Promise.resolve(result).catch((error) =>
-              report(errorInfo(error)),
+              report(errorInfo(error, { source: "application", eventId: event.type }), event),
             );
         } catch (error) {
-          report(errorInfo(error));
+          report(errorInfo(error, { source: "application", eventId: event.type }), event);
         }
         return;
       }
@@ -147,6 +147,8 @@ export function createDelivery(
         bytes + size > limits.maxBytes
       ) {
         const error: ErrorInfo = {
+          source: "tesseract",
+          name: "TesseractError",
           code: "ConsumerTooSlow",
           message: "Stream consumer exceeded its buffer",
           retryable: false,
@@ -166,7 +168,7 @@ export function createDelivery(
           ),
           bytes: 0,
         });
-        report(error);
+        report(error, { ...context, streamId: id, threadId, handleId });
         return;
       }
       queue.push({ event, bytes: size });

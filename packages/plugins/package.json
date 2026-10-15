@@ -1,0 +1,15 @@
+{
+  "name": "@tesseract/plugins",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"},
+    "./logger": {"types": "./dist/logger.d.ts", "import": "./dist/logger.js"}
+  },
+  "files": ["dist"],
+  "engines": {"node": ">=24.14.0"},
+  "peerDependencies": {"@tesseract/core": "workspace:^"},
+  "peerDependenciesMeta": {"@tesseract/core": {"optional": true}},
+  "devDependencies": {"@tesseract/core": "workspace:*"},
+  "scripts": {"build": "tsc -p tsconfig.json", "typecheck": "tsc --noEmit -p tsconfig.json"}
+}

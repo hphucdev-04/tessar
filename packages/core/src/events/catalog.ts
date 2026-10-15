@@ -47,6 +47,7 @@ export interface StreamOutcome {
   interrupt: InterruptRecord | null;
 }
 export const AgentEvents = {
+  Diagnostic: "diagnostic",
   Ready: "ready",
   Shutdown: "shutdown",
   ThreadPrepare: "thread.prepare",
@@ -94,6 +95,7 @@ type Transform<P> = HookSpec<P, P, ExecutionHookContext>;
 type Decision<P> = HookSpec<P, ControlDecision, DecisionHookContext>;
 declare module "./definition.js" {
   interface EventMap {
+    diagnostic: HookSpec<{ error: ErrorInfo }>;
     ready: HookSpec<{ agentId: string }>;
     shutdown: HookSpec<{}>;
     "thread.prepare": HookSpec<CreateThreadOptions, CreateThreadOptions>;

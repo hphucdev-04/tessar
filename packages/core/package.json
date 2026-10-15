@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./tool": {
+      "types": "./dist/tools/tool.d.ts",
+      "import": "./dist/tools/tool.js"
+    },
     "./testing/storage-conformance": {
       "types": "./dist/testing/storage-conformance.d.ts",
       "import": "./dist/testing/storage-conformance.js"
@@ -22,6 +26,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "src/models/catalog.LICENSE"
   ]
 }

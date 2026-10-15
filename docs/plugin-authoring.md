@@ -1,14 +1,15 @@
 # Writing a Tesseract plugin
 
-Use public exports from `@tesseract/core`. A plugin has an ID and setup callback;
-the callback receives `tesseract: PluginContext`. No apiVersion is required.
+Use public exports from `@tesseract/core`. Built-in and custom plugins are classes
+instantiated with `new`. Implement `Plugin` to describe the instance's ID and setup
+method; no base class or apiVersion is required. Setup receives `tesseract: PluginContext`.
 
 ```ts
-import { AgentEvents, createTool, toolResult, type Plugin } from "@tesseract/core";
+import { AgentEvents, createTool, toolResult, type Plugin, type PluginContext } from "@tesseract/core";
 
-export const greeting: Plugin = {
-  id: "greeting",
-  setup(tesseract) {
+export class GreetingPlugin implements Plugin {
+  readonly id = "greeting";
+  setup(tesseract: PluginContext): void {
     tesseract.tools.register(createTool({
       name: "greet",
       description: "Greet one person",
@@ -31,8 +32,10 @@ export const greeting: Plugin = {
     tesseract.hook(AgentEvents.ModelUsage, event => {
       console.log(event.payload.usage);
     });
-  },
-};
+  }
+}
+
+export default new GreetingPlugin();
 ```
 
 The schema describes input to the model; parse validates untrusted arguments and
@@ -47,6 +50,14 @@ decision hooks return explicit allow/deny/continue/stop decisions. A later handl
 cannot overturn a denial. Required handler failures stop execution; notification
 errors go to Controller diagnostics. Notifications do not expose mutable execution
 services. Session.subscribe is observation and is not awaited as a policy hook.
+
+`AgentEvents.Diagnostic` exposes Controller diagnostics through the same hook API.
+Error records carry an explicit source (`tesseract`, `provider`, `plugin`, `tool`,
+`storage`, `application`) and available component identity. Provider/plugin
+exceptions retain their original objects in-process; JSON snapshots belong to
+trace/state. A diagnostic handler failure is isolated without emitting another
+diagnostic. `@tesseract/plugins/logger` subscribes to lifecycle notifications and diagnostics;
+its default writer emits JSON to stderr, and `write(entry)` selects another sink.
 
 Custom events extend EventMap with HookSpec payload/result/context types. Their
 default runtime behavior is notification; use the optional registration options
@@ -85,8 +96,65 @@ generic state, hooks, checkpoints, progress, cancellation and trace mechanisms.
 
 ## Distribution
 
-During development, import the plugin object and pass it in Agent options. A CLI
-can package those imports and dependencies for its users. Local files can use only
-the host-provided API and need no runtime SDK import. Any additional imported npm
-dependency must be resolvable from the plugin's environment. The CLI/application
-owns discovery/loading and installation; these facilities remain deferred as TD-001.
+During development, instantiate the plugin class with `new` and pass the instance
+in Agent options. For external loading, default-export an instance, for example
+`export default new GreetingPlugin()`. The loader passes that instance to core;
+it does not instantiate classes or require a different plugin API.
+Node hosts can also use `PluginManager` from the optional `@tesseract/plugins`.
+The host chooses its directory, calls load before constructing Agent and keeps
+the manager alive through Controller disposal. Use a finally block even if loading
+or initialization fails. The loader does not call setup or install missing packages.
+
+```ts
+const manager = new PluginManager({ directory: resolve(".tesseract"), hostUrl: import.meta.url });
+let controller: Controller | undefined;
+try {
+  const agent = new Agent({ id: "host", model, plugins: await manager.load() });
+  controller = new Controller({ id: "host", agent });
+  await controller.initialize();
+  // Use the ordinary Agent/Session APIs.
+} finally {
+  try { await controller?.dispose(); }
+  finally { manager.dispose(); }
+}
+```
+
+Discovery loads sorted files from `<directory>/plugins`, followed by package
+names in `<directory>/package.json`'s `tesseract.plugins` array. Each module must
+default-export a Plugin object. A plugin folder can expose `index.mjs`, `index.js`,
+`index.cjs`, `index.mts`, `index.ts` or `index.cts`. Put helper modules inside that
+folder; top-level files in plugins are treated as entry points. Declaration files
+are ignored. `load(["./custom.mjs", "some-package"])` selects explicit sources
+instead; relative paths and packages resolve from the configured directory.
+
+Local plugins may import the host's public `@tesseract/core` exports, including
+AgentEvents/createTool/message classes, without installing another SDK copy.
+Scoped Node hooks map SDK imports in the plugin graph to the host, including lazy
+imports. Other imports resolve normally relative to the importing file. Dispose
+the manager after runtime shutdown to deregister those hooks.
+
+Node 24.14+ directly executes local erasable TypeScript. It does not process
+tsconfig aliases, TSX, enums or parameter-property transforms. npm packages must
+publish JavaScript and declare a compatible `@tesseract/core` peer dependency.
+The loader supplies the host SDK; it does not adapt incompatible APIs or invent a
+separate apiVersion. Existing plugin/interruption versions still guard saved work.
+
+`install(source, {name?})`, `update(name?)` and `remove(name)` delegate to installed
+npm in the configured directory. The default source can be an npm package/version
+or a local package directory. Git/URL/tarball sources should provide their package
+name, e.g. `install("git+https://example.com/team/plugin.git#v1", {name: "my-plugin"})`.
+The demo CLI accepts `plugins install <source> --name <package>` and `--plugin-dir`.
+CLI local paths resolve from the shell's working directory; PluginManager API
+local paths resolve from its configured directory. An explicit package name must
+match the source's package metadata, even if that name is already a helper dependency.
+Only successfully installed plugin names enter tesseract.plugins; other direct
+dependencies remain helpers. Existing manifest fields and npm lockfiles are preserved.
+Install saves exact versions; update obeys saved dependency constraints. Install an
+explicit newer version to move outside them. Await operations and use a single
+mutating process per directory. npm may run package lifecycle scripts, and a failed
+npm operation is not an atomic rollback of its filesystem changes.
+
+Loading executes trusted code. Module evaluation side effects are not rolled back.
+Node caches modules, so restart the host after changing/updating a module on disk.
+Runtime attach/detach still works with loaded plugin objects. This is verified for
+Node/npm hosts; Bun-compiled binaries and Node SEA require separate packaging tests.

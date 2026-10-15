@@ -1465,7 +1465,7 @@ trình triển khai; tiến độ thực tế theo execution ledger, không suy 
   đã có Anthropic/Google adapters; normalized contract giữ được extension này.
 - Root scripts chuẩn: build, typecheck, test, test:integration, check:boundaries.
 - Test default offline/deterministic; live provider smoke opt-in theo environment.
-- Package chính là @tesseract/core; integrations dùng @tesseract/storage-sqlite
+- Package chính là @tesseract/core; integrations dùng @tesseract/sqlite
   và @tesseract/openai. Không cần package @tesseract/sdk; chưa publish npm.
 - SQLite dùng parameterized SQL, WAL, busy timeout 5000 ms, BEGIN IMMEDIATE.
   DatabaseSync là synchronous và node:sqlite còn active development ở baseline;
