@@ -32,6 +32,7 @@ export class PluginHost {
       registry: { register },
       tools: { register: tool => register("tool", tool.name, tool) },
       models: { registerProvider: provider => register("provider", provider.id, provider) },
+      storage: { registerBackend: backend => { register("storage", "primary", backend); api.defer(() => backend.close()); } },
       defer: disposer => { slot.disposers.push(disposer); },
       on: (definition, handler) => {
         const prior = definitions.get(definition.id);

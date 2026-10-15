@@ -15,3 +15,7 @@ export * from "./tools/input-definition.js";
 export * from "./tools/tool.js";
 export * from "./trace/usage.js";
 export * from "./trace/records.js";
+export * from "./state/schema.js";
+export * from "./state/storage-ports.js";
+export * from "./state/memory-backend.js";
+export * from "./state/commit.js";
