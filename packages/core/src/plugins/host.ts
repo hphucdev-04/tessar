@@ -31,6 +31,7 @@ export class PluginHost {
     };
     const api: PluginContext = {
       registry: { register },
+      interruptions: { register: definition => register("interruption",definition.id,{definition,pluginId:plugin.id},definition.version) },
       state: { define: definition => { const state=definePluginState({...definition,pluginId:plugin.id}); register("state",plugin.id+":"+state.namespace,state,state.schemaVersion); return state; } },
       tools: { register: tool => register("tool", tool.name, tool) },
       models: { registerProvider: provider => register("provider", provider.id, provider) },

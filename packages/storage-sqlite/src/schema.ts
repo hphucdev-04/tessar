@@ -3,7 +3,7 @@ export const recordTables=["streams","turns","model_attempts","tool_executions",
 export function initializeSchema(db:DatabaseSync):void {
   const version=(db.prepare("PRAGMA user_version").get() as {user_version:number}).user_version;
   if(version!==0&&version!==1)throw Error("Unsupported SQLite schema version");
-  db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
+  db.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY,body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,revision INTEGER NOT NULL,body TEXT NOT NULL,UNIQUE(thread_id,revision));

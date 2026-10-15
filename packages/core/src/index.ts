@@ -24,3 +24,4 @@ export * from "./state/queries.js";
 export * from "./state/threads.js";
 export * from "./state/fork.js";
 export * from "./state/plugin-state.js";
+export * from "./engine/interrupt.js";

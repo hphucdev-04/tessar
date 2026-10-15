@@ -7,9 +7,10 @@ import type { ModelUsage,UsageSummary } from "../trace/usage.js";
 import type { ToolResult as ToolResultData } from "../tools/tool.js";
 import type { InterruptRecord,ThreadInfo } from "../state/schema.js";
 import type { CreateThreadOptions } from "../state/threads.js";
+import type { DecisionHookContext } from "../engine/interrupt.js";
 const notification=<P>(name:string)=>defineEvent<P,void,"notification">({id:"core."+name,owner:"core",version:1,kind:"notification"});
 const transform=<P>(name:string)=>defineEvent<P,P,"transformation">({id:"core."+name,owner:"core",version:1,kind:"transformation"});
-const decision=<P,R=ControlDecision>(name:string)=>defineEvent<P,R,"decision">({id:"core."+name,owner:"core",version:1,kind:"decision"});
+const decision=<P,R=ControlDecision>(name:string)=>defineEvent<P,R,"decision",DecisionHookContext>({id:"core."+name,owner:"core",version:1,kind:"decision"});
 const barrier=<P>(name:string)=>defineEvent<P,void,"barrier">({id:"core."+name,owner:"core",version:1,kind:"barrier"});
 export type ControlDecision={decision:"allow"|"deny"|"continue"|"stop"|"retry"|"fail";reason?:string}|{decision:"select";model:ModelRef}|{decision:"suspend";definitionId:string;payload:JsonValue;pluginId:string;definitionVersion:number};
 export interface InputPreparation {messages:readonly MessageData[];handled?:{output:readonly MessageData[]};rejected?:ErrorInfo}

@@ -16,10 +16,14 @@ export async function dispatch<D extends AnyEvent>(
   diagnostics: (error: ReturnType<typeof errorInfo>) => void,
 ): Promise<ResultOf<D>> {
   let current: unknown =
-    definition.kind === "transformation" ? payload : undefined;
+    definition.kind === "transformation" ? payload : context.initialDecision;
+  let handlerIndex=-1;
   for (const registration of lease.handlers.filter(
     (h) => h.definition.id === definition.id,
   )) {
+    handlerIndex++;
+    if(handlerIndex<((context.startIndex as number|undefined)??0))continue;
+    if(context.allowedHandlerIds && !(context.allowedHandlerIds as readonly string[]).includes(registration.id))continue;
     if (context.signal?.aborted && definition.kind !== "notification" && definition.kind !== "barrier")
       throw new TesseractError("Cancelled", "Execution cancelled");
     try {
@@ -40,9 +44,11 @@ export async function dispatch<D extends AnyEvent>(
           )
         )
           current = result;
+        if(context.onDecision)await (context.onDecision as (entry:{handlerId:string;index:number;decision:unknown})=>Promise<void>)({handlerId:registration.id,index:handlerIndex,decision:current});
         if ((result as { decision?: string }).decision === "suspend") break;
       }
     } catch (cause) {
+      if(cause instanceof TesseractError && ["StorageUnavailable","CommitConflict","OwnershipLost"].includes(cause.code))throw cause;
       const error = new TesseractError("PluginError", "Plugin handler failed", {
         pluginId: registration.pluginId,
         eventId: definition.id,
