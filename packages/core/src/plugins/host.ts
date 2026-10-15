@@ -4,6 +4,7 @@ import { AgentEvents } from "../events/catalog.js";
 import type { AnyEvent, EventContext, PayloadOf, ResultOf } from "../events/definition.js";
 import type { HookContext, Plugin, PluginContext } from "./context.js";
 import { RegistryLease, type PluginSlot, type ValueRegistration } from "./registry.js";
+import { definePluginState } from "../state/plugin-state.js";
 export class PluginHost {
   private slots: PluginSlot[] = [];
   private generation = 0;
@@ -30,6 +31,7 @@ export class PluginHost {
     };
     const api: PluginContext = {
       registry: { register },
+      state: { define: definition => { const state=definePluginState({...definition,pluginId:plugin.id}); register("state",plugin.id+":"+state.namespace,state,state.schemaVersion); return state; } },
       tools: { register: tool => register("tool", tool.name, tool) },
       models: { registerProvider: provider => register("provider", provider.id, provider) },
       storage: { registerBackend: backend => { register("storage", "primary", backend); api.defer(() => backend.close()); } },

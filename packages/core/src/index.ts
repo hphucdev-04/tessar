@@ -19,3 +19,8 @@ export * from "./state/schema.js";
 export * from "./state/storage-ports.js";
 export * from "./state/memory-backend.js";
 export * from "./state/commit.js";
+export * from "./state/scope.js";
+export * from "./state/queries.js";
+export * from "./state/threads.js";
+export * from "./state/fork.js";
+export * from "./state/plugin-state.js";

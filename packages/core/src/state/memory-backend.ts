@@ -1,22 +1,29 @@
 import { fail } from "../errors.js";
 import { immutable, systemClock, type Clock } from "../json.js";
 import { canonicalJson, validateBatch } from "./commit.js";
-import type { Checkpoint, ThreadInfo, RecordEntry, RecordKind, RecordTypes } from "./schema.js";
+import type { Checkpoint, ThreadInfo, RecordEntry, RecordKind, RecordTypes, PluginStateSnapshot } from "./schema.js";
+import { matchesScope } from "./scope.js";
 import type { CommitBatch, CommitReceipt, Lease, StorageBackend } from "./storage-ports.js";
 export function createMemoryBackend(options:{clock?:Clock}={}):StorageBackend {
   const clock=options.clock??systemClock;
   const heads=new Map<string,ThreadInfo>(),snapshots=new Map<string,Checkpoint>(),records=new Map<string,readonly RecordEntry[]>();
   const staged=new Map<string,CommitBatch>(),receipts=new Map<string,CommitReceipt>(),leases=new Map<string,Lease>(),fences=new Map<string,number>();
   let closed=false;
+  const ownedStates=new Map<string,PluginStateSnapshot>();
+  const ownerKey=(key:Pick<PluginStateSnapshot,"ownerType"|"ownerId"|"pluginId"|"namespace">)=>canonicalJson([key.ownerType,key.ownerId,key.pluginId,key.namespace]);
   const guard=()=>{if(closed)fail("Disposed","Backend closed");};
   const assertLease=(lease:Lease)=>{guard();const active=leases.get(lease.threadId);if(!active||active.ownerToken!==lease.ownerToken||active.fencingToken!==lease.fencingToken||Date.parse(active.expiresAt)<=Date.parse(clock.now()))fail("OwnershipLost","Lease no longer owns thread");};
   const currentRecords=(threadId:string,checkpointId?:string):readonly RecordEntry[]=>records.get(checkpointId??heads.get(threadId)?.currentCheckpointId??"")??[];
   const allRecords=(checkpointId?:string)=>checkpointId?(records.get(checkpointId)??[]):[...heads.values()].flatMap(h=>currentRecords(h.id));
   const backend:StorageBackend={
+    ownedState:{
+      get:async key=>{guard();return ownedStates.get(ownerKey(key))??null;},
+      compareAndSet:async(state,expectedRevision)=>{guard();if(!["agent","session"].includes(state.ownerType))fail("InvalidConfiguration","Thread/stream/turn state must use checkpoint commits");const key=ownerKey(state);if((ownedStates.get(key)?.revision??0)!==expectedRevision||state.revision!==expectedRevision+1)fail("CommitConflict","Owned state revision changed");ownedStates.set(key,immutable(state));}
+    },
     id:"memory",capabilities:{durable:false,atomicPublish:true,coordination:"single-process"},
     threads:{
       get:async id=>{guard();const head=heads.get(id);return head&&!head.deleted?head:null;},
-      list:async()=>{guard();return [...heads.values()].filter(h=>!h.deleted);}
+      list:async query=>{guard();return [...heads.values()].filter(h=>!h.deleted&&matchesScope(h.scope,query?.scope));}
     },
     checkpoints:{get:async id=>{guard();return snapshots.get(id)??null;},list:async id=>{guard();return [...snapshots.values()].filter(cp=>cp.threadId===id);}},
     executions:{
