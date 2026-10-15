@@ -1,7 +1,10 @@
 import { normalizeContent } from "../messages/message.js";
 import { immutable } from "../json.js";
 import type { Tool,ToolExecutionContext,ToolResult } from "../tools/tool.js";
+import { TesseractError } from "../errors.js";
+import { abortable } from "./abort.js";
 export async function executeTool(tool:Tool,input:unknown,context:ToolExecutionContext):Promise<ToolResult> {
- const parsed=tool.input.parse(input),result=await tool.execute(parsed,context);
+ if(context.signal.aborted)throw new TesseractError("Cancelled","Tool cancelled before dispatch");
+ const parsed=tool.input.parse(input),result=await abortable(tool.execute(parsed,context),context.signal,()=>new TesseractError("RecoveryRequired","In-flight tool cancellation has unknown external outcome"));
  return immutable({...result,content:normalizeContent(result.content)});
 }

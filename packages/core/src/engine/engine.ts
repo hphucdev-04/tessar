@@ -1,3 +1,5 @@
+import { createDelivery, type Stream, type DeliveryTarget, type Attachment } from "./delivery.js";
+export type { Stream, DeliveryTarget } from "./delivery.js";
 import { TesseractError,errorInfo,fail,type ErrorInfo } from "../errors.js";
 import { immutable,randomIds,systemClock,type Clock,type IdGenerator,type JsonObject,type JsonValue } from "../json.js";
 import { normalizeInstruction,type Instruction } from "../instructions/instruction.js";
@@ -28,26 +30,7 @@ export type ExecutionRequest=(
  |{kind:"resume";threadId:string;interruptId:string;value:JsonValue;model?:ModelRef}
  |{kind:"recover";threadId:string;streamId:string;model?:ModelRef}
 )&{signal?:AbortSignal};
-export interface Stream extends AsyncIterable<EventEnvelope> {readonly id:string|null;readonly threadId:string;readonly handleId:string;readonly signal:AbortSignal;abort(reason?:string):void}
-export type DeliveryTarget={kind:"iterator"}|{kind:"observer";observe:(event:EventEnvelope)=>void;admitted?:(receipt:{streamId:string;threadId:string})=>void;rejected?:(error:ErrorInfo)=>void};
 export interface EngineOptions {backend:StorageBackend;registry:PluginHost;instructions?:Instruction;limits?:Partial<StreamLimits>;clock?:Clock;ids?:IdGenerator;agentId?:string;controllerId?:string;diagnostics?:(error:ErrorInfo)=>void}
-interface Attachment {stream:Stream;controller:AbortController;setId(id:string):void;emit(definition:AnyEvent,payload:any,context:EventContext):void;close():void;admitted():void;rejected(error:ErrorInfo):void}
-function attachment(threadId:string,ids:IdGenerator,target:DeliveryTarget,external?:AbortSignal,diagnostics:(error:ErrorInfo)=>void=()=>{}):Attachment {
- const controller=new AbortController(),handleId=ids.next("handle");let id:string|null=null,closed=false,detached=false,iterated=false;
- const queue:EventEnvelope[]=[],waiting:((value:IteratorResult<EventEnvelope>)=>void)[]=[];
- const cancel=()=>{if(!closed)controller.abort(external?.reason);};if(external?.aborted)cancel();else external?.addEventListener("abort",cancel,{once:true});
- const stream:Stream={get id(){return id;},threadId,handleId,signal:controller.signal,abort(reason){if(!closed)controller.abort(reason);},
- [Symbol.asyncIterator](){if(iterated||target.kind!=="iterator")fail("ConsumerAlreadyAttached","Only one iterator consumer is allowed");iterated=true;return {
- next:()=>queue.length?Promise.resolve({value:queue.shift()!,done:false}):closed||detached?Promise.resolve({value:undefined,done:true}):new Promise(resolve=>waiting.push(resolve)),
- return:async()=>{detached=true;queue.length=0;for(const resolve of waiting.splice(0))resolve({value:undefined,done:true});return {value:undefined,done:true};}
- };}};
- return {stream,controller,setId(value){id=value;},emit(definition,payload,context){
-  const event=new EventEnvelope(definition,payload,{...context,streamId:id,threadId,handleId});
-  if(target.kind==="observer"){try{target.observe(event);}catch(error){diagnostics(errorInfo(error));}return;}
-  if(detached||closed)return;const resolve=waiting.shift();if(resolve)resolve({value:event,done:false});else queue.push(event);
- },close(){closed=true;external?.removeEventListener("abort",cancel);for(const resolve of waiting.splice(0))resolve({value:undefined,done:true});},
- admitted(){if(id&&target.kind==="observer")target.admitted?.({streamId:id,threadId});},rejected(error){if(target.kind==="observer")target.rejected?.(error);}};
-}
 export interface ExecutionFrame {
  heartbeat?:ReturnType<typeof setInterval>;ownershipError?:ErrorInfo;
  request:ExecutionRequest;sink:Attachment;registry:RegistryLease;lease:Lease;cp:Checkpoint;stream:StreamRecord;
@@ -60,7 +43,7 @@ export class AgentEngine {
  constructor(readonly options:EngineOptions){this.backend=options.backend;this.registry=options.registry;this.ids=options.ids??randomIds;this.clock=options.clock??systemClock;this.instructions=options.instructions??normalizeInstruction();this.limits={maxTurns:32,maxModelAttempts:64,maxToolCalls:128,...options.limits};for(const limit of Object.values(this.limits))if(!Number.isInteger(limit)||limit<1)fail("InvalidConfiguration","Limits must be positive integers");}
  start(request:ExecutionRequest,target:DeliveryTarget={kind:"iterator"}):Stream {
   if(this.closed)fail("Disposed","Engine closed");
-  const sink=attachment(request.threadId,this.ids,target,request.signal,this.options.diagnostics),registry=this.registry.capture();
+  const sink=createDelivery(request.threadId,this.ids,target,request.signal,this.options.diagnostics),registry=this.registry.capture();
   const job=Promise.resolve().then(()=>this.execute(request,sink,registry)).catch(error=>{sink.emit(AgentEvents.StreamError,{error:errorInfo(error),lastKnownCheckpointId:null,persistedStatus:null},{});sink.rejected(errorInfo(error));sink.close();});
   this.jobs.add(job);void job.then(()=>this.jobs.delete(job));return sink.stream;
  }
@@ -262,6 +245,7 @@ export class AgentEngine {
    }
   }catch(error){
    if(error instanceof Suspension)throw error;
+   if(errorInfo(error).code==="RecoveryRequired"){record.status="interrupted";frame.stream.status="interrupted";await this.commit(frame,"ExecutionTransition");throw error;}
    if(["StorageUnavailable","CommitConflict","OwnershipLost"].includes(errorInfo(error).code))throw error;
    record.status="failed";record.error=errorInfo(error);result=toolResult("Tool failed: "+record.error.message);await this.hook(frame,AgentEvents.ToolError,{toolExecutionId:id,error:record.error});
   }
@@ -367,7 +351,7 @@ export class AgentEngine {
  }
  async finish(frame:ExecutionFrame,status:"completed"|"stopped"|"failed"|"cancelled",reason:string|null,error:ErrorInfo|null=null):Promise<void>{
   const pending=new Set<string>();for(const message of frame.cp.state.messages){for(const part of message.content)if(part.type==="tool-call")pending.add(part.toolCallId);if(message.role==="tool")pending.delete(message.toolCallId!);}
-  for(const toolCallId of pending){frame.cp.state={...frame.cp.state,messages:[...frame.cp.state.messages,MessageCodec.encode(new ToolMessage({toolCallId,content:"Execution "+status}))]};}
+  for(const toolCallId of pending){const message=MessageCodec.encode(new ToolMessage({toolCallId,content:"Execution "+status}));frame.cp.state={...frame.cp.state,messages:[...frame.cp.state.messages,message]};frame.stream.outputMessageIds=[...frame.stream.outputMessageIds,message.id];const tool=this.rows<ToolExecutionRecord>(frame,"tool_executions").find(t=>t.toolCallId===toolCallId&&t.streamId===frame.stream.id);if(tool&&tool.status==="pending"){tool.status="cancelled";tool.resultMessageId=message.id;tool.endedAt=this.clock.now();}}
   frame.stream.status=status;frame.stream.stopReason=reason;frame.stream.error=error;frame.stream.endedAt=this.clock.now();this.updateUsage(frame);
   let outcome:StreamOutcome={status,reason,output:frame.cp.state.messages.filter(m=>frame.stream.outputMessageIds.includes(m.id)),usage:frame.stream.directUsage,error,interrupt:null};
   try{await this.hook(frame,AgentEvents.StreamBeforeEnd,immutable(outcome));}catch(finalizationError){
@@ -375,6 +359,25 @@ export class AgentEngine {
   }
   frame.cp.execution=null;await this.commit(frame,"Terminal");await this.hook(frame,AgentEvents.StreamEnd,immutable(outcome));
  }
- async cancel(threadId:string,streamId:string,reason="Cancelled"):Promise<void>{const frame=this.active.get(streamId);if(!frame||frame.cp.threadId!==threadId)fail("InvalidTransition","No active attachment");frame.sink.controller.abort(reason);}
+ async cancel(threadId:string,streamId:string,reason="Cancelled",target:DeliveryTarget={kind:"observer",observe:()=>{}}):Promise<void>{
+  const active=this.active.get(streamId);
+  if(active){if(active.cp.threadId!==threadId)fail("InvalidTransition","Execution belongs to a different thread");await this.hook(active,AgentEvents.StreamCancel,{reason});active.sink.controller.abort(reason);return;}
+  const registry=this.registry.capture(),sink=createDelivery(threadId,this.ids,target,undefined,this.options.diagnostics);
+  let frame:ExecutionFrame|undefined;
+  try{
+   frame=await this.restoreFrame({kind:"recover",threadId,streamId},sink,registry,false);this.watchLease(frame);
+   if(frame.cp.execution?.phase==="ToolPending"){
+    const toolRecord=this.rows<ToolExecutionRecord>(frame,"tool_executions").find(t=>t.id===frame!.cp.execution!.pendingToolExecutionIds[0])!;
+    const tool=registry.find<Tool>("tool",toolRecord.toolName);
+    const outcome=tool?.recovery&&toolRecord.idempotencyKey?await tool.recovery.reconcile({id:toolRecord.id,input:tool.input.parse(toolRecord.arguments),key:toolRecord.idempotencyKey}):{status:"unknown" as const};
+    if(outcome.status==="unknown"){frame.stream.status="interrupted";toolRecord.status="interrupted";await this.commit(frame,"ExecutionTransition");fail("RecoveryRequired","Cannot close unknown external tool outcome");}
+    if(outcome.status==="completed"){toolRecord.status="succeeded";toolRecord.result=outcome.result;const message=MessageCodec.encode(new ToolMessage({toolCallId:toolRecord.toolCallId,content:outcome.result.content}));toolRecord.resultMessageId=message.id;await this.appendMessage(frame,message);}
+    else toolRecord.status="pending";
+   }
+   for(const interrupt of this.rows<import("../state/schema.js").InterruptRecord>(frame,"interrupts"))if(interrupt.streamId===streamId&&interrupt.status==="pending"){interrupt.status="cancelled";interrupt.resolvedAt=this.clock.now();}
+   for(const attempt of this.rows<ModelAttemptRecord>(frame,"model_attempts"))if(attempt.streamId===streamId&&attempt.status==="running"){attempt.status="cancelled";attempt.endedAt=this.clock.now();}
+   await this.hook(frame,AgentEvents.StreamCancel,{reason});await this.finish(frame,"cancelled",reason);
+  }finally{if(frame){if(frame.heartbeat)clearInterval(frame.heartbeat);await this.backend.ownership.release(frame.lease);}await registry.release();sink.close();}
+ }
  async shutdown():Promise<void>{this.closed=true;for(const frame of this.active.values())frame.sink.controller.abort("Controller disposed");await Promise.allSettled([...this.jobs]);}
 }
