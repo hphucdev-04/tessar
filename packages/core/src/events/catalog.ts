@@ -8,8 +8,10 @@ import type { ToolResult as ToolResultData } from "../tools/tool.js";
 import type { InterruptRecord,ThreadInfo } from "../state/schema.js";
 import type { CreateThreadOptions } from "../state/threads.js";
 import type { DecisionHookContext } from "../engine/interrupt.js";
+import type { ExecutionHookContext } from "../engine/tracked-effects.js";
 const notification=<P>(name:string)=>defineEvent<P,void,"notification">({id:"core."+name,owner:"core",version:1,kind:"notification"});
-const transform=<P>(name:string)=>defineEvent<P,P,"transformation">({id:"core."+name,owner:"core",version:1,kind:"transformation"});
+const transform=<P>(name:string)=>defineEvent<P,P,"transformation",ExecutionHookContext>({id:"core."+name,owner:"core",version:1,kind:"transformation"});
+const lifecycleTransform=<P>(name:string)=>defineEvent<P,P,"transformation">({id:"core."+name,owner:"core",version:1,kind:"transformation"});
 const decision=<P,R=ControlDecision>(name:string)=>defineEvent<P,R,"decision",DecisionHookContext>({id:"core."+name,owner:"core",version:1,kind:"decision"});
 const barrier=<P>(name:string)=>defineEvent<P,void,"barrier">({id:"core."+name,owner:"core",version:1,kind:"barrier"});
 export type ControlDecision={decision:"allow"|"deny"|"continue"|"stop"|"retry"|"fail";reason?:string}|{decision:"select";model:ModelRef}|{decision:"suspend";definitionId:string;payload:JsonValue;pluginId:string;definitionVersion:number};
@@ -18,7 +20,7 @@ export interface ToolPreparation {tool:ToolDescription;toolCallId:string;toolExe
 export interface StreamOutcome {status:string;reason:string|null;output:readonly MessageData[];usage:UsageSummary;error:ErrorInfo|null;interrupt:InterruptRecord|null}
 export const AgentEvents={
  Ready:notification<{agentId:string}>("ready"),Shutdown:barrier<{}>("shutdown"),
- ThreadPrepare:transform<CreateThreadOptions>("thread.prepare"),ThreadStarted:notification<ThreadInfo>("thread.started"),ThreadBeforeShutdown:barrier<{threadId:string}>("thread.before-shutdown"),ThreadShutdown:notification<{threadId:string}>("thread.shutdown"),
+ ThreadPrepare:lifecycleTransform<CreateThreadOptions>("thread.prepare"),ThreadStarted:notification<ThreadInfo>("thread.started"),ThreadBeforeShutdown:barrier<{threadId:string}>("thread.before-shutdown"),ThreadShutdown:notification<{threadId:string}>("thread.shutdown"),
  ThreadUpdated:notification<{checkpointId:string;revision:number}>("thread.updated"),
  InputPrepare:transform<InputPreparation>("input.prepare"),InputReceived:notification<{messages:readonly MessageData[]}>("input.received"),
  BeforeStream:decision<{input:readonly MessageData[]}>("stream.before"),StreamStarted:notification<{modelRef:ModelRef;checkpointId:string}>("stream.started"),

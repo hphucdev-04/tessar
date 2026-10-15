@@ -25,3 +25,4 @@ export * from "./state/threads.js";
 export * from "./state/fork.js";
 export * from "./state/plugin-state.js";
 export * from "./engine/interrupt.js";
+export * from "./engine/tracked-effects.js";

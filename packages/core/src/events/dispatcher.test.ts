@@ -4,6 +4,12 @@ import { PluginHost } from "../plugins/host.js";
 const Transform = defineEvent<string, string, "transformation">({ id: "test.transform", owner: "test", version: 1, kind: "transformation" });
 const Decide = defineEvent<{}, {decision: "allow" | "deny"}, "decision">({ id: "test.decide", owner: "test", version: 1, kind: "decision" });
 const Notice = defineEvent<string, void, "notification">({ id: "test.notice", owner: "test", version: 1, kind: "notification" });
+it("exports identity metadata without leaking runtime capabilities into event envelopes",()=>{
+ const event=new EventEnvelope(Notice,"hello",{threadId:"t",state:{secret:"private"},effects:{execute:()=>{}}} as never);
+ expect(event.threadId).toBe("t");
+ expect(Object.hasOwn(event,"state")).toBe(false);
+ expect(Object.hasOwn(event,"effects")).toBe(false);
+});
 it("chains transformations and never overturns a denial", async () => {
   const host = new PluginHost();
   await host.initialize([{ id: "test", apiVersion: 1, setup(api) {

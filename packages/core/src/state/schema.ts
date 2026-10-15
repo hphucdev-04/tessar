@@ -10,7 +10,7 @@ export const ExecutionPhase={BeforeTurn:"BeforeTurn",BeforeModel:"BeforeModel",M
 export type ExecutionPhase=typeof ExecutionPhase[keyof typeof ExecutionPhase];
 export interface StreamLimits {maxTurns:number;maxModelAttempts:number;maxToolCalls:number}
 export interface StreamBudgetState {turns:number;modelAttempts:number;toolCalls:number;limits:StreamLimits}
-export interface RegistrationRequirement {pluginId:string;kind:string;id:string;version:number;requiredForContinuation:boolean}
+export interface RegistrationRequirement {pluginId:string;kind:string;id:string;version:number;requiredForContinuation:boolean;pluginVersion?:number;configurationId?:string|null}
 export interface HandlerCursor {eventId:string;handlerId:string;nextIndex:number;payload:JsonValue;decisions:readonly JsonValue[]}
 export interface ExecutionPosition {
   streamId:string;turnId:string|null;phase:ExecutionPhase;modelRef:ModelRef;baseInstructions:Instruction;

@@ -3,8 +3,9 @@ import { immutable, type JsonObject, type JsonValue } from "../json.js";
 import { normalizeContent } from "../messages/message.js";
 import type { ContentPart } from "../messages/parts.js";
 import type { InputDefinition } from "./input-definition.js";
+import type { TrackedServices } from "../engine/tracked-effects.js";
 export interface ToolResult { readonly content:readonly ContentPart[]; readonly metadata?:JsonObject }
-export interface ToolExecutionContext { readonly signal:AbortSignal; readonly threadId:string; readonly streamId:string; readonly turnId:string; readonly toolExecutionId:string; emit(progress:JsonValue):void }
+export interface ToolExecutionContext extends TrackedServices { readonly signal:AbortSignal; readonly threadId:string; readonly streamId:string; readonly turnId:string; readonly toolExecutionId:string; emit(progress:JsonValue):void }
 export type ReconcileResult = {status:"completed";result:ToolResult}|{status:"safeToRetry"}|{status:"unknown"};
 export interface ToolRecovery<I> { idempotencyKey(input:I,identity:{toolExecutionId:string}):string; reconcile(operation:{id:string;input:I;key:string}):Promise<ReconcileResult> }
 export interface ToolDefinition<I> { name:string; description:string; input:InputDefinition<I>; execute(input:I,context:ToolExecutionContext):Promise<ToolResult>; recovery?:ToolRecovery<I> }

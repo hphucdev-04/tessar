@@ -19,3 +19,14 @@ it("keeps agent-owned state outside thread checkpoints with compare-and-set",asy
  expect(await backend.ownedState.get(state)).toEqual(state);
  await backend.close();
 });
+it("offers explicit CAS access to agent-owned namespaces through the plugin state API",async()=>{
+ const backend=createMemoryBackend(),definition=definePluginState({pluginId:"test",namespace:"owned",schemaVersion:1,initial:{count:0}});
+ const access=new PluginStateAccess([definition],{type:"thread",id:"t"},[],undefined,undefined,backend.ownedState);
+ const owned=access.owned({type:"agent",id:"assistant"});
+ const first=await owned.read(definition);
+ expect(first).toMatchObject({value:{count:0},revision:0});
+ await owned.update(definition,first.revision,{count:1});
+ expect(await owned.read(definition)).toMatchObject({value:{count:1},revision:1});
+ expect(access.snapshots()).toEqual([]);
+ await backend.close();
+});

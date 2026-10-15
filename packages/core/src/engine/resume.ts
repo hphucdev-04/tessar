@@ -10,12 +10,13 @@ export function phaseForEvent(id:string):ExecutionPhase {
  const phases:Record<string,ExecutionPhase>={"core.stream.before":"BeforeTurn","core.tool.before":"BeforeTool","core.model.select":"BeforeModel","core.model.recover":"ModelPending","core.turn.decision":"TurnBoundary"};
  return phases[id]??fail("ResumeIncompatible","Unsupported interruption boundary");
 }
-export function validateManifest(manifest:readonly {kind:string;id:string;version:number;requiredForContinuation:boolean}[],registry:RegistryLease,modelOverride?:{providerId:string}):void {
+export function validateManifest(manifest:readonly {kind:string;id:string;version:number;requiredForContinuation:boolean;pluginVersion?:number;configurationId?:string|null}[],registry:RegistryLease,modelOverride?:{providerId:string}):void {
  for(const requirement of manifest){
   if(!requirement.requiredForContinuation)continue;
   if(requirement.kind==="provider"&&modelOverride)continue;
-  const present=requirement.kind==="handler"?registry.handlers.some(r=>r.id===requirement.id&&r.definition.version===requirement.version):registry.values.some(r=>r.kind===requirement.kind&&r.id===requirement.id&&r.version===requirement.version);
+  const present=requirement.kind==="handler"?registry.handlers.find(r=>r.id===requirement.id&&r.definition.version===requirement.version):registry.values.find(r=>r.kind===requirement.kind&&r.id===requirement.id&&r.version===requirement.version);
   if(!present)fail("ResumeIncompatible","Required contract is missing: "+requirement.id);
+  if(requirement.pluginVersion!==undefined&&present.pluginVersion!==requirement.pluginVersion||requirement.configurationId!==undefined&&present.configurationId!==requirement.configurationId)fail("ResumeIncompatible","Plugin configuration/version changed");
  }
 }
 export async function validateResume(backend:StorageBackend,registry:RegistryLease,threadId:string,interruptId:string,value:JsonValue):Promise<{interrupt:InterruptRecord;decision:ControlDecision}> {

@@ -25,7 +25,9 @@ export class EventEnvelope<P = any> implements EventContext {
   readonly threadId?: string; readonly streamId?: string | null; readonly handleId?: string;
   readonly sequence?: number; readonly timestamp?: string; readonly checkpointRevision?: number;
   constructor(readonly definition: EventDefinition<P, any, any, any>, readonly payload: P, context: EventContext = {}) {
-    Object.assign(this, context); Object.freeze(this);
+    for(const key of ["controllerId","agentId","scope","threadId","streamId","handleId","sequence","timestamp","checkpointRevision"] as const)
+      if(context[key]!==undefined)Object.defineProperty(this,key,{value:key==="scope"?immutable(context[key]):context[key],enumerable:true});
+    Object.freeze(this);
   }
   is<D extends AnyEvent>(definition: D): this is EventEnvelope<PayloadOf<D>> {
     return this.definition.id === definition.id && this.definition.owner === definition.owner && this.definition.version === definition.version;

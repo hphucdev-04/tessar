@@ -27,10 +27,11 @@ export class PluginHost {
     const register = (kind: string, id: string, value: unknown, version = 1) => {
       requireId(id);
       if ([...this.slots.filter(s => !s.detached).flatMap(s => s.values), ...slot.values].some(v => v.kind === kind && v.id === id)) fail("RegistrationConflict", "Capability already registered");
-      slot.values.push({ kind, id, value, version, pluginId: plugin.id });
+      slot.values.push({ kind, id, value, version, pluginId: plugin.id,pluginVersion:plugin.version??1,configurationId:plugin.configurationId??null });
     };
     const api: PluginContext = {
       registry: { register },
+      effects:{register:definition=>{const stateDefinition=definePluginState({pluginId:plugin.id,namespace:"$effect:"+definition.id,schemaVersion:1,initial:{}});register("state",plugin.id+":"+stateDefinition.namespace,stateDefinition);register("effect",definition.id,{definition,pluginId:plugin.id,stateDefinition},definition.version);}},
       interruptions: { register: definition => register("interruption",definition.id,{definition,pluginId:plugin.id},definition.version) },
       state: { define: definition => { const state=definePluginState({...definition,pluginId:plugin.id}); register("state",plugin.id+":"+state.namespace,state,state.schemaVersion); return state; } },
       tools: { register: tool => register("tool", tool.name, tool) },
@@ -43,7 +44,7 @@ export class PluginHost {
           fail("RegistrationConflict", "Event definition conflict");
         if (!prior && (definition.owner === "core" || definition.owner !== plugin.id)) fail("RegistrationConflict", "Invalid event owner");
         definitions.set(definition.id, definition);
-        const registration = { definition, handler, pluginId: plugin.id, id: plugin.id + ":" + definition.id + ":" + slot.handlers.length };
+        const registration = { definition, handler, pluginId: plugin.id, id: plugin.id + ":" + definition.id + ":" + slot.handlers.length,pluginVersion:plugin.version??1,configurationId:plugin.configurationId??null };
         slot.handlers.push(registration);
         return () => { const index = slot.handlers.indexOf(registration); if (index >= 0) slot.handlers.splice(index, 1); };
       },
