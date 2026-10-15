@@ -11,9 +11,12 @@ importers:
       '@tesseract/core':
         specifier: workspace:*
         version: link:packages/core
-      '@tesseract/storage-sqlite':
+      '@tesseract/plugins':
         specifier: workspace:*
-        version: link:packages/storage-sqlite
+        version: link:packages/plugins
+      '@tesseract/sqlite':
+        specifier: workspace:*
+        version: link:packages/sqlite
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
@@ -32,9 +35,12 @@ importers:
       '@tesseract/openai':
         specifier: workspace:*
         version: link:../../packages/openai
-      '@tesseract/storage-sqlite':
+      '@tesseract/plugins':
         specifier: workspace:*
-        version: link:../../packages/storage-sqlite
+        version: link:../../packages/plugins
+      '@tesseract/sqlite':
+        specifier: workspace:*
+        version: link:../../packages/sqlite
 
   examples/headless:
     dependencies:
@@ -53,7 +59,13 @@ importers:
         specifier: 7.34.0
         version: 7.34.0
 
-  packages/storage-sqlite:
+  packages/plugins:
+    devDependencies:
+      '@tesseract/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/sqlite:
     dependencies:
       '@tesseract/core':
         specifier: workspace:*

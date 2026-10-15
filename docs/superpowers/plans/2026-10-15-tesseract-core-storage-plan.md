@@ -400,9 +400,9 @@ git commit -m "feat(core): add scoped history plugin state and safe forks"
 
 **Files**
 
-- Create: packages/storage-sqlite/{package.json,tsconfig.json}.
-- Create: packages/storage-sqlite/src/{backend,schema,ownership,index}.ts.
-- Test: packages/storage-sqlite/src/backend.test.ts.
+- Create: packages/sqlite/{package.json,tsconfig.json}.
+- Create: packages/sqlite/src/{backend,schema,ownership,index}.ts.
+- Test: packages/sqlite/src/backend.test.ts.
 - Create: tests/fixtures/sqlite-worker.ts; tests/integration/sqlite-process.test.ts.
 - Modify: package.json, pnpm-lock.yaml (workspace dependency graph only).
 
@@ -436,7 +436,7 @@ expect(await winner.worker.publish(winner.result.lease)).toMatchObject({ error: 
       không assume workerA thắng. Fixture barriers qua IPC/DB, không timing sleeps.
       Test restart reads pending interrupt/checkpoint, crash before/after head
       publication, migration schema version refusal, parameterized weird scope keys.
-- [ ] **Step 2:** pnpm exec vitest run packages/storage-sqlite/src/backend.test.ts tests/integration/sqlite-process.test.ts — FAIL missing backend/worker.
+- [ ] **Step 2:** pnpm exec vitest run packages/sqlite/src/backend.test.ts tests/integration/sqlite-process.test.ts — FAIL missing backend/worker.
 - [ ] **Step 3:** Implement version1 tables/indexes cho nine logical families +
       commits/staging/leases/membership, transaction BEGIN IMMEDIATE, WAL,
       busy timeout5000, SQL authoritative expiry và monotonic fencing retained
@@ -447,7 +447,7 @@ expect(await winner.worker.publish(winner.result.lease)).toMatchObject({ error: 
 - [ ] **Step 5:** Commit:
 
 ~~~powershell
-git add packages/storage-sqlite/package.json packages/storage-sqlite/tsconfig.json packages/storage-sqlite/src/backend.ts packages/storage-sqlite/src/schema.ts packages/storage-sqlite/src/ownership.ts packages/storage-sqlite/src/index.ts packages/storage-sqlite/src/backend.test.ts tests/fixtures/sqlite-worker.ts tests/integration/sqlite-process.test.ts package.json pnpm-lock.yaml
+git add packages/sqlite/package.json packages/sqlite/tsconfig.json packages/sqlite/src/backend.ts packages/sqlite/src/schema.ts packages/sqlite/src/ownership.ts packages/sqlite/src/index.ts packages/sqlite/src/backend.test.ts tests/fixtures/sqlite-worker.ts tests/integration/sqlite-process.test.ts package.json pnpm-lock.yaml
 git commit -m "feat(storage): add SQLite backend with process fencing"
 ~~~
 

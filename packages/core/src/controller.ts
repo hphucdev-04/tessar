@@ -1,6 +1,7 @@
-import { requireId, fail, errorInfo, type ErrorInfo } from "./errors.js";
+import { requireId, fail, errorInfo, TesseractError, type ErrorInfo } from "./errors.js";
 import { immutable, randomIds } from "./json.js";
 import { AgentEvents } from "./events/catalog.js";
+import { EventEnvelope, type EventContext } from "./events/definition.js";
 import { PluginHost } from "./plugins/host.js";
 import type { Plugin } from "./plugins/context.js";
 import type { Agent } from "./agent.js";
@@ -23,8 +24,13 @@ export class Controller {
   readonly agent: Agent;
   readonly models = new ModelRegistry();
   readonly diagnostics: ErrorInfo[] = [];
-  readonly report = (error: ErrorInfo): void => {
+  readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
     this.diagnostics.push(error);
+    // Copy only event identity, never execution services from the failing hook.
+    const event = new EventEnvelope(AgentEvents.Diagnostic, { error }, {
+      ...context, controllerId: this.id, agentId: this.agent.id,
+    });
+    void this.hooks.dispatch(AgentEvents.Diagnostic, event.payload, { ...event }).catch(() => {});
   };
   /** @internal */ readonly hooks = new PluginHost({
     diagnostics: this.report,
@@ -69,6 +75,8 @@ export class Controller {
     this.agent.attachController(this);
   }
   initialize(): Promise<void> {
+    if (this.disposal)
+      return Promise.reject(new TesseractError("Disposed", "Controller is disposed"));
     if (this.initialization) return this.initialization;
     if (this.phase !== "new")
       return Promise.reject(new Error("Controller is disposed"));
@@ -94,6 +102,7 @@ export class Controller {
         if ([...this.providers.keys()].some((p) => p.metadata))
           void this.models.refreshCatalog();
       } catch (error) {
+        this.report(errorInfo(error));
         this.phase = "failed";
         this.models.dispose();
         await this.hooks.dispose();
@@ -104,9 +113,9 @@ export class Controller {
     return this.initialization;
   }
   /** @internal */ requireReady(): void {
-    if (this.phase !== "ready")
+    if (this.disposal || this.phase !== "ready")
       fail(
-        this.phase === "closed" || this.phase === "closing"
+        this.disposal || this.phase === "closed" || this.phase === "closing"
           ? "Disposed"
           : "ControllerNotReady",
         "Controller must be initialized and ready",

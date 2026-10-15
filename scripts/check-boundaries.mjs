@@ -2,7 +2,7 @@ import {readdirSync,readFileSync,existsSync} from "node:fs";
 import {resolve,dirname,relative} from "node:path";
 const root=resolve(import.meta.dirname,".."),errors=[],graph=new Map();
 function files(directory){return readdirSync(directory,{withFileTypes:true}).flatMap(entry=>entry.name==="node_modules"||entry.name==="dist"?[]:entry.isDirectory()?files(resolve(directory,entry.name)):[resolve(directory,entry.name)]);}
-const core=files(resolve(root,"packages/core/src")).filter(path=>path.endsWith(".ts")&&!path.endsWith(".test.ts")&&!path.includes("/testing/")&&!path.includes("\\testing\\")&&!path.endsWith("test-fixture.ts"));
+const core=files(resolve(root,"packages/core/src")).filter(path=>path.endsWith(".ts")&&!path.includes("/testing/")&&!path.includes("\\testing\\"));
 for(const file of core){
  const text=readFileSync(file,"utf8"),imports=[...text.matchAll(/\b(?:import|export)\s+(?!type\b)[^;]*?\bfrom\s*["']([^"']+)["']/g)].map(match=>match[1]);
  for(const specifier of imports)if(specifier.startsWith("node:")||specifier.startsWith("@tesseract/")||specifier==="openai"||specifier==="vitest")errors.push(relative(root,file)+": forbidden core import "+specifier);

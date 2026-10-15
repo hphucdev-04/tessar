@@ -119,7 +119,7 @@ git commit -m "feat(sdk): resolve immutable model profiles automatically"
 
 - Consumes: core PluginContext.models registration, ModelAdapter/MetadataResolver,
   MessageData/ModelUsage, explicit endpoint auth configuration.
-- Produces: OpenAIPlugin({apiKey, providerId?:string, baseURL?:string,
+- Produces: new OpenAIPlugin({apiKey, providerId?:string, baseURL?:string,
   fetch?:typeof globalThis.fetch, metadataPartition?:string}) implements Plugin.
   Default providerId openai; register Responses API adapter/resolver, profile exact
   modelRef identity. OpenAI-compatible Chat Completions protocol không tự suy ra.
@@ -314,7 +314,7 @@ git commit -m "feat(sdk): add scoped sessions subscriptions and follow-up queue"
 
 **Interfaces**
 
-- Consumes: only public @tesseract/core, /testing and storage-sqlite
+- Consumes: only public @tesseract/core, /testing and sqlite
   exports; no imports to src paths/engine implementation.
 - Produces: createSkillsPlugin({load:()=>Promise<SkillData[]>}), SkillData {id,content};
   inject via ContextPrepare, loader owns source, no core SKILL.md parser.

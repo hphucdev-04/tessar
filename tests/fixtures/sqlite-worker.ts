@@ -1,4 +1,4 @@
-import { createSqliteBackend } from "@tesseract/storage-sqlite";
+import { createSqliteBackend } from "@tesseract/sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync,writeFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";

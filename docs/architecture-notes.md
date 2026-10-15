@@ -1,5 +1,13 @@
 # Ghi chú định hướng Tesseract
 
+Current authority: [English spec](superpowers/specs/2026-10-15-tesseract-minimal-core-design.md)
+and [English plan with verification results](superpowers/plans/2026-10-15-tesseract-minimal-core-plan.md).
+TD-001 is now addressed for Node/npm hosts by
+[the distribution spec](superpowers/specs/2026-10-15-plugin-distribution-design.md)
+and [plan](superpowers/plans/2026-10-15-plugin-distribution-plan.md).
+The implementation is now present. Earlier implementation-status statements below
+are historical notes, not the current status.
+
 Ngày ghi nhận: 2026-10-14.
 
 ## Cập nhật 2026-10-15: ponytail áp dụng từ đầu
@@ -13,6 +21,9 @@ xét lại nếu thêm tầng, class, interface hoặc file mà chưa có nhu c�
 Không viết lại toàn bộ hoặc chia nhỏ file chỉ để giảm số dòng mỗi file.
 Agent loop phải thể hiện rõ luồng turn → model → tools → tiếp tục/dừng;
 phần hỗ trợ chỉ tách khi có trách nhiệm và dependency rõ ràng.
+Theo yêu cầu tiếp theo, `packages/core/src/loop.ts` chứa vòng turn và các bước
+gọi model/tool, dùng chung cho input mới, resume và recovery. Agent vẫn sở hữu
+admission, checkpoint, interrupt và finalization; API công khai giữ nguyên.
 Giữ storage/checkpoint, validation và các bảo đảm chống mất dữ liệu đã chốt.
 
 ## Core và SDK: package chính đã chốt
@@ -378,8 +389,9 @@ vẫn cần thiết kế; chưa coi các cơ chế đó là khả năng đã tri
 
 ## Nợ kỹ thuật TD-001: phân phối, cài đặt và nạp plugin
 
-Ngày ghi nhận: 2026-10-15. Trạng thái: hoãn, ngoài phạm vi phase hiện tại
-theo yêu cầu người dùng.
+Ngày ghi nhận: 2026-10-15. Cập nhật: người dùng yêu cầu trả nợ; đã triển khai
+`@tesseract/plugins` cho Node/npm CLI. Phạm vi hoãn bên dưới là ghi nhận lịch sử.
+Standalone executable cần kiểm chứng riêng theo runtime đóng gói được chọn.
 
 Phạm vi để phase sau:
 

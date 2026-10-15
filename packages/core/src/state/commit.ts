@@ -1,4 +1,4 @@
-import { fail } from "../errors.js";
+import { fail, errorInfo } from "../errors.js";
 import { assertJson } from "../json.js";
 import { MessageCodec } from "../messages/codec.js";
 import type { CommitBatch, CommitReceipt, Lease, StorageBackend } from "./storage-ports.js";
@@ -24,9 +24,15 @@ export function validateBatch(batch:CommitBatch):void {
 export class CommitCoordinator {
   constructor(private readonly backend:StorageBackend) {}
   async commit(batch:CommitBatch,lease:Lease):Promise<CommitReceipt> {
-    validateBatch(batch);await this.backend.commits.stage(batch);
-    const existing=await this.backend.commits.lookupCommit(batch.commitId);if(existing)return existing;
-    try {return await this.backend.commits.publish({commitId:batch.commitId,threadId:batch.threadId,expectedRevision:batch.expectedRevision,lease});}
-    catch(error){const committed=await this.backend.commits.lookupCommit(batch.commitId);if(committed)return committed;throw error;}
+    validateBatch(batch);
+    try {
+      await this.backend.commits.stage(batch);
+      const existing=await this.backend.commits.lookupCommit(batch.commitId);if(existing)return existing;
+      try {return await this.backend.commits.publish({commitId:batch.commitId,threadId:batch.threadId,expectedRevision:batch.expectedRevision,lease});}
+      catch(error){const committed=await this.backend.commits.lookupCommit(batch.commitId);if(committed)return committed;throw error;}
+    } catch(error) {
+      errorInfo(error,{source:"storage",backendId:this.backend.id});
+      throw error;
+    }
   }
 }

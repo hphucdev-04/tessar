@@ -14,7 +14,7 @@ export async function dispatch<D extends AnyEvent>(
   definition: D,
   payload: PayloadOf<D>,
   context: HookContext & EventContext,
-  diagnostics: (error: ReturnType<typeof errorInfo>) => void,
+  diagnostics: (error: ReturnType<typeof errorInfo>, context?: EventContext) => void,
   kind: EventKind = "notification",
 ): Promise<ResultOf<D>> {
   let current: unknown =
@@ -75,14 +75,11 @@ export async function dispatch<D extends AnyEvent>(
         )
       )
         throw cause;
-      const error = new TesseractError("PluginError", "Plugin handler failed", {
-        pluginId: registration.pluginId,
-        eventId: definition,
-        cause: errorInfo(cause),
-      });
+      const error = cause !== null && typeof cause === "object" ? cause : new Error(String(cause), { cause });
+      const info = errorInfo(error, error instanceof TesseractError ? undefined : { source: "plugin", pluginId: registration.pluginId, eventId: definition });
       if (kind !== "notification") throw error;
       try {
-        diagnostics(error.toJSON());
+        diagnostics(info, context);
       } catch {
         /* diagnostics cannot control execution */
       }

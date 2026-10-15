@@ -12,7 +12,7 @@ import {
   type ExecutionReceipt,
   type QueuedInputReceipt,
 } from "./session-events.js";
-import { errorInfo, fail, TesseractError, type ErrorInfo } from "./errors.js";
+import { errorInfo, errorFromInfo, fail, type ErrorInfo } from "./errors.js";
 import { immutable, randomIds, type JsonValue } from "./json.js";
 import { inputMessages } from "./agent.js";
 import type { Model } from "./models/profile.js";
@@ -60,6 +60,8 @@ export class Session {
   private readonly blocked = new Set<string>();
   private foreground?: Foreground;
   private disposed = false;
+  private closing = false;
+  private disposal?: Promise<void>;
   private sequence = 0;
 
   constructor(
@@ -82,7 +84,8 @@ export class Session {
   }
   private check(): void {
     this.controller.requireReady();
-    if (this.disposed) fail("Disposed", "Session is disposed");
+    if (this.disposed || this.closing)
+      fail("Disposed", "Session is closing or disposed");
   }
   private get busy(): boolean {
     return this.foreground?.status === "running";
@@ -142,10 +145,10 @@ export class Session {
           typeof (result as PromiseLike<unknown>).then === "function"
         )
           void Promise.resolve(result).catch((error) =>
-            this.controller.report(errorInfo(error)),
+            this.controller.report(errorInfo(error, { source: "application", eventId: event.type }), event),
           );
       } catch (error) {
-        this.controller.report(errorInfo(error));
+        this.controller.report(errorInfo(error, { source: "application", eventId: event.type }), event);
       }
     }
   }
@@ -262,6 +265,7 @@ export class Session {
   private pump(): void {
     if (
       this.disposed ||
+      this.closing ||
       this.busy ||
       (this.foreground && !this.foreground.closed) ||
       !this.queue.length ||
@@ -293,7 +297,7 @@ export class Session {
     this.foreground = foreground;
     return new Promise((resolve, reject) => {
       const rejected = (error: ErrorInfo) => {
-        reject(new TesseractError(error.code, error.message));
+        reject(errorFromInfo(error));
       };
       const closed = () => {
         foreground.closed = true;
@@ -397,15 +401,28 @@ export class Session {
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    if (this.disposal) return this.disposal;
     this.checkSelectionChange();
-    await this.controller.hooks.dispatch(
-      SessionEvents.BeforeClose,
-      {},
-      this.context(),
-    );
-    this.discard("Closed");
-    this.disposed = true;
-    this.notify(SessionEvents.Closed, {});
-    this.observers.clear();
+    this.closing = true;
+    this.disposal = (async () => {
+      try {
+        await this.controller.hooks.dispatch(
+          SessionEvents.BeforeClose,
+          {},
+          this.context(),
+        );
+        await this.foreground?.done;
+        this.discard("Closed");
+        this.disposed = true;
+        this.notify(SessionEvents.Closed, {});
+        this.observers.clear();
+      } catch (error) {
+        this.closing = false;
+        this.disposal = undefined;
+        queueMicrotask(() => this.pump());
+        throw error;
+      }
+    })();
+    return this.disposal;
   }
 }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { AgentHarness } from "@tesseract/core/testing";
 import { createTool, toolResult } from "@tesseract/core";
-import { createSqliteBackend } from "@tesseract/storage-sqlite";
+import { createSqliteBackend } from "@tesseract/sqlite";
 import { appendFileSync } from "node:fs";
 const supportsSpawn = !spawnSync(process.execPath, ["--version"]).error;
 it.skipIf(!supportsSpawn)(

@@ -87,7 +87,7 @@ packages/core/
   src/{agent,controller,thread,session,session-thread,session-events}.ts
   src/testing/{scripted-provider,harness,storage-conformance}.ts
   src/{index,errors,json}.ts
-packages/storage-sqlite/
+packages/sqlite/
   src/{backend,schema,ownership,index}.ts
 packages/openai/
   src/{plugin,adapter,codec,metadata,index}.ts
@@ -110,7 +110,7 @@ Testing exports nằm ở subpath /testing, không tràn vào production barrel.
 Dependency DAG:
 
 ~~~text
-storage-sqlite → core ← provider-openai
+sqlite → core ← provider-openai
                     ↑
       examples / external plugin proofs / integration tests
 ~~~

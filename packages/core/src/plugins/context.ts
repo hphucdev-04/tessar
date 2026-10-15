@@ -51,6 +51,7 @@ export interface PluginContext {
     register(kind: string, id: string, value: unknown, version?: number): void;
   };
 }
+/** Instance contract implemented by built-in and user-defined plugin classes. */
 export interface Plugin {
   readonly id: string;
   readonly version?: number;

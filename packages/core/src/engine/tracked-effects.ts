@@ -1,4 +1,4 @@
-import { fail, requireId, TesseractError, errorInfo } from "../errors.js";
+import { fail, requireId, TesseractError, errorInfo, errorFromInfo, type ErrorInfo } from "../errors.js";
 import {
   assertJson,
   immutable,
@@ -173,8 +173,7 @@ export class EffectService {
     if (prior?.status === "completed")
       return immutable(definition.output.parse(prior.output)) as O;
     if (prior?.status === "failed") {
-      const error = prior.error as unknown as { code: string; message: string };
-      throw new TesseractError(error.code, error.message);
+      throw errorFromInfo(prior.error as unknown as ErrorInfo);
     }
     const operationId = prior?.operationId ?? this.nextId();
     if (prior) {
@@ -230,12 +229,12 @@ export class EffectService {
       });
       return immutable(output) as O;
     } catch (error) {
-      const info = errorInfo(error),
+      const info = errorInfo(error, { source: "plugin", pluginId: binding.pluginId }),
         unknown = [
           "StorageUnavailable",
           "OwnershipLost",
           "RecoveryRequired",
-        ].includes(info.code);
+        ].includes(info.code) || info.source === "storage";
       await save({
         digest,
         status: unknown ? "unknown" : "failed",

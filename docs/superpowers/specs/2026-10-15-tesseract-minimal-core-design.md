@@ -1,6 +1,6 @@
 # Tesseract Minimal Core Design
 
-Status: approved direction, implementation in progress. This English spec
+Status: implemented and locally verified on Windows. This English spec
 supersedes the earlier core/public-API specs and their implementation plans.
 The user explicitly requested this rewrite followed by native implementation.
 Existing code is an unfinished migration, not a clean baseline to discard.
@@ -17,9 +17,13 @@ SDK describes these public APIs; it is not another package or runtime layer.
 Agent directly owns the loop. Controller owns initialization and resources.
 Session owns interaction, selection and its input queue. There is no separate
 engine class, runtime port, binding adapter or second model/tool loop.
+Agent delegates the turn, model and tool steps to internal functions in
+`packages/core/src/loop.ts`. New input, resume and recovery enter the same loop;
+admission, checkpoint commits, interruption handling and finalization remain
+owned by Agent. This is an internal refactor with no public API change.
 
 `@tesseract/openai` implements OpenAI protocol/auth/metadata. Storage adapters,
-including `@tesseract/storage-sqlite`, implement physical persistence. Core
+including `@tesseract/sqlite`, implement physical persistence. Core
 owns state management and checkpoint semantics and has a default memory backend.
 Core has no third-party runtime dependencies or Node filesystem/database imports.
 
@@ -31,17 +35,25 @@ interface Plugin {
   setup(tesseract: PluginContext): void | Disposer | Promise<void | Disposer>;
 }
 
-const blockWrite: Plugin = {
-  id: "block-write",
-  setup(tesseract) {
+class BlockWritePlugin implements Plugin {
+  readonly id = "block-write";
+  setup(tesseract: PluginContext): void {
     tesseract.hook(AgentEvents.BeforeTool, event => {
       if (event.payload.tool.name === "write") {
         return { decision: "deny", reason: "Write tool disabled" };
       }
     });
-  },
-};
+  }
+}
+
+const blockWrite = new BlockWritePlugin();
 ```
+
+Built-in and user-defined plugins use the same class/instance convention:
+`class MyPlugin implements Plugin`, instantiated with `new MyPlugin(options)`.
+`Plugin` describes the instance contract; no base class is required. External
+modules default-export an instance (`export default new MyPlugin()`), and the
+loader passes it to the same core lifecycle without constructing it again.
 
 `PluginContext` exposes hook, emit, tools.register, models.registerProvider,
 storage.registerBackend, state.define, interruptions.register, effects.register,
@@ -116,6 +128,8 @@ Resume/recover receipts `{threadId,streamId}` acknowledge durable admission.
 Events route per Session instance even when two Sessions have identical scope.
 Created is observable after factory return. Close has a required BeforeClose
 barrier; observers cannot delay policy. Dispose does not delete a suspended Thread.
+Closing blocks new Session work before awaiting the barrier. A failed barrier
+leaves the Session usable; concurrent disposal shares the pending close operation.
 
 ## Data, execution and durability
 
@@ -128,6 +142,9 @@ Context assembly uses full canonical history, not a UI history page. Snapshot
 Agent instructions at admission; explicit transforms may adjust request context.
 
 Each stream/turn/model attempt/tool execution has built-in trace records.
+Terminal execution ends its active turn with a status, timestamp and error;
+durable turn-end notifications follow checkpoint publication. BeforeTool stop
+decisions stop the stream, and policy failures cannot become ordinary tool results.
 Token/cache/reasoning usage has null unknowns, provenance and attempt deduplication.
 Retry is explicit plugin policy; provider SDK implicit retries are disabled.
 Auxiliary model calls and child reservations use the same trace/budget/lineage
@@ -161,10 +178,22 @@ OpenAI preserves available encrypted reasoning continuity and ordered tool calls
 
 ## Scope and verification
 
+Errors have an explicit component source: tesseract, provider, plugin, tool,
+storage or application. There is no unknown source or blanket InternalError
+classification. TesseractError represents framework failures. Provider/plugin
+exceptions propagate without replacing their identity; checkpoint/trace records
+store JSON error snapshots with source, name, code and available SDK fields.
+OpenAI SDK failures remain SDK exceptions; adapter implementation failures remain
+framework failures. AgentEvents.Diagnostic exposes diagnostic records to plugins
+and isolates diagnostic handler failures without recursive emission.
+The optional @tesseract/plugins/logger subpath writes lifecycle/error notifications to
+stderr as JSON or a host-supplied write callback. Core owns no logging destination.
+
 Host applications own UI, transport, auth and processes. Skills, long-term memory,
 commands, compression, telemetry export and subagent strategies remain plugins.
-TD-001 remains deferred: discovering/loading/installing external plugin code after
-packaging. Imported plugin instances and runtime attach/detach work in this phase.
+TD-001 was deferred in the initial core phase and is now addressed for Node/npm
+hosts by the [distribution extension](2026-10-15-plugin-distribution-design.md).
+Imported plugin instances and runtime attach/detach continue to work.
 Local plugin files need no additional installation when using only host-provided
 APIs; imported npm dependencies must be available to the host's loader.
 
@@ -172,3 +201,11 @@ Reuse existing tests and memory/SQLite/provider implementations. Verify source
 types, builds, hooks, runtime APIs, offline HTTP/SSE, actual SQLite processes and
 built public-package consumers. Do not claim npm publication, Cube migration,
 all provider support or automatic durability for arbitrary plugin I/O.
+
+Local verification passed strict typecheck, all package/example builds, 97 unit
+tests, 7 integration tests, package boundaries and the catalog-license pack check.
+Integration tests include actual SQLite processes and CLI approval across restart.
+OpenAI tests use HTTP/SSE fixtures; no live API call or hosted Linux CI was run.
+The independent reviewer confirmed concrete defects but reached its usage limit
+before its final report. Confirmed findings were fixed with regression checks;
+the implementer completed the remaining inspection and verification.

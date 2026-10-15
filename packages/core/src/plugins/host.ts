@@ -1,4 +1,4 @@
-import { TesseractError, fail, requireId, type ErrorInfo } from "../errors.js";
+import { TesseractError, errorInfo, fail, requireId, type ErrorInfo } from "../errors.js";
 import { dispatch } from "../events/dispatcher.js";
 import { AgentEvents, hookKinds } from "../events/catalog.js";
 import { SessionEvents } from "../session-events.js";
@@ -36,8 +36,8 @@ export class PluginHost {
   private mutation: Promise<void> = Promise.resolve();
   private closed = false;
   private disposal?: Promise<void>;
-  private readonly diagnostics: (error: ErrorInfo) => void;
-  constructor(options: { diagnostics?: (error: ErrorInfo) => void } = {}) {
+  private readonly diagnostics: (error: ErrorInfo, context?: EventContext) => void;
+  constructor(options: { diagnostics?: (error: ErrorInfo, context?: EventContext) => void } = {}) {
     this.diagnostics = options.diagnostics ?? (() => {});
   }
   async initialize(plugins: readonly Plugin[]): Promise<void> {
@@ -195,6 +195,7 @@ export class PluginHost {
         this.definitions = definitions;
         this.generation++;
       } catch (error) {
+        this.diagnostics(errorInfo(error, error instanceof TesseractError ? undefined : { source: "plugin", pluginId: plugin.id }));
         slot.detached = true;
         await this.releaseSlot(slot);
         throw error;
@@ -216,12 +217,8 @@ export class PluginHost {
     for (const dispose of slot.disposers.slice().reverse()) {
       try {
         await dispose();
-      } catch {
-        this.diagnostics({
-          code: "PluginDisposeError",
-          message: "Plugin cleanup failed",
-          retryable: false,
-        });
+      } catch (error) {
+        this.diagnostics(errorInfo(error, { source: "plugin", pluginId: slot.plugin.id }));
       }
     }
   }
@@ -245,9 +242,12 @@ export class PluginHost {
         definition,
         payload,
         context,
-        this.diagnostics,
+        definition === AgentEvents.Diagnostic ? () => {} : this.diagnostics,
         this.kind(definition),
       );
+    } catch (error) {
+      if (definition !== AgentEvents.Diagnostic) this.diagnostics(errorInfo(error), context);
+      throw error;
     } finally {
       if (!captured) await lease.release();
     }
