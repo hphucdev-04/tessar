@@ -20,6 +20,7 @@ import { executeTool } from "./tool-executor.js";
 import { Suspension,type InterruptionDefinition } from "./interrupt.js";
 import { phaseForEvent,validateManifest,validateResume } from "./resume.js";
 import { canonicalJson } from "../state/commit.js";
+import { RecoveryService } from "./recovery.js";
 
 export interface ExecutionOrigin {parentStreamId:string;parentToolExecutionId?:string;dispatchId:string}
 export type ExecutionRequest=(
@@ -48,6 +49,7 @@ function attachment(threadId:string,ids:IdGenerator,target:DeliveryTarget,extern
  admitted(){if(id&&target.kind==="observer")target.admitted?.({streamId:id,threadId});},rejected(error){if(target.kind==="observer")target.rejected?.(error);}};
 }
 export interface ExecutionFrame {
+ heartbeat?:ReturnType<typeof setInterval>;ownershipError?:ErrorInfo;
  request:ExecutionRequest;sink:Attachment;registry:RegistryLease;lease:Lease;cp:Checkpoint;stream:StreamRecord;
  records:Map<string,RecordEntry>;state:PluginStateAccess;admitted:boolean;sequence:number;
 }
@@ -67,14 +69,18 @@ export class AgentEngine {
   try {
    if(sink.controller.signal.aborted)fail("Cancelled","Execution cancelled before admission");
    if(request.kind==="resume"){
-    frame=await this.prepareResume(request,sink,registry);this.active.set(frame.stream.id,frame);sink.admitted();
+    frame=await this.prepareResume(request,sink,registry);this.active.set(frame.stream.id,frame);this.watchLease(frame);sink.admitted();
     await this.hook(frame,AgentEvents.StreamResumed,{checkpointId:frame.cp.id,interruptId:request.interruptId,reason:"response"});
     const cursor=frame.cp.execution!.handlerCursor;
     if(cursor?.eventId===AgentEvents.BeforeStream.id){const result=await this.hook(frame,AgentEvents.BeforeStream,cursor.payload as any);if(result?.decision==="deny"||result?.decision==="stop"){await this.finish(frame,"stopped",result.reason??"PolicyStopped");return;}}
     if(cursor?.eventId===AgentEvents.ModelRecover.id){const result=await this.hook(frame,AgentEvents.ModelRecover,cursor.payload as any);if(result?.decision!=="retry")fail("ProviderError","Recovery policy declined retry");frame.cp.execution!.phase="BeforeModel";await this.commit(frame,"ExecutionTransition");}
     await this.process(frame);return;
    }
-   if(request.kind!=="input")fail("InvalidTransition","Recovery is not available at this boundary");
+   if(request.kind==="recover"){
+    frame=await this.prepareRecovery(request,sink,registry);this.active.set(frame.stream.id,frame);this.watchLease(frame);sink.admitted();
+    if(frame.cp.execution?.pendingInterruptId){const interrupt=await this.backend.executions.get("interrupts",frame.cp.execution.pendingInterruptId,{threadId:request.threadId});await this.hook(frame,AgentEvents.StreamSuspended,{checkpointId:frame.cp.id,interrupt:interrupt!});return;}
+    await this.hook(frame,AgentEvents.StreamResumed,{checkpointId:frame.cp.id,interruptId:null,reason:"recovery"});await this.process(frame);return;
+   }
    const head=await this.backend.threads.get(request.threadId);if(!head)fail("ThreadNotFound","Thread not found");if(head.activeStreamId)fail("ThreadBusy","Thread already has unfinished execution");
    const lease=await this.backend.ownership.acquire({threadId:request.threadId,ownerToken:this.ids.next("owner"),ttlMs:30000});
    const cp=structuredClone((await this.backend.checkpoints.get(head.currentCheckpointId))!);
@@ -83,8 +89,8 @@ export class AgentEngine {
    const records=new Map<string,RecordEntry>();for(const kind of ["streams","turns","model_attempts","tool_executions","interrupts","plugin_states"] as const)for(const row of await this.backend.executions.listRecords(kind,request.threadId))records.set(kind+":"+("id" in row?row.id:""),{kind,id:"id" in row?row.id:"",threadId:request.threadId,data:structuredClone(row)} as RecordEntry);
    const state=new PluginStateAccess(registry.list<PluginStateDefinition<any>>("state"),{type:"thread",id:request.threadId},cp.state.pluginStates,async()=>{await this.commit(frame!,"PluginStateCommitted");return frame!.cp.id;});
    frame={request,sink,registry,lease,cp,stream,records,state,admitted:false,sequence:0};this.put(frame,"streams",stream);
-   sink.setId(streamId);this.active.set(streamId,frame);
-   cp.execution={streamId,turnId:null,phase:"BeforeTurn",modelRef:request.model,baseInstructions:this.instructions,pendingToolExecutionIds:[],pendingInterruptId:null,handlerCursor:null,budgets:{turns:0,modelAttempts:0,toolCalls:0,limits:{...this.limits,...request.limits}},registryManifest:[...registry.values.map(r=>({pluginId:r.pluginId,kind:r.kind,id:r.id,version:r.version,requiredForContinuation:true})),...registry.handlers.filter(r=>r.definition.kind!=="notification").map(r=>({pluginId:r.pluginId,kind:"handler",id:r.id,version:r.definition.version,requiredForContinuation:true}))],recordRevision:cp.revision};
+   sink.setId(streamId);this.active.set(streamId,frame);this.watchLease(frame);
+   cp.execution={streamId,turnId:null,phase:"BeforeTurn",modelRef:request.model,baseInstructions:this.instructions,pendingToolExecutionIds:[],pendingInterruptId:null,handlerCursor:null,budgets:{turns:0,modelAttempts:0,toolCalls:0,limits:{...this.limits,...request.limits}},registryManifest:[...registry.values.map(r=>({pluginId:r.pluginId,kind:r.kind,id:r.id,version:r.version,requiredForContinuation:true})),...registry.handlers.map(r=>({pluginId:r.pluginId,kind:"handler",id:r.id,version:r.definition.version,requiredForContinuation:r.definition.kind!=="notification"}))],recordRevision:cp.revision};
    const input=await this.hook(frame,AgentEvents.InputPrepare,{messages:request.input});
    if(input.rejected)throw new TesseractError(input.rejected.code,input.rejected.message);
    for(const message of input.messages)cp.state={...cp.state,messages:[...cp.state.messages,await this.prepareMessage(frame,message)]};
@@ -98,17 +104,22 @@ export class AgentEngine {
    await this.process(frame);
   }catch(error){
    if(error instanceof Suspension)return;
+   if(frame?.ownershipError)error=new TesseractError("OwnershipLost","Execution ownership was lost");
    const info=errorInfo(error);
    if(frame?.admitted&&!["StorageUnavailable","CommitConflict","OwnershipLost","RecoveryRequired"].includes(info.code)){
     try{await this.finish(frame,sink.controller.signal.aborted?"cancelled":"failed",info.code,info);return;}catch(finalizeError){error=finalizeError;}
    }
    const finalError=errorInfo(error);sink.emit(AgentEvents.StreamError,{error:finalError,lastKnownCheckpointId:frame?.cp.id??null,persistedStatus:frame?.stream.status??null},this.eventContext(frame));sink.rejected(finalError);
   }finally{
-   if(frame){this.active.delete(frame.stream.id);try{await this.backend.ownership.release(frame.lease);}catch{/* recovery uses lease expiry */}}
+   if(frame){if(frame.heartbeat)clearInterval(frame.heartbeat);this.active.delete(frame.stream.id);try{await this.backend.ownership.release(frame.lease);}catch{/* recovery uses lease expiry */}}
    await registry.release();sink.close();
   }
  }
  eventContext(frame?:ExecutionFrame):EventContext{return {agentId:this.options.agentId,controllerId:this.options.controllerId,...(frame?{scope:frame.cp.state.scope,streamId:frame.stream.id,threadId:frame.cp.threadId,sequence:++frame.sequence,timestamp:this.clock.now()}:{} )};}
+ watchLease(frame:ExecutionFrame):void {
+  if(frame.heartbeat)return;
+  frame.heartbeat=setInterval(()=>{void this.backend.ownership.renew(frame.lease,30000).then(lease=>{frame.lease=lease;},error=>{frame.ownershipError=errorInfo(error);frame.sink.controller.abort("OwnershipLost");});},10000);
+ }
  async hook<D extends AnyEvent>(frame:ExecutionFrame,definition:D,payload:PayloadOf<D>):Promise<ResultOf<D>> {
   const cursor=frame.cp.execution?.handlerCursor?.eventId===definition.id?frame.cp.execution.handlerCursor:null;
   const decisions:JsonValue[]=cursor?.decisions.slice()??[];
@@ -201,6 +212,8 @@ export class AgentEngine {
   if(request.model.providerId!==position.modelRef.providerId||request.model.modelId!==position.modelRef.modelId)fail("ModelContextIncompatible","Request transform must not bypass ModelSelect");
   adapter.validate(request);
   const attempt:ModelAttemptRecord={id:this.ids.next("attempt"),turnId:position.turnId!,streamId:frame.stream.id,scope:frame.cp.state.scope,callId:this.ids.next("call"),attemptIndex:0,purpose:"primary",parentToolExecutionId:null,providerId:position.modelRef.providerId,modelId:position.modelRef.modelId,providerRequestId:null,responseMessageId:null,contextRevision:frame.cp.revision,requestSnapshotRef:null,startedAt:this.clock.now(),firstOutputAt:null,endedAt:null,durationMs:null,timeToFirstOutputMs:null,status:"running",finishReason:null,error:null,usage:normalizeUsage({})};
+  const priorAttempts=this.rows<ModelAttemptRecord>(frame,"model_attempts").filter(a=>a.turnId===position.turnId&&a.purpose==="primary");
+  if(priorAttempts.length){attempt.callId=priorAttempts[0]!.callId;attempt.attemptIndex=priorAttempts.length;}
   this.put(frame,"model_attempts",attempt);budgets.modelAttempts++;position.phase="ModelPending";await this.commit(frame,"ExecutionTransition");await this.hook(frame,AgentEvents.ModelStart,{attemptId:attempt.id,model:position.modelRef});
   let response:ModelResponse|undefined;
   try{
@@ -236,13 +249,13 @@ export class AgentEngine {
   try{
    if(!tool)fail("UnknownTool","No registered tool executor");
    const saved=position.handlerCursor?.eventId===AgentEvents.BeforeTool.id?position.handlerCursor.payload:null;
-   const prepared=(saved??await this.hook(frame,AgentEvents.ToolPrepare,{tool:{name:tool.name,description:tool.description,inputSchema:tool.input.jsonSchema},toolExecutionId:id,toolCallId:record.toolCallId,arguments:record.arguments})) as ToolPreparation;
+   const prepared=(saved??(record.policyDecision?.decision==="allowed"?{tool:{name:tool.name,description:tool.description,inputSchema:tool.input.jsonSchema},toolExecutionId:id,toolCallId:record.toolCallId,arguments:record.arguments}:await this.hook(frame,AgentEvents.ToolPrepare,{tool:{name:tool.name,description:tool.description,inputSchema:tool.input.jsonSchema},toolExecutionId:id,toolCallId:record.toolCallId,arguments:record.arguments}))) as ToolPreparation;
    record.arguments=immutable(prepared.arguments);tool.input.parse(record.arguments);
-   const decision=await this.hook(frame,AgentEvents.BeforeTool,immutable(prepared));
+   const decision=record.policyDecision?.decision==="allowed"?{decision:"allow" as const}:await this.hook(frame,AgentEvents.BeforeTool,immutable(prepared));
    record.policyDecision={decision:decision?.decision==="deny"?"denied":"allowed",...(decision?.decision==="deny"&&decision.reason?{reason:decision.reason}:{})};
    if(decision?.decision==="deny"){record.status="denied";result=toolResult(decision.reason??"Tool denied");}
    else{
-    record.status="running";record.startedAt=this.clock.now();position.budgets.toolCalls++;position.phase="ToolPending";await this.commit(frame,"ExecutionTransition");
+    record.status="running";record.startedAt=this.clock.now();record.idempotencyKey=tool.recovery?.idempotencyKey(tool.input.parse(record.arguments),{toolExecutionId:record.id})??null;position.budgets.toolCalls++;position.phase="ToolPending";await this.commit(frame,"ExecutionTransition");
     await this.hook(frame,AgentEvents.ToolStart,{toolExecutionId:id,toolCallId:record.toolCallId});
     result=await executeTool(tool,record.arguments,{signal:frame.sink.controller.signal,threadId:frame.cp.threadId,streamId:frame.stream.id,turnId:record.turnId,toolExecutionId:id,emit:progress=>{void this.hook(frame,AgentEvents.ToolUpdate,{toolExecutionId:id,progress});}});
     record.status="succeeded";
@@ -257,6 +270,56 @@ export class AgentEngine {
   const message=MessageCodec.encode(new ToolMessage({toolCallId:record.toolCallId,content:result.content,metadata:result.metadata}));record.resultMessageId=message.id;
   frame.cp.execution!.pendingToolExecutionIds=frame.cp.execution!.pendingToolExecutionIds.filter(value=>value!==id);frame.cp.execution!.phase=frame.cp.execution!.pendingToolExecutionIds.length?"BeforeTool":"TurnBoundary";
   await this.appendMessage(frame,message);await this.hook(frame,AgentEvents.ToolEnd,{toolExecutionId:id,toolCallId:record.toolCallId,result,status:record.status});
+ }
+ async restoreFrame(request:Extract<ExecutionRequest,{kind:"recover"}>,sink:Attachment,registry:RegistryLease,checkManifest=true):Promise<ExecutionFrame>{
+  const head=await this.backend.threads.get(request.threadId);if(!head)fail("ThreadNotFound","Thread not found");
+  const stored=await this.backend.executions.get("streams",request.streamId,{threadId:request.threadId});if(!stored)fail("StreamNotFound","Execution not found");
+  if(["completed","failed","stopped","cancelled"].includes(stored.status))fail("AlreadyTerminal","Execution already ended");
+  const cp=structuredClone((await this.backend.checkpoints.get(head.currentCheckpointId))!);
+  if(cp.execution?.streamId!==request.streamId)fail("InvalidTransition","Execution is not current thread work");
+  if(checkManifest)validateManifest(cp.execution.registryManifest,registry,request.model);
+  const lease=await this.backend.ownership.acquire({threadId:request.threadId,ownerToken:this.ids.next("owner"),ttlMs:30000});
+  try{
+   const records=new Map<string,RecordEntry>();
+   for(const kind of ["streams","turns","model_attempts","tool_executions","interrupts","plugin_states"] as const)for(const row of await this.backend.executions.listRecords(kind,request.threadId))records.set(kind+":"+("id" in row?row.id:""),{kind,id:"id" in row?row.id:"",threadId:request.threadId,data:structuredClone(row)} as RecordEntry);
+   const stream=(records.get("streams:"+request.streamId) as {data:StreamRecord}).data;
+   let frame!:ExecutionFrame;
+   const state=new PluginStateAccess(registry.list<PluginStateDefinition<any>>("state"),{type:"thread",id:request.threadId},cp.state.pluginStates,async()=>{await this.commit(frame,"PluginStateCommitted");return frame.cp.id;});
+   frame={request,sink,registry,lease,cp,stream,records,state,admitted:true,sequence:0};sink.setId(stream.id);
+   if(request.model)cp.execution!.modelRef=request.model;
+   return frame;
+  }catch(error){await this.backend.ownership.release(lease);throw error;}
+ }
+ async prepareRecovery(request:Extract<ExecutionRequest,{kind:"recover"}>,sink:Attachment,registry:RegistryLease):Promise<ExecutionFrame>{
+  const frame=await this.restoreFrame(request,sink,registry);
+  try{
+   const plan=new RecoveryService().plan(frame.cp,this.rows(frame,"model_attempts"),this.rows(frame,"tool_executions"));
+   if(plan.kind==="pending-interrupt")return frame;
+   frame.stream.status="interrupted";
+   if(plan.kind==="incompatible")fail("ResumeIncompatible","Invalid recovery cursor");
+   if(plan.kind==="model"){
+    plan.attempt.status="interrupted";plan.attempt.endedAt=this.clock.now();plan.attempt.error={code:"InterruptedModelCall",message:"Provider outcome was not committed",retryable:true};
+    await this.commit(frame,"ExecutionTransition");
+    const decision=await this.hook(frame,AgentEvents.ModelRecover,{attemptId:plan.attempt.id,error:plan.attempt.error});
+    if(decision?.decision!=="retry")fail("RecoveryRequired","Model retry requires an explicit recovery policy");
+    frame.cp.execution!.phase="BeforeModel";
+   }
+   if(plan.kind==="tool"){
+    const record=plan.tool;record.status="interrupted";await this.commit(frame,"ExecutionTransition");
+    const tool=registry.find<Tool>("tool",record.toolName);
+    const result=tool?.recovery&&record.idempotencyKey?await tool.recovery.reconcile({id:record.id,input:tool.input.parse(record.arguments),key:record.idempotencyKey}):{status:"unknown" as const};
+    if(result.status==="unknown")fail("RecoveryRequired","Tool dispatch outcome is unknown");
+    if(result.status==="safeToRetry"){record.status="pending";frame.cp.execution!.phase="BeforeTool";}
+    if(result.status==="completed"){
+     const transformed=await this.hook(frame,AgentEvents.ToolResult,result.result),message=MessageCodec.encode(new ToolMessage({toolCallId:record.toolCallId,content:transformed.content,metadata:transformed.metadata}));
+     record.status="succeeded";record.result=transformed;record.resultMessageId=message.id;record.endedAt=this.clock.now();
+     frame.cp.execution!.pendingToolExecutionIds=frame.cp.execution!.pendingToolExecutionIds.filter(id=>id!==record.id);
+     frame.cp.execution!.phase=frame.cp.execution!.pendingToolExecutionIds.length?"BeforeTool":"TurnBoundary";
+     await this.appendMessage(frame,message);
+    }
+   }
+   frame.stream.status="running";await this.commit(frame,"Resumed");return frame;
+  }catch(error){await this.backend.ownership.release(frame.lease);throw error;}
  }
  async suspend(frame:ExecutionFrame,decision:ControlDecision):Promise<never>{
   if(decision.decision!=="suspend")fail("InvalidTransition","Expected suspension decision");
