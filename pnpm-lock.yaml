@@ -8,6 +8,12 @@ importers:
 
   .:
     devDependencies:
+      '@tesseract/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@tesseract/storage-sqlite':
+        specifier: workspace:*
+        version: link:packages/storage-sqlite
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
@@ -19,6 +25,12 @@ importers:
         version: 5.0.4(@types/node@24.19.2)(vite@8.3.4(@types/node@24.19.2))
 
   packages/core: {}
+
+  packages/storage-sqlite:
+    dependencies:
+      '@tesseract/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
