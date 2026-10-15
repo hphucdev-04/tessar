@@ -4,6 +4,7 @@ import type { ToolResult } from "../tools/tool.js";
 import type { ModelUsage, UsageSummary } from "./usage.js";
 export type StreamStatus="pending"|"running"|"suspended"|"interrupted"|"completed"|"stopped"|"failed"|"cancelled";
 export interface StreamRecord {
+  outputMessageIds:readonly string[];
   id:string;threadId:string;scope:JsonObject;parentStreamId:string|null;parentToolExecutionId:string|null;
   triggerMessageId:string|null;status:StreamStatus;stopReason:string|null;startedAt:string;endedAt:string|null;durationMs:number|null;error:ErrorInfo|null;directUsage:UsageSummary;inclusiveUsage:UsageSummary;
 }
