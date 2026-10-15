@@ -4,3 +4,8 @@ export * from "./messages/parts.js";
 export * from "./messages/message.js";
 export * from "./messages/codec.js";
 export * from "./instructions/instruction.js";
+export * from "./events/definition.js";
+export * from "./events/catalog.js";
+export * from "./plugins/context.js";
+export * from "./plugins/host.js";
+export * from "./plugins/registry.js";
