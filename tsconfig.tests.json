@@ -1,0 +1,36 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@tesseract/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@tesseract/core/testing": [
+        "./packages/core/src/testing/index.ts"
+      ],
+      "@tesseract/core/runtime": [
+        "./packages/core/src/runtime/index.ts"
+      ],
+      "@tesseract/sdk": [
+        "./packages/sdk/src/index.ts"
+      ],
+      "@tesseract/storage-sqlite": [
+        "./packages/storage-sqlite/src/index.ts"
+      ],
+      "@tesseract/provider-openai": [
+        "./packages/provider-openai/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "examples/**/*.ts",
+    "vitest.config.ts"
+  ]
+}
+
