@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.superpowers/
+.worktrees/
+*.db
+*.db-shm
+*.db-wal
+.env
+
