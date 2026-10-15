@@ -30,6 +30,8 @@ export class PluginHost {
     };
     const api: PluginContext = {
       registry: { register },
+      tools: { register: tool => register("tool", tool.name, tool) },
+      models: { registerProvider: provider => register("provider", provider.id, provider) },
       defer: disposer => { slot.disposers.push(disposer); },
       on: (definition, handler) => {
         const prior = definitions.get(definition.id);
