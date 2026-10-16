@@ -188,6 +188,47 @@ in a new process with `--db ./state.db --thread <id> --resume <interrupt-id> --a
 CLI uses a scripted provider by default; `--openai` requires OPENAI_API_KEY and
 OPENAI_MODEL. No live API is required by the default checks.
 
+## Publishing
+
+The four public packages share one release version. Update `version` in
+`packages/{core,openai,plugins,sqlite}/package.json` together; the private workspace
+root's version is not used for publishing. Commit the version changes before
+creating the matching Git tag, for example:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` calls the existing Ubuntu/Windows CI, validates
+the tag against all four package versions, builds and packs with pnpm, and checks
+the actual archives before publishing. Stable versions use `latest`; prereleases
+such as `v0.2.0-beta.1` use `next`. Archives are saved as a workflow artifact.
+Packages publish sequentially: core, OpenAI, plugins, SQLite.
+
+Configure npm Trusted Publishing for **each package** with GitHub owner
+`hphucdev-04`, repository `tessar`, workflow filename `release.yml`, no environment,
+and **Allow npm publish** enabled. The publish job uses OIDC; no `NPM_TOKEN` secret
+is needed. See [npm's trusted publisher setup](https://docs.npmjs.com/trusted-publishers/).
+If the packages do not exist yet, publish their first versions from a logged-in
+terminal, then configure their trusted publishers. For that first publish, build
+and pack locally with pnpm and use `npm publish <archive.tgz> --access public
+--tag next` for the current alpha, or `--tag latest` for a stable version.
+
+To check the current alpha locally without publishing (PowerShell):
+
+```powershell
+$env:RELEASE_TAG = 'v0.1.0-alpha.0'
+node scripts/release.mjs check
+pnpm build
+pnpm --filter './packages/*' -r pack --pack-destination "$PWD/dist/release"
+node scripts/release.mjs verify
+```
+
+Publishing several npm packages is not atomic. If a publish fails after an earlier
+package succeeds, keep the saved archives, inspect which versions reached npm, and
+publish only the missing packages. A full rerun does not skip published versions.
+
 Current authority: [English spec](docs/superpowers/specs/2026-10-15-tessar-minimal-core-design.md)
 and [English plan](docs/superpowers/plans/2026-10-15-tessar-minimal-core-plan.md).
 Earlier design documents are historical and are superseded by these documents.

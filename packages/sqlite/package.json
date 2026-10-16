@@ -10,7 +10,7 @@
     "url": "git+https://github.com/hphucdev-04/tessar.git",
     "directory": "packages/sqlite"
   },
-  "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -11,7 +11,7 @@
     "url": "git+https://github.com/hphucdev-04/tessar.git",
     "directory": "packages/openai"
   },
-  "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "tsc -p tsconfig.json",

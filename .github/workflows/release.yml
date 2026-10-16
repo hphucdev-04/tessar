@@ -1,0 +1,49 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          registry-url: https://registry.npmjs.org/
+      - name: Validate release versions
+        id: release
+        run: node scripts/release.mjs check
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter './packages/*' -r pack --pack-destination "$GITHUB_WORKSPACE/dist/release"
+      - run: node scripts/release.mjs verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ steps.release.outputs.version }}
+          path: dist/release/*.tgz
+          if-no-files-found: error
+      - name: Publish with npm trusted publishing
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          NPM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          for package in core openai plugins sqlite; do
+            npm publish "dist/release/tessar-${package}-${RELEASE_VERSION}.tgz" --access public --tag "$NPM_TAG"
+          done
