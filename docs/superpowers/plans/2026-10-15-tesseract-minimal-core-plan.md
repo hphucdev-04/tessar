@@ -56,7 +56,9 @@ Files: core/{agent,controller,thread,index}.ts, models/{registry,resolver,cache,
 testing/harness.ts and existing Agent/Controller/Thread/model tests; workspace config/scripts.
 
 Produces: Agent(options).stream/generate; Controller.initialize/create/get/list/delete/
-forkThread/models/plugins/dispose; scoped Thread APIs from the spec. Agent directly
+forkThread/models/plugins/dispose; scoped Thread APIs from the spec. Initial plugin
+instances are passed to `new Controller({id, agent, plugins})`; Agent options contain
+only its behavior/model/limits configuration. Agent directly
 contains the existing execution logic. Helpers may be plain functions where justified.
 
 - [x] Run existing constructor/lifecycle/parity/query tests and observe missing implementations.

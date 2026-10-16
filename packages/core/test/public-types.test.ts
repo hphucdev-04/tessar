@@ -12,6 +12,11 @@ it("infers the public plugin type map and discriminated event union",()=>{
  const inspect=(event:StreamEvent)=>{if(event.type===AgentEvents.MessageDelta){const kind:"text"|"reasoning"=event.payload.partKind;return kind;}return null;};
  void inspect;expect(plugin.id).toBe("typed-public");
  if(false){
+  new Controller({id:"runtime",agent:new Agent({id:"a"}),plugins:[plugin]});
+  // @ts-expect-error Plugins are configured on Controller
+  new Agent({id:"a",plugins:[plugin]});
+  // @ts-expect-error Agent does not own plugin configuration or management
+  new Agent({id:"a"}).plugins;
   // @ts-expect-error Agent requires a developer ID
   new Agent({});
   // @ts-expect-error Controller requires a developer ID

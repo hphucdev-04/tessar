@@ -83,9 +83,18 @@ từng provider hoặc phụ thuộc một framework khác để tạo message.
 
 Đã chốt sau review ngày 2026-10-15: Controller sở hữu initialization/runtime,
 storage backend, registry và plugin resources. Agent giữ định nghĩa hành vi,
-instructions/plugins và agent loop, dùng cùng core execution contracts.
+instructions/model/limits và agent loop, dùng cùng core execution contracts.
+Đã cập nhật ngày 2026-10-16: khai báo plugins trên Controller, cùng nơi sở hữu
+setup/attach/detach/cleanup; Agent không còn nhận hoặc giữ danh sách plugins.
 
-- Dùng new Agent({id,...}), new Controller({id,agent}), await controller.initialize().
+Phân phối plugin ngoài được cập nhật ngày 2026-10-16: thư mục root do CLI chọn
+(ví dụ `.my-cli`), custom ở `plugins/` được tự nhận diện, danh sách package ở
+`plugins.json` dưới key `packages`. npm quản lý `npm/package.json`, lockfile và
+`npm/node_modules`. `PluginManager` cung cấp install/load/update/remove; Tesseract
+không bắt CLI dùng tên lệnh hoặc tên thư mục cố định. File custom có thể đứng riêng
+hoặc nằm trong thư mục có index; cả hai default-export instance plugin tạo bằng new.
+
+- Dùng new Agent({id,...}), new Controller({id,agent,plugins}), await controller.initialize().
   Không yêu cầu thêm agent.initialize hoặc session.initialize public.
 - controller.createSession({model,scope}) tạo Session dùng runtime đã ready.
 - Session có subscribe (mọi events hoặc typed definition), stream, abort,

@@ -176,7 +176,7 @@ git commit -m "feat(provider): add OpenAI streaming helper and profile resolver"
 **Interfaces**
 
 - Consumes: Agent loop từ B, A StateQueries/ForkService/PluginHost, C1 ModelRegistry.
-- Produces: Agent({id, model?, instructions?, plugins?, limits?}) with stream(options)
+- Produces: Agent({id, model?, instructions?, limits?}) with stream(options)
   → Stream; generate(options) → Promise<GenerateOutcome>. Options.input required,
   model optional, scope/context/signal/limits optional. Model resolution explicit
   override → Agent default → MissingModel.
@@ -184,7 +184,7 @@ git commit -m "feat(provider): add OpenAI streaming helper and profile resolver"
   Một Agent instance gắn với một Controller; Controller thứ hai bị từ chối.
   Agent/Controller/Thread được export trực tiếp từ @tesseract/core, không cần
   bridge runtime hoặc testing subpath để chạy production.
-- Produces: Controller({id,agent}), initialize():Promise<void>, dispose():Promise<void>,
+- Produces: Controller({id,agent,plugins?}), initialize():Promise<void>, dispose():Promise<void>,
   models, plugins, create/get/list/delete/forkThread exact signatures public spec.
   createSession added C4; no public Agent.initialize/dispose.
 - Produces: core Thread implements public §5 query/stream/cancelStream/dispose APIs;

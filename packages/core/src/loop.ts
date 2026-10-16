@@ -155,7 +155,9 @@ async function callModel(
     position.modelRef.providerId,
   );
   if (!provider) fail("MissingProvider", "Model provider is not registered");
-  const adapter = providerCall(position.modelRef, () => provider.create(position.modelRef.modelId));
+  const adapter = providerCall(position.modelRef, () =>
+    provider.create(position.modelRef.modelId),
+  );
   const tools = frame.registry.list<Tool>("tool"),
     descriptions: ToolDescription[] = tools.map((t) => ({
       name: t.name,
@@ -450,7 +452,10 @@ async function callTool(
     )
       throw error;
     record.status = "failed";
-    record.error = errorInfo(error, { source: "tool", toolName: record.toolName });
+    record.error = errorInfo(error, {
+      source: "tool",
+      toolName: record.toolName,
+    });
     result = toolResult("Tool failed: " + record.error.message);
     await context.hook(frame, AgentEvents.ToolError, {
       toolExecutionId: id,

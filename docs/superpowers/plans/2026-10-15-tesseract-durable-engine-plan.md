@@ -49,7 +49,6 @@ interface AgentOptions {
   id: string;
   model?: Model | ModelRef;
   instructions?: string | Instruction;
-  plugins?: readonly Plugin[];
   limits?: Partial<StreamLimits>;
 }
 type ExecutionRequest =
