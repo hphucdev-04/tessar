@@ -1,5 +1,5 @@
 import {expect,it} from "vitest";
-import {normalizeInstruction,HumanMessage,ToolMessage} from "@tesseract/core";
+import {normalizeInstruction,HumanMessage,ToolMessage} from "@tessar/core";
 import {decodeOutput,encodeInput} from "../src/codec.js";
 const ref={providerId:"openai",modelId:"fixture"};
 it("roundtrips ordered reasoning and two function calls with opaque IDs",()=>{

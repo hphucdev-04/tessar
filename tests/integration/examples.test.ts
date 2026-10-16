@@ -9,7 +9,7 @@ it("runs built offline headless and CLI consumers",()=>{
  expect(run("examples/cli/dist/main.js",["hello"])).toMatchObject({status:"completed",output:"fixture answer"});
 });
 it("resumes a CLI tool approval across process restart with the same logical stream",async()=>{
- const directory=await mkdtemp(join(tmpdir(),"tesseract-cli-")),filename=join(directory,"state.db");
+ const directory=await mkdtemp(join(tmpdir(),"tessar-cli-")),filename=join(directory,"state.db");
  try{
   const pending=run("examples/cli/dist/main.js",["hello","--db",filename,"--approval"]);expect(pending.status).toBe("suspended");expect(pending.toolCalls).toBe(0);
   const result=run("examples/cli/dist/main.js",["--db",filename,"--thread",pending.threadId,"--resume",pending.interruptId,"--approval"]);

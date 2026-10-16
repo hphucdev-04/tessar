@@ -6,9 +6,9 @@ import { createTool,toolResult } from "../src/tools/tool.js";
 import { AgentEvents } from "../src/events/catalog.js";
 it.each(["stop", "throw"] as const)("enforces BeforeTool %s without executing the tool or continuing the model",async(mode)=>{
  let executed=0;
- const harness=await AgentHarness.create({modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"write-1",name:"write",arguments:{}}]))}},{text:"must not continue"}],plugins:[{id:"policy",setup(tesseract){
-  tesseract.tools.register(createTool({name:"write",description:"write",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{executed++;return toolResult("written");}}));
-  tesseract.hook(AgentEvents.BeforeTool,()=>{if(mode==="throw")throw Error("policy unavailable");return {decision:"stop",reason:"policy stopped"};});
+ const harness=await AgentHarness.create({modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"write-1",name:"write",arguments:{}}]))}},{text:"must not continue"}],plugins:[{id:"policy",setup(tessar){
+  tessar.tools.register(createTool({name:"write",description:"write",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{executed++;return toolResult("written");}}));
+  tessar.hook(AgentEvents.BeforeTool,()=>{if(mode==="throw")throw Error("policy unavailable");return {decision:"stop",reason:"policy stopped"};});
  }}]});
  try{const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("write"))],model:{providerId:"scripted",modelId:"test"}});
  await harness.collect(stream);const records=await harness.records(stream.id!);
@@ -29,7 +29,7 @@ it.each(["failed", "cancelled"] as const)("ends the active turn when its stream 
 });
 it("keeps checkpoint observers free of mutable execution services",async()=>{
  let observed:Record<string,unknown>|undefined;
- const harness=await AgentHarness.create({modelScripts:[{text:"done"}],plugins:[{id:"observer",setup(tesseract){tesseract.hook(AgentEvents.CheckpointCommitted,(_e,context)=>{observed=context;});}}]});
+ const harness=await AgentHarness.create({modelScripts:[{text:"done"}],plugins:[{id:"observer",setup(tessar){tessar.hook(AgentEvents.CheckpointCommitted,(_e,context)=>{observed=context;});}}]});
  try{const thread=await harness.createThread();await harness.collect(harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}}));
  expect(observed).toBeDefined();expect(observed!.state).toBeUndefined();expect(observed!.effects).toBeUndefined();expect(observed!.models).toBeUndefined();expect(observed!.suspend).toBeUndefined();
  }finally{await harness.dispose();}
@@ -37,7 +37,7 @@ it("keeps checkpoint observers free of mutable execution services",async()=>{
 it("runs model tools model with committed trace and one terminal event",async()=>{
  let executed=0;
  const tool=createTool({name:"lookup",description:"Lookup",input:{jsonSchema:{type:"object"},parse:()=>({})},execute:async()=>{executed++;return toolResult("found");}});
- const harness=await AgentHarness.create({plugins:[{id:"tools",setup(tesseract){tesseract.tools.register(tool);}}],modelScripts:[
+ const harness=await AgentHarness.create({plugins:[{id:"tools",setup(tessar){tessar.tools.register(tool);}}],modelScripts:[
   {response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"c1",name:"lookup",arguments:{}}])),finishReason:"tool_calls"}},
   {text:"answer",usage:{inputTokens:10,outputTokens:2}}
  ]});
@@ -53,7 +53,7 @@ it("runs model tools model with committed trace and one terminal event",async()=
  }finally{await harness.dispose();}
 });
 it("handles input in a plugin without a model attempt",async()=>{
- const harness=await AgentHarness.create({plugins:[{id:"commands",setup(tesseract){tesseract.hook(AgentEvents.InputPrepare,e=>({...e.payload,handled:{output:[MessageCodec.encode(new AssistantMessage("help"))]}}));}}]});
+ const harness=await AgentHarness.create({plugins:[{id:"commands",setup(tessar){tessar.hook(AgentEvents.InputPrepare,e=>({...e.payload,handled:{output:[MessageCodec.encode(new AssistantMessage("help"))]}}));}}]});
  try {
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("/help"))],model:{providerId:"scripted",modelId:"test"}});
   await harness.collect(stream);
@@ -64,7 +64,7 @@ it("handles input in a plugin without a model attempt",async()=>{
 it("stops a tool batch at the hard limit without dispatching the remainder or ending twice",async()=>{
  let calls=0;
  const tool=createTool({name:"lookup",description:"Lookup",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{calls++;return toolResult("ok");}});
- const harness=await AgentHarness.create({limits:{maxToolCalls:1},plugins:[{id:"tools",setup(tesseract){tesseract.tools.register(tool);}}],modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([
+ const harness=await AgentHarness.create({limits:{maxToolCalls:1},plugins:[{id:"tools",setup(tessar){tessar.tools.register(tool);}}],modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([
   {type:"tool-call",toolCallId:"c1",name:"lookup",arguments:{}},
   {type:"tool-call",toolCallId:"c2",name:"lookup",arguments:{}},
  ]))}}]});
@@ -76,7 +76,7 @@ it("stops a tool batch at the hard limit without dispatching the remainder or en
  }finally{await harness.dispose();}
 });
 it("commits required-finalizer failure as failed and preserves completed model usage",async()=>{
- const harness=await AgentHarness.create({modelScripts:[{text:"done",usage:{inputTokens:3,outputTokens:2}}],plugins:[{id:"finalizer",setup(tesseract){tesseract.hook(AgentEvents.StreamBeforeEnd,()=>{throw Error("flush failed");});}}]});
+ const harness=await AgentHarness.create({modelScripts:[{text:"done",usage:{inputTokens:3,outputTokens:2}}],plugins:[{id:"finalizer",setup(tessar){tessar.hook(AgentEvents.StreamBeforeEnd,()=>{throw Error("flush failed");});}}]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
   await harness.collect(stream);

@@ -1,7 +1,7 @@
-# Ghi chú định hướng Tesseract
+# Ghi chú định hướng Tessar
 
-Current authority: [English spec](superpowers/specs/2026-10-15-tesseract-minimal-core-design.md)
-and [English plan with verification results](superpowers/plans/2026-10-15-tesseract-minimal-core-plan.md).
+Current authority: [English spec](superpowers/specs/2026-10-15-tessar-minimal-core-design.md)
+and [English plan with verification results](superpowers/plans/2026-10-15-tessar-minimal-core-plan.md).
 TD-001 is now addressed for Node/npm hosts by
 [the distribution spec](superpowers/specs/2026-10-15-plugin-distribution-design.md)
 and [plan](superpowers/plans/2026-10-15-plugin-distribution-plan.md).
@@ -28,32 +28,32 @@ Giữ storage/checkpoint, validation và các bảo đảm chống mất dữ li
 
 ## Core và SDK: package chính đã chốt
 
-`@tesseract/core` cung cấp trực tiếp `Agent`, `Controller`, `Session`,
+`@tessar/core` cung cấp trực tiếp `Agent`, `Controller`, `Session`,
 `Thread`, message constructors, `createTool`, instructions và plugin APIs.
-Dev cài package chính và import các API này từ `@tesseract/core`;
+Dev cài package chính và import các API này từ `@tessar/core`;
 Session thường được tạo qua `controller.createSession()`.
 
 Core là phần thực thi nền tảng; SDK là bộ API công khai để sử dụng và mở
-rộng nền tảng đó. Không tách thành package `@tesseract/sdk` hoặc tạo
+rộng nền tảng đó. Không tách thành package `@tessar/sdk` hoặc tạo
 SDK runtime/RuntimePort chỉ để nối Agent với Controller/Session.
 Agent trực tiếp sở hữu loop; Controller sở hữu lifecycle/resources và Session
 tương tác với cùng Agent. Không thêm class engine để Agent gọi qua.
 Provider protocol/credentials và các storage adapters nằm trong packages
 plugin riêng; memory storage mặc định có sẵn trong core.
-Provider OpenAI dùng package `@tesseract/openai` trong `packages/openai`.
+Provider OpenAI dùng package `@tessar/openai` trong `packages/openai`.
 
 Đây là contract mới để sửa source/plan hiện có; chưa phải bằng chứng các
 exports đã được implement hoặc package đã publish lên npm.
 
 ## Lưu ý quan trọng: độc lập với Cube
 
-Tesseract là framework và SDK độc lập. Thiết kế của Tesseract không được lấy
+Tessar là framework và SDK độc lập. Thiết kế của Tessar không được lấy
 kiến trúc hiện tại, tính năng hay các yêu cầu riêng của Cube làm khuôn mẫu.
 
 Mục tiêu là xây dựng một hệ sinh thái dùng chung cho các ứng dụng agent.
 Cube là một ứng dụng sử dụng framework, SDK và các plugin trong hệ sinh thái đó.
 Các nhu cầu riêng của Cube thuộc về ứng dụng hoặc plugin của Cube; chúng không
-mặc nhiên trở thành trách nhiệm của core Tesseract.
+mặc nhiên trở thành trách nhiệm của core Tessar.
 
 ## Người sử dụng và mục đích
 
@@ -90,7 +90,7 @@ setup/attach/detach/cleanup; Agent không còn nhận hoặc giữ danh sách pl
 Phân phối plugin ngoài được cập nhật ngày 2026-10-16: thư mục root do CLI chọn
 (ví dụ `.my-cli`), custom ở `plugins/` được tự nhận diện, danh sách package ở
 `plugins.json` dưới key `packages`. npm quản lý `npm/package.json`, lockfile và
-`npm/node_modules`. `PluginManager` cung cấp install/load/update/remove; Tesseract
+`npm/node_modules`. `PluginManager` cung cấp install/load/update/remove; Tessar
 không bắt CLI dùng tên lệnh hoặc tên thư mục cố định. File custom có thể đứng riêng
 hoặc nằm trong thư mục có index; cả hai default-export instance plugin tạo bằng new.
 
@@ -240,7 +240,7 @@ Quy tắc đã chốt ngày 2026-10-15:
 
 ## Storage là chức năng có sẵn; plugin chỉ chọn backend
 
-Ranh giới đã được người dùng nhấn mạnh ngày 2026-10-15: Tesseract cung cấp
+Ranh giới đã được người dùng nhấn mạnh ngày 2026-10-15: Tessar cung cấp
 sẵn toàn bộ chức năng storage/state management, không chờ plugin bổ sung
 khả năng lưu state.
 
@@ -346,11 +346,11 @@ objects trong các bản thiết kế trước.
 
 ## Quan hệ với Mastra
 
-Mục tiêu đối với Cube là chuyển sang sử dụng Tesseract và không còn phụ thuộc
-Mastra. Tesseract tự sở hữu agent loop, không dùng Mastra làm lõi bên dưới.
+Mục tiêu đối với Cube là chuyển sang sử dụng Tessar và không còn phụ thuộc
+Mastra. Tessar tự sở hữu agent loop, không dùng Mastra làm lõi bên dưới.
 
 Việc chuyển đổi Cube là công việc tích hợp của ứng dụng, không phải cơ sở để
-thiết kế Tesseract theo cấu trúc hoặc API của Mastra/Cube.
+thiết kế Tessar theo cấu trúc hoặc API của Mastra/Cube.
 
 ## Triết lý nền tảng
 
@@ -360,7 +360,7 @@ thiết kế Tesseract theo cấu trúc hoặc API của Mastra/Cube.
   interception contracts và public state/control APIs phù hợp.
 - Core chỉ giữ những thành phần tối thiểu cần thiết để chạy một agent.
 - Lấy cảm hứng từ pi.dev về core tối giản và khả năng mở rộng.
-- Tesseract tự xây dựng core độc lập, thay vì dùng lõi Pi hoặc Mastra.
+- Tessar tự xây dựng core độc lập, thay vì dùng lõi Pi hoặc Mastra.
 
 ## Lưu ý quan trọng: chỉ core là bắt buộc, mở rộng được bổ sung sau
 
@@ -399,7 +399,7 @@ vẫn cần thiết kế; chưa coi các cơ chế đó là khả năng đã tri
 ## Nợ kỹ thuật TD-001: phân phối, cài đặt và nạp plugin
 
 Ngày ghi nhận: 2026-10-15. Cập nhật: người dùng yêu cầu trả nợ; đã triển khai
-`@tesseract/plugins` cho Node/npm CLI. Phạm vi hoãn bên dưới là ghi nhận lịch sử.
+`@tessar/plugins` cho Node/npm CLI. Phạm vi hoãn bên dưới là ghi nhận lịch sử.
 Standalone executable cần kiểm chứng riêng theo runtime đóng gói được chọn.
 
 Phạm vi để phase sau:
@@ -431,12 +431,12 @@ chứng CLI binary đã hỗ trợ cài và nạp thêm plugin từ bên ngoài.
 ## Public API, state machine và implementation plan đã được yêu cầu
 
 Ngày 2026-10-15 đã viết
-[bản contract cụ thể](superpowers/specs/2026-10-15-tesseract-public-api-state-machine-design.md)
+[bản contract cụ thể](superpowers/specs/2026-10-15-tessar-public-api-state-machine-design.md)
 cho Agent/Session/Thread/Stream, model.profile, checkpoint/interrupts, core
 storage, HITL/recovery và fork. Bản này có ví dụ xuyên suốt và acceptance
 matrix để chuẩn bị implementation plan.
 
-[Implementation plan](superpowers/plans/2026-10-15-tesseract-implementation-plan.md)
+[Implementation plan](superpowers/plans/2026-10-15-tessar-implementation-plan.md)
 chia thành core/storage, durable engine và SDK/integrations, có acceptance tests
 và thứ tự triển khai riêng. Chưa chạy các tasks trong plan.
 

@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { AgentEvents, HumanMessage, MessageCodec, createMemoryBackend, type Plugin } from "@tesseract/core";
-import { AgentHarness } from "@tesseract/core/testing";
-import { LoggerPlugin, type LogEntry } from "@tesseract/plugins/logger";
+import { AgentEvents, HumanMessage, MessageCodec, createMemoryBackend, type Plugin } from "@tessar/core";
+import { AgentHarness } from "@tessar/core/testing";
+import { LoggerPlugin, type LogEntry } from "@tessar/plugins/logger";
 
 it("logs provider errors with execution identity and persists their source", async () => {
   const entries: LogEntry[] = [];
@@ -21,8 +21,8 @@ it("logs provider errors with execution identity and persists their source", asy
 
 it("reports observer and plugin notification failures without recursive logger errors", async () => {
   const entries: LogEntry[] = [];
-  const broken: Plugin = { id: "broken", setup(tesseract) {
-    tesseract.hook(AgentEvents.ModelStart, () => { throw Error("plugin failed"); });
+  const broken: Plugin = { id: "broken", setup(tessar) {
+    tessar.hook(AgentEvents.ModelStart, () => { throw Error("plugin failed"); });
   } };
   const harness = await AgentHarness.create({ modelScripts: [{ text: "ok" }], plugins: [new LoggerPlugin({ write: entry => { entries.push(entry); } }), broken] });
   try {
@@ -70,9 +70,9 @@ it("logs decision hook failures without exposing mutable services to diagnostics
   const contexts: Record<string, unknown>[] = [];
   const entries: LogEntry[] = [];
   const harness = await AgentHarness.create({ plugins: [new LoggerPlugin({ write: entry => { entries.push(entry); } }), {
-    id: "policy", setup(tesseract) {
-      tesseract.hook(AgentEvents.BeforeStream, () => { throw Error("policy failed"); });
-      tesseract.hook(AgentEvents.Diagnostic, (_event, context) => { contexts.push(context); });
+    id: "policy", setup(tessar) {
+      tessar.hook(AgentEvents.BeforeStream, () => { throw Error("policy failed"); });
+      tessar.hook(AgentEvents.Diagnostic, (_event, context) => { contexts.push(context); });
     },
   }] });
   try {

@@ -1,4 +1,4 @@
-# Tesseract
+# Tessar
 
 An independent TypeScript framework and SDK for CLI agents and agents embedded
 in applications. The core runs an agent; plugins supply capabilities and policy.
@@ -8,16 +8,16 @@ been published to npm, and Cube has not been migrated.
 
 | Package | Responsibility |
 | --- | --- |
-| `@tesseract/core` | Agent, Controller, Session, Thread, messages, tools, hooks, state, checkpoints and default memory storage |
-| `@tesseract/openai` | OpenAI Responses adapter and provider metadata integration |
-| `@tesseract/plugins` | Optional Node host utilities for discovery, loading and npm package management; logger plugin at `/logger` |
-| `@tesseract/sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
+| `@tessar/core` | Agent, Controller, Session, Thread, messages, tools, hooks, state, checkpoints and default memory storage |
+| `@tessar/openai` | OpenAI Responses adapter and provider metadata integration |
+| `@tessar/plugins` | Optional Node host utilities for discovery, loading and npm package management; logger plugin at `/logger` |
+| `@tessar/sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
 
 ## Public API
 
 ```ts
-import { Agent, Controller, HumanMessage } from "@tesseract/core";
-import { OpenAIPlugin } from "@tesseract/openai";
+import { Agent, Controller, HumanMessage } from "@tessar/core";
+import { OpenAIPlugin } from "@tessar/openai";
 
 const agent = new Agent({
   id: "assistant",
@@ -61,16 +61,16 @@ send or stream method. Controller and Agent require developer-assigned IDs.
 Import tool APIs directly when defining tools:
 
 ```ts
-import { createTool, toolResult, type ToolDefinition } from "@tesseract/core/tool";
+import { createTool, toolResult, type ToolDefinition } from "@tessar/core/tool";
 ```
 
 ```ts
-import { AgentEvents, type Plugin, type PluginContext } from "@tesseract/core";
+import { AgentEvents, type Plugin, type PluginContext } from "@tessar/core";
 
 class BlockWritePlugin implements Plugin {
   readonly id = "block-write";
-  setup(tesseract: PluginContext): void {
-    tesseract.hook(AgentEvents.BeforeTool, event => {
+  setup(tessar: PluginContext): void {
+    tessar.hook(AgentEvents.BeforeTool, event => {
       if (event.payload.tool.name === "write") {
         return { decision: "deny", reason: "Write tool disabled" };
       }
@@ -89,27 +89,27 @@ Add imported plugin instances to Controller options or use
 `controller.plugins.attach(plugin)` / `detach(id)` while ready.
 
 [Plugin authoring](docs/plugin-authoring.md) describes tools, state, cleanup and
-durability boundaries. `@tesseract/plugins` provides opt-in discovery/loading and
+durability boundaries. `@tessar/plugins` provides opt-in discovery/loading and
 npm install/update/remove for Node hosts. Core does not scan root directories or
 install dependencies.
 
 ```ts
-import { PluginManager } from "@tesseract/plugins";
+import { PluginManager } from "@tessar/plugins";
 import { resolve } from "node:path";
 
 const manager = new PluginManager({
-  directory: resolve(".tesseract"),
+  directory: resolve(".tessar"),
   hostUrl: import.meta.url,
 });
 // Pass await manager.load() to Controller's plugins.
 // In finally: await controller.dispose(), then manager.dispose().
 ```
 
-Put a default-exported plugin in `.tesseract/plugins/example.mjs` (or erasable
-`.ts`). It imports the host's `@tesseract/core` without a separate SDK install.
+Put a default-exported plugin in `.tessar/plugins/example.mjs` (or erasable
+`.ts`). It imports the host's `@tessar/core` without a separate SDK install.
 Additional dependencies use normal Node resolution from the plugin environment.
 
-The host chooses the directory name. The demo uses `.tesseract`; a consuming CLI
+The host chooses the directory name. The demo uses `.tessar`; a consuming CLI
 can use `.my-cli` instead:
 
 ```text
@@ -127,19 +127,19 @@ can use `.my-cli` instead:
 Custom plugins are discovered automatically. `install()` installs npm packages
 under `npm/` and records their names in `plugins.json`. Loading never installs
 missing packages. Local files can use their own nearby dependencies or dependencies
-from the managed `npm/` environment. `@tesseract/core` resolves from the host.
+from the managed `npm/` environment. `@tessar/core` resolves from the host.
 
 ## Logging
 
-Add `new LoggerPlugin()` from `@tesseract/plugins/logger` to the Controller's `plugins` for JSON
+Add `new LoggerPlugin()` from `@tessar/plugins/logger` to the Controller's `plugins` for JSON
 logs on stderr. Supply `new LoggerPlugin({ write: entry => yourLogger.write(entry) })`
 to choose another destination. Entries include event type, timestamp and execution
-identity. Error payloads identify their source: `tesseract`, `provider`, `plugin`,
+identity. Error payloads identify their source: `tessar`, `provider`, `plugin`,
 `tool`, `storage` or `application`, with the relevant provider/plugin/tool identity.
 SDK exceptions keep their original object when thrown; trace/state store JSON error
 records. Diagnostic hook failures are isolated to prevent recursive logging.
 The subpath also default-exports the stderr logger plugin for
-`PluginManager.load(["@tesseract/plugins/logger"])` when the package is available
+`PluginManager.load(["@tessar/plugins/logger"])` when the package is available
 in the configured directory's `npm/` environment. Core is an optional peer dependency; the
 loader supplies the host's SDK without npm installing another copy.
 
@@ -188,8 +188,8 @@ in a new process with `--db ./state.db --thread <id> --resume <interrupt-id> --a
 CLI uses a scripted provider by default; `--openai` requires OPENAI_API_KEY and
 OPENAI_MODEL. No live API is required by the default checks.
 
-Current authority: [English spec](docs/superpowers/specs/2026-10-15-tesseract-minimal-core-design.md)
-and [English plan](docs/superpowers/plans/2026-10-15-tesseract-minimal-core-plan.md).
+Current authority: [English spec](docs/superpowers/specs/2026-10-15-tessar-minimal-core-design.md)
+and [English plan](docs/superpowers/plans/2026-10-15-tessar-minimal-core-plan.md).
 Earlier design documents are historical and are superseded by these documents.
 [Plugin distribution spec](docs/superpowers/specs/2026-10-15-plugin-distribution-design.md)
 and [plan](docs/superpowers/plans/2026-10-15-plugin-distribution-plan.md) extend them

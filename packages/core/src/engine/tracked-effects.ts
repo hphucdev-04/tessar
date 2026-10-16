@@ -1,4 +1,4 @@
-import { fail, requireId, TesseractError, errorInfo, errorFromInfo, type ErrorInfo } from "../errors.js";
+import { fail, requireId, TessarError, errorInfo, errorFromInfo, type ErrorInfo } from "../errors.js";
 import {
   assertJson,
   immutable,
@@ -213,7 +213,7 @@ export class EffectService {
           definition.execute(input, { ...this.context, key, operationId }),
           this.context.signal,
           () =>
-            new TesseractError(
+            new TessarError(
               "RecoveryRequired",
               "Effect cancelled with unknown external outcome",
             ),

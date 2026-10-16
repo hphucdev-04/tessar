@@ -1,1 +1,21 @@
-{"name":"@tesseract/openai","version":"0.1.0","type":"module","exports":{".":{"types":"./dist/index.d.ts","import":"./dist/index.js"}},"files":["dist"],"scripts":{"build":"tsc -p tsconfig.json","typecheck":"tsc --noEmit -p tsconfig.json"},"dependencies":{"@tesseract/core":"workspace:*","openai":"7.34.0"}}
+{
+  "name": "@tessar/openai",
+  "version": "0.1.0-alpha.0",
+  "description": "OpenAI Responses provider and model metadata integration for Tessar.",
+  "type": "module",
+  "engines": { "node": ">=24.14.0" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hphucdev-04/tesseract.git",
+    "directory": "packages/openai"
+  },
+  "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": { "@tessar/core": "workspace:*", "openai": "7.34.0" }
+}

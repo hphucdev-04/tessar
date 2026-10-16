@@ -1,6 +1,6 @@
-# Tesseract: public API và state machine
+# Tessar: public API và state machine
 
-> Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
+> Historical document — superseded by [Minimal Core Design](2026-10-15-tessar-minimal-core-design.md) and its English implementation plan.
 
 > 2026-10-16 API update: plugins are configured on Controller, not Agent.
 > Use `new Controller({ id, agent, plugins })`; older Agent plugin snippets below
@@ -18,9 +18,9 @@ names là strings, constants và type map cung cấp autocomplete/type safety.
 Quyết định này thay các snippets event definition objects trong tài liệu cũ;
 code hiện tại cần được chuyển sang contract này và kiểm thử lại.
 
-Package chính đã chốt: `@tesseract/core` export trực tiếp Agent, Controller,
+Package chính đã chốt: `@tessar/core` export trực tiếp Agent, Controller,
 Session, Thread, messages, createTool và plugin APIs. SDK là public API của
-nền tảng; không tách package @tesseract/sdk hoặc thêm SDK runtime/RuntimePort.
+nền tảng; không tách package @tessar/sdk hoặc thêm SDK runtime/RuntimePort.
 Provider/storage adapters là packages plugin riêng, memory backend có sẵn.
 Agent trực tiếp sở hữu loop; Controller sở hữu lifecycle/resources và Session
 tương tác với cùng Agent. Không thêm class engine bên dưới Agent.
@@ -36,7 +36,7 @@ session.thread.switch đổi Thread đang chọn.
 
 ## 1. Mục tiêu, phạm vi và cách đọc
 
-Tesseract là framework/SDK độc lập cho CLI agents và agents nhúng trong
+Tessar là framework/SDK độc lập cho CLI agents và agents nhúng trong
 application. Cube là consumer. Core tự sở hữu agent loop, state machine,
 storage/state management và plugin host. Provider integrations và các khả
 năng chuyên biệt đi qua public contracts. Factory như createCodingAgent
@@ -45,8 +45,8 @@ ghép plugins trên new Agent, không tạo engine riêng.
 Tài liệu này cụ thể hóa ba tài liệu nền:
 
 - [Architecture notes](../../architecture-notes.md): các định hướng đã chốt.
-- [Core design](2026-10-14-tesseract-core-design.md): boundaries và event catalog.
-- [State design](2026-10-14-tesseract-state-design.md): records, trace và usage.
+- [Core design](2026-10-14-tessar-core-design.md): boundaries và event catalog.
+- [State design](2026-10-14-tessar-state-design.md): records, trace và usage.
 
 Sau khi được duyệt, signatures/transitions trong tài liệu này là contract
 cho phase hiện tại. Các tài liệu nền được đọc cùng các bổ sung tại đây.
@@ -181,7 +181,7 @@ await controller.initialize();
 Có thể inline new OpenAIPlugin trong plugins. Instance chứa resource mutable
 không tự được chia sẻ cho nhiều Agents; quyền sở hữu resource phải theo
 options của plugin. Các tên applicationTools/applicationPolicy là plugin
-instances của application, không phải tính năng built-in của Tesseract.
+instances của application, không phải tính năng built-in của Tessar.
 
 Limits mặc định: 32 turns, 64 model attempts và 128 tool calls mỗi
 logical Stream. Budgets được lưu và tiếp tục đếm qua suspend/recovery;
@@ -1469,8 +1469,8 @@ trình triển khai; tiến độ thực tế theo execution ledger, không suy 
   đã có Anthropic/Google adapters; normalized contract giữ được extension này.
 - Root scripts chuẩn: build, typecheck, test, test:integration, check:boundaries.
 - Test default offline/deterministic; live provider smoke opt-in theo environment.
-- Package chính là @tesseract/core; integrations dùng @tesseract/sqlite
-  và @tesseract/openai. Không cần package @tesseract/sdk; chưa publish npm.
+- Package chính là @tessar/core; integrations dùng @tessar/sqlite
+  và @tessar/openai. Không cần package @tessar/sdk; chưa publish npm.
 - SQLite dùng parameterized SQL, WAL, busy timeout 5000 ms, BEGIN IMMEDIATE.
   DatabaseSync là synchronous và node:sqlite còn active development ở baseline;
   đây là reference backend phase này, không hứa throughput server production.
@@ -1484,7 +1484,7 @@ có scripted provider; SDK/provider/examples qua public imports. Plan có thể
 chọn internal helper types/ports nhưng không đổi ownership hoặc public API đã chốt.
 
 Kế hoạch triển khai đã viết:
-[master và ba subplans](../plans/2026-10-15-tesseract-implementation-plan.md).
+[master và ba subplans](../plans/2026-10-15-tessar-implementation-plan.md).
 
 Căn cứ kỹ thuật: [Node 24.14 SQLite](https://github.com/nodejs/node/blob/v24.14.0/doc/api/sqlite.md),
 [OpenAI Node SDK](https://github.com/openai/openai-node),

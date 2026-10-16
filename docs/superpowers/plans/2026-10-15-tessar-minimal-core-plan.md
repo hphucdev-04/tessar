@@ -1,4 +1,4 @@
-# Tesseract Minimal Core Implementation Plan
+# Tessar Minimal Core Implementation Plan
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan natively, task by task. Steps use checkbox (`- [x]`) syntax for tracking.
 
@@ -11,17 +11,17 @@ constants plus an extensible type map. Reuse the existing storage, trace,
 provider and metadata code; remove the abandoned SDK package and bridges.
 
 **Tech Stack:** Node >=24.14.0, pnpm 11.5.3, TypeScript 7.0.2, Vitest 5.0.4,
-ESM, built-in node:sqlite in its adapter, OpenAI SDK 7.34.0 in @tesseract/openai.
+ESM, built-in node:sqlite in its adapter, OpenAI SDK 7.34.0 in @tessar/openai.
 
-**Spec:** [Minimal Core Design](../specs/2026-10-15-tesseract-minimal-core-design.md).
+**Spec:** [Minimal Core Design](../specs/2026-10-15-tessar-minimal-core-design.md).
 This plan supersedes the previous master/subplans. Native execution was already
 selected, and the user explicitly requested writing these documents then implementing.
 
 ## Global constraints
 
-- @tesseract/core exports Agent/Controller/Session/Thread and all public primitives.
-- No extra engine class, runtime port, bind adapter or @tesseract/sdk package.
-- Plugin setup parameter is tesseract; registration is tesseract.hook, never on.
+- @tessar/core exports Agent/Controller/Session/Thread and all public primitives.
+- No extra engine class, runtime port, bind adapter or @tessar/sdk package.
+- Plugin setup parameter is tessar; registration is tessar.hook, never on.
 - No required apiVersion and no core. event-name prefix.
 - Preserve required storage/checkpoint validation, fencing and recovery guarantees.
 - Keep existing meaningful tests; do not add dependencies or product policies.
@@ -47,7 +47,7 @@ Plugin {id,setup}; per-host hook kind/version metadata; immutable event identiti
 - [x] Add tests for string constants, inferred hook payload/result, no mandatory apiVersion,
   custom hooks and saved-order continuation. Run them and observe failures.
 - [x] Replace definition objects with strings/types and per-host registration metadata;
-  migrate all source/tests to setup(tesseract) and hook. Remove old aliases/prefixes.
+  migrate all source/tests to setup(tessar) and hook. Remove old aliases/prefixes.
 - [x] Run event/plugin tests and strict typecheck; existing behavior tests stay meaningful.
 
 ## Task 2: Agent, Controller and Thread in core
@@ -87,7 +87,7 @@ Files: tests/integration/public-imports.test.ts, examples/{cli,headless}, README
 docs/plugin-authoring.md, scripts/check-boundaries.mjs and CI workflow.
 
 Produces: offline CLI/headless consumers using public imports; a concise plugin example
-using tesseract.hook and real tool registration; source/package boundary checks and CI.
+using tessar.hook and real tool registration; source/package boundary checks and CI.
 
 - [x] Add failing black-box tests for built core exports and offline example processes.
 - [x] Implement minimal hosts/docs and boundary checks; no filesystem plugin loader/installer.

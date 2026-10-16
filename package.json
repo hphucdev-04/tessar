@@ -1,5 +1,6 @@
 {
-  "name": "tesseract-workspace",
+  "name": "tessar-workspace",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.5.3",
@@ -14,9 +15,9 @@
     "check:boundaries": "node scripts/check-boundaries.mjs"
   },
   "devDependencies": {
-    "@tesseract/core": "workspace:*",
-    "@tesseract/plugins": "workspace:*",
-    "@tesseract/sqlite": "workspace:*",
+    "@tessar/core": "workspace:*",
+    "@tessar/plugins": "workspace:*",
+    "@tessar/sqlite": "workspace:*",
     "@types/node": "^24.0.0",
     "typescript": "7.0.2",
     "vitest": "5.0.4"

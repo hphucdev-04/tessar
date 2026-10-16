@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { Plugin } from "@tesseract/core";
+import type { Plugin } from "@tessar/core";
 
 export interface PluginManagerOptions {
   directory: string;
@@ -40,7 +40,7 @@ export class PluginManager {
   readonly directory: string;
   private readonly npmDirectory: string;
   private readonly hostUrl: string;
-  private readonly prefix = "tesseract-plugin:" + randomUUID() + "/";
+  private readonly prefix = "tessar-plugin:" + randomUUID() + "/";
   private readonly graph = new Set<string>();
   private resolver?: ReturnType<typeof registerHooks>;
   private disposed = false;
@@ -135,8 +135,8 @@ export class PluginManager {
         }
         if (context.parentURL && this.graph.has(context.parentURL)) {
           if (
-            specifier === "@tesseract/core" ||
-            specifier.startsWith("@tesseract/core/")
+            specifier === "@tessar/core" ||
+            specifier.startsWith("@tessar/core/")
           )
             // Resolve through ESM: require's default resolver retains caller search paths.
             return {
@@ -198,7 +198,7 @@ export class PluginManager {
           typeof plugin.setup !== "function"
         )
           throw Error(
-            "Expected a default Plugin export with id and setup(tesseract)",
+            "Expected a default Plugin export with id and setup(tessar)",
           );
         if (ids.has(plugin.id))
           throw Error("Duplicate plugin ID: " + plugin.id);

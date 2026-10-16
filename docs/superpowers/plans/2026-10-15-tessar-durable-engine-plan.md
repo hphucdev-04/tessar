@@ -1,6 +1,6 @@
-# Tesseract Durable Agent Loop Implementation Plan
+# Tessar Durable Agent Loop Implementation Plan
 
-> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tessar-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** Pure TypeScript core, Vitest scripted providers/fault injection; SQLite cross-process suite từ A.
 
-**Spec:** [Master](2026-10-15-tesseract-implementation-plan.md), [A prerequisites](2026-10-15-tesseract-core-storage-plan.md), [public contract §§6–12](../specs/2026-10-15-tesseract-public-api-state-machine-design.md), [state trace/usage](../specs/2026-10-14-tesseract-state-design.md).
+**Spec:** [Master](2026-10-15-tessar-implementation-plan.md), [A prerequisites](2026-10-15-tessar-core-storage-plan.md), [public contract §§6–12](../specs/2026-10-15-tessar-public-api-state-machine-design.md), [state trace/usage](../specs/2026-10-14-tessar-state-design.md).
 
 ## Global Constraints
 
@@ -40,7 +40,7 @@ packages/core/src/engine/{context,tool-executor,interrupt,resume,recovery,delive
 tracked-effects}.ts. Không tạo class engine bọc bên dưới Agent. Giữ helpers
 khi chúng có trách nhiệm rõ ràng, không tách file chỉ để giảm số dòng.
 
-Agent và các plugin-facing types được export từ @tesseract/core. Các execution
+Agent và các plugin-facing types được export từ @tessar/core. Các execution
 helpers/internal admission chỉ phục vụ core và testing harness; không tạo thêm
 runtime port hoặc bắt application dựng backend/registry để new Agent.
 

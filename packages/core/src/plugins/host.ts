@@ -1,4 +1,4 @@
-import { TesseractError, errorInfo, fail, requireId, type ErrorInfo } from "../errors.js";
+import { TessarError, errorInfo, fail, requireId, type ErrorInfo } from "../errors.js";
 import { dispatch } from "../events/dispatcher.js";
 import { AgentEvents, hookKinds } from "../events/catalog.js";
 import { SessionEvents } from "../session-events.js";
@@ -98,7 +98,7 @@ export class PluginHost {
           configurationId: plugin.configurationId ?? null,
         });
       };
-      const tesseract: PluginContext = {
+      const tessar: PluginContext = {
         registry: { register },
         effects: {
           register: (definition) => {
@@ -153,7 +153,7 @@ export class PluginHost {
         storage: {
           registerBackend: (backend) => {
             register("storage", "primary", backend);
-            tesseract.defer(() => backend.close());
+            tessar.defer(() => backend.close());
           },
         },
         defer: (disposer) => {
@@ -189,13 +189,13 @@ export class PluginHost {
         emit: (definition, payload) => this.dispatch(definition, payload),
       };
       try {
-        const disposer = await plugin.setup(tesseract);
+        const disposer = await plugin.setup(tessar);
         if (disposer) slot.disposers.push(disposer);
         this.slots.push(slot);
         this.definitions = definitions;
         this.generation++;
       } catch (error) {
-        this.diagnostics(errorInfo(error, error instanceof TesseractError ? undefined : { source: "plugin", pluginId: plugin.id }));
+        this.diagnostics(errorInfo(error, error instanceof TessarError ? undefined : { source: "plugin", pluginId: plugin.id }));
         slot.detached = true;
         await this.releaseSlot(slot);
         throw error;

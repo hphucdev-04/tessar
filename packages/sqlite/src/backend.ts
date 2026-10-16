@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { canonicalJson,validateBatch,fail,immutable,matchesScope,type CommitBatch,type CommitReceipt,type StorageBackend,type ThreadInfo,type Checkpoint,type RecordKind,type RecordTypes,type RecordEntry,type PluginStateSnapshot } from "@tesseract/core";
+import { canonicalJson,validateBatch,fail,immutable,matchesScope,type CommitBatch,type CommitReceipt,type StorageBackend,type ThreadInfo,type Checkpoint,type RecordKind,type RecordTypes,type RecordEntry,type PluginStateSnapshot } from "@tessar/core";
 import { initializeSchema,recordTables } from "./schema.js";
 import { assertOwnership,createOwnership,transaction } from "./ownership.js";
 export async function createSqliteBackend(options:{filename:string}):Promise<StorageBackend> {

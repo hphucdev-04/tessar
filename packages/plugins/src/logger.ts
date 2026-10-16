@@ -4,7 +4,7 @@ import {
   type EventContext,
   type Plugin,
   type PluginContext,
-} from "@tesseract/core";
+} from "@tessar/core";
 export interface LogEntry extends EventContext {
   level: "info" | "warn" | "error";
   type: string;
@@ -56,9 +56,9 @@ export class LoggerPlugin implements Plugin {
     });
   }
 
-  setup(tesseract: PluginContext): void {
+  setup(tessar: PluginContext): void {
     for (const name of events)
-      tesseract.hook(name, (event) =>
+      tessar.hook(name, (event) =>
         this.write(
           Object.freeze({
             ...event,

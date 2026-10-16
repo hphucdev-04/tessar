@@ -10,6 +10,6 @@ it("binds queries and mutations to actual Thread scope and exposes committed tra
  }finally{await controller.dispose();}
 });
 it("runs Thread lifecycle hooks and prevents execution from disposed handles",async()=>{
- const seen:string[]=[];const {controller}=await fixture([],[{id:"lifecycle",setup(tesseract){tesseract.hook(AgentEvents.ThreadPrepare,e=>({...e.payload,title:"prepared"}));tesseract.hook(AgentEvents.ThreadStarted,()=>{seen.push("started");});tesseract.hook(AgentEvents.ThreadBeforeShutdown,()=>{seen.push("before");});tesseract.hook(AgentEvents.ThreadShutdown,()=>{seen.push("closed");});}}]);
+ const seen:string[]=[];const {controller}=await fixture([],[{id:"lifecycle",setup(tessar){tessar.hook(AgentEvents.ThreadPrepare,e=>({...e.payload,title:"prepared"}));tessar.hook(AgentEvents.ThreadStarted,()=>{seen.push("started");});tessar.hook(AgentEvents.ThreadBeforeShutdown,()=>{seen.push("before");});tessar.hook(AgentEvents.ThreadShutdown,()=>{seen.push("closed");});}}]);
  try{const thread=await controller.createThread();expect((await thread.snapshot()).state.metadata.title).toBe("prepared");await thread.dispose();expect(seen).toEqual(["started","before","closed"]);expect(()=>thread.stream({input:new HumanMessage("ask"),model:fixtureRef})).toThrow();}finally{await controller.dispose();}
 });

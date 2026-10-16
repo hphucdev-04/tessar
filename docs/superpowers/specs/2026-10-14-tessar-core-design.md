@@ -1,6 +1,6 @@
-# Tesseract: core, SDK và hệ sinh thái plugin
+# Tessar: core, SDK và hệ sinh thái plugin
 
-> Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
+> Historical document — superseded by [Minimal Core Design](2026-10-15-tessar-minimal-core-design.md) and its English implementation plan.
 
 > 2026-10-16 API update: plugin composition belongs to
 > `new Controller({ id, agent, plugins })`. Older Agent plugin/factory examples
@@ -11,7 +11,7 @@ controller.createSession và nhóm session.thread.* cùng subscribe/abort/follow
 Các đoạn Agent lifecycle/new Session/direct Session thread methods trong
 bản brainstorm dưới đây là thiết kế trước quyết định này. Public API hiện
 tại và ownership mới theo
-[public API/state machine](2026-10-15-tesseract-public-api-state-machine-design.md).
+[public API/state machine](2026-10-15-tessar-public-api-state-machine-design.md).
 Không dùng các snippets cũ làm API cuối cùng cho implementation. Ngày
 2026-10-15 người dùng đã chốt bản contract mới và yêu cầu implementation plan.
 Agent có model mặc định; Session dùng subscribe/followUp/resume/recover,
@@ -26,7 +26,7 @@ execution trace/usage nền tảng và API nền `new Agent(...)` đã
 đề xuất, chưa phải API đã triển khai hoặc thiết kế đã duyệt đầy đủ.
 
 Bản cụ thể hóa ngày 2026-10-15:
-[public API và state machine](2026-10-15-tesseract-public-api-state-machine-design.md).
+[public API và state machine](2026-10-15-tessar-public-api-state-machine-design.md).
 Tài liệu đó đưa ra signatures, defaults, checkpoint/interrupt schema và
 transitions đã chốt; chưa phải implementation. Khi review signatures/lifecycle cụ thể, dùng
 bản contract mới thay vì coi các ví dụ cũ dưới đây là API cuối cùng.
@@ -38,25 +38,25 @@ vẫn là đề xuất để review.
 
 ## 1. Mục tiêu và người sử dụng
 
-Tesseract là framework và SDK độc lập cho người xây dựng ứng dụng agent:
+Tessar là framework và SDK độc lập cho người xây dựng ứng dụng agent:
 
 - Người xây CLI agent: tự chọn terminal UI, commands, tools và workflow.
 - Người nhúng agent vào application: tự chọn giao diện, transport, danh tính
   người dùng, cách lưu dữ liệu và cách vận hành.
 
 Backend tự tích hợp SDK vào framework/server của họ, tự quản lý
-authentication, request lifecycle và transport. Tesseract không yêu cầu
+authentication, request lifecycle và transport. Tessar không yêu cầu
 một backend server do framework cung cấp.
 
 Cả hai dùng cùng một engine và plugin API. Một plugin provider hoặc tool có
 thể được dùng trong cả CLI lẫn application nếu không phụ thuộc host cụ thể.
 Plugin phụ thuộc terminal phải khai báo hoặc yêu cầu host terminal rõ ràng.
 
-Cube là một ứng dụng sử dụng hệ sinh thái Tesseract. Mục tiêu chuyển Cube khỏi
+Cube là một ứng dụng sử dụng hệ sinh thái Tessar. Mục tiêu chuyển Cube khỏi
 Mastra thuộc về tích hợp ứng dụng, không quyết định cấu trúc framework.
 
 Triết lý: core cung cấp cơ chế tối thiểu; plugin cung cấp khả năng và chính
-sách. Tesseract tự sở hữu agent loop và lấy cảm hứng từ pi.dev về khả năng mở rộng.
+sách. Tessar tự sở hữu agent loop và lấy cảm hứng từ pi.dev về khả năng mở rộng.
 
 Lưu ý đã xác nhận: chỉ core là nền tảng bắt buộc. Các khả năng khác có thể
 được bổ sung sau qua plugin/integration mà không phải sửa engine hoặc làm
@@ -226,7 +226,7 @@ process còn cần ownership/lease riêng để tránh execution trùng nhau.
 
 Schema chi tiết cho thread state, execution records, token/cache metrics và
 quy tắc aggregation nằm trong
-[state design](2026-10-14-tesseract-state-design.md). Execution trace và usage
+[state design](2026-10-14-tessar-state-design.md). Execution trace và usage
 là dữ liệu core; telemetry exporter là plugin. ThreadStore và ExecutionStore
 là các logical backend ports phía sau storage service có sẵn của core, có
 thể được một adapter cung cấp chung; không bắt buộc hai databases hoặc hai
@@ -506,7 +506,7 @@ Các helpers không tự đăng ký, lựa chọn model hoặc gắn behavior v�
 Model implementations chịu trách nhiệm HTTP, authentication, parsing và
 chuyển đổi messages sang giao thức provider. Có thể tận dụng SDK chính thức
 bên trong implementation khi phù hợp. Agent loop, state, event và usage
-semantics vẫn do core Tesseract sở hữu.
+semantics vẫn do core Tessar sở hữu.
 
 Model registry hỗ trợ provider registration để resolve model ID theo provider
 và single-model registration cho adapter đặc biệt. SDK tự resolve model metadata
@@ -1245,7 +1245,7 @@ Các định hướng trong notes đã được đồng bộ vào bản nháp. C
 là lựa chọn chưa duyệt, cần chốt theo mức ảnh hưởng tới contracts:
 
 Giải pháp cụ thể cho từng mục hiện có trong
-[bản public API/state machine](2026-10-15-tesseract-public-api-state-machine-design.md),
+[bản public API/state machine](2026-10-15-tessar-public-api-state-machine-design.md),
 đang chờ review. Đọc bảng này như checklist review bản contract, không phải
 yêu cầu mở thêm một vòng brainstorm cho từng tên method hoặc default.
 

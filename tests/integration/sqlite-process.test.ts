@@ -4,15 +4,15 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { AgentHarness } from "@tesseract/core/testing";
-import { createTool, toolResult } from "@tesseract/core";
-import { createSqliteBackend } from "@tesseract/sqlite";
+import { AgentHarness } from "@tessar/core/testing";
+import { createTool, toolResult } from "@tessar/core";
+import { createSqliteBackend } from "@tessar/sqlite";
 import { appendFileSync } from "node:fs";
 const supportsSpawn = !spawnSync(process.execPath, ["--version"]).error;
 it.skipIf(!supportsSpawn)(
   "fences two real processes racing with the same logical controller ID",
   async () => {
-    const directory = await mkdtemp(join(tmpdir(), "tesseract-process-")),
+    const directory = await mkdtemp(join(tmpdir(), "tessar-process-")),
       filename = join(directory, "state.db");
     const run = (participant: string) =>
       new Promise<void>((resolve, reject) => {
@@ -50,7 +50,7 @@ it.skipIf(!supportsSpawn)(
 it.skipIf(!supportsSpawn).each(["crash-model-result", "crash-tool-dispatch"])(
   "recovers SQLite after an actual process exits at %s",
   async (mode) => {
-    const directory = await mkdtemp(join(tmpdir(), "tesseract-crash-")),
+    const directory = await mkdtemp(join(tmpdir(), "tessar-crash-")),
       filename = join(directory, "state.db");
     try {
       await new Promise<void>((resolve, reject) => {
@@ -79,8 +79,8 @@ it.skipIf(!supportsSpawn).each(["crash-model-result", "crash-tool-dispatch"])(
         plugins: [
           {
             id: "tools",
-            setup(tesseract) {
-              tesseract.tools.register(
+            setup(tessar) {
+              tessar.tools.register(
                 createTool({
                   name: "write",
                   description: "write",

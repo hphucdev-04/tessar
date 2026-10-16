@@ -1,6 +1,6 @@
-# Tesseract state: hội thoại, execution trace và usage
+# Tessar state: hội thoại, execution trace và usage
 
-> Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
+> Historical document — superseded by [Minimal Core Design](2026-10-15-tessar-minimal-core-design.md) and its English implementation plan.
 
 Runtime ownership đã chốt sau review: Controller initialize và sở hữu
 storage/registry/resources; Session thao tác Thread qua session.thread.*.
@@ -15,7 +15,7 @@ nhiều turns; state phải có trace/usage của từng turn. Telemetry bên ng
 như Langfuse là plugin. Chưa có database schema hoặc implementation.
 
 Schema checkpoint/interrupts và transitions được cụ thể hóa trong
-[public API/state machine](2026-10-15-tesseract-public-api-state-machine-design.md)
+[public API/state machine](2026-10-15-tessar-public-api-state-machine-design.md)
 ngày 2026-10-15. Các bổ sung dưới đây phục vụ review cùng bản contract đó,
 đã được người dùng chốt để viết implementation plan. Chưa có code, database
 schema vật lý hoặc runtime tests.
@@ -349,7 +349,7 @@ values không bị hiểu là toàn bộ tokens đã được provider báo chí
 
 Ví dụ Anthropic báo input_tokens cho phần chưa cache, cùng
 cache_read_input_tokens và cache_creation_input_tokens riêng. Adapter cần
-tổng hợp các phần đó để tạo inputTokens theo contract của Tesseract.
+tổng hợp các phần đó để tạo inputTokens theo contract của Tessar.
 [Anthropic usage breakdown](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#tracking-cache-performance).
 
 Thông tin cache write theo TTL/tier hoặc usage modality riêng được giữ trong
@@ -394,7 +394,7 @@ telemetry plugin. Core storage lưu execution history qua backend được chọ
 mặc định là backend trong bộ nhớ, không lưu qua restart.
 
 Langfuse hoặc một hệ thống khác được tích hợp bằng exporter plugin. Plugin
-map Tesseract stream/turn/model/tool records sang trace/observations và có
+map Tessar stream/turn/model/tool records sang trace/observations và có
 thể thêm plugin-owned spans cho retrieval hoặc compaction. Langfuse mô tả
 observations là các bước LLM/tool/retrieval có thể được lồng nhau.
 [Langfuse data model](https://langfuse.com/docs/observability/data-model).

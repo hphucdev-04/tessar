@@ -1,4 +1,4 @@
-import { TesseractError, fail } from "../errors.js";
+import { TessarError, fail } from "../errors.js";
 import { immutable, type JsonValue } from "../json.js";
 import { canonicalJson } from "../state/commit.js";
 import type { StorageBackend } from "../state/storage-ports.js";
@@ -92,7 +92,7 @@ export async function validateResume(
     decision = binding.definition.resolve(parsed, interrupt.payload);
     immutable(decision);
   } catch (error) {
-    throw new TesseractError(
+    throw new TessarError(
       "InvalidResumeResponse",
       "Response does not satisfy interruption contract",
     );

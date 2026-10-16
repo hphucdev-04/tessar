@@ -147,8 +147,8 @@ export function createDelivery(
         bytes + size > limits.maxBytes
       ) {
         const error: ErrorInfo = {
-          source: "tesseract",
-          name: "TesseractError",
+          source: "tessar",
+          name: "TessarError",
           code: "ConsumerTooSlow",
           message: "Stream consumer exceeded its buffer",
           retryable: false,

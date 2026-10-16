@@ -1,16 +1,16 @@
-# Tesseract Framework and SDK Implementation Plan
+# Tessar Framework and SDK Implementation Plan
 
-> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tessar-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Xây framework/SDK độc lập để dev tạo CLI agent hoặc nhúng agent vào application qua cùng Agent engine, state và plugin ecosystem.
 
-**Architecture:** Package @tesseract/core sở hữu Agent/Controller/Session/Thread, loop, state, typed extension points và durable execution; public exports là SDK cho dev. Provider protocol và nơi lưu state là integrations qua public contracts. Thực hiện ba kế hoạch nối tiếp; mỗi phần có deliverable và test gate riêng.
+**Architecture:** Package @tessar/core sở hữu Agent/Controller/Session/Thread, loop, state, typed extension points và durable execution; public exports là SDK cho dev. Provider protocol và nơi lưu state là integrations qua public contracts. Thực hiện ba kế hoạch nối tiếp; mỗi phần có deliverable và test gate riêng.
 
 **Tech Stack:** Node.js >=24.14.0, pnpm 11.5.3, TypeScript 7.0.2, Vitest 5.0.4, ESM/NodeNext; node:sqlite và OpenAI SDK 7.34.0 chỉ ở integration packages.
 
-**Spec:** [Public API/state machine](../specs/2026-10-15-tesseract-public-api-state-machine-design.md), [core](../specs/2026-10-14-tesseract-core-design.md), [state](../specs/2026-10-14-tesseract-state-design.md), [notes](../../architecture-notes.md). Khi snippets cũ xung đột, public API/state machine là contract ưu tiên.
+**Spec:** [Public API/state machine](../specs/2026-10-15-tessar-public-api-state-machine-design.md), [core](../specs/2026-10-14-tessar-core-design.md), [state](../specs/2026-10-14-tessar-state-design.md), [notes](../../architecture-notes.md). Khi snippets cũ xung đột, public API/state machine là contract ưu tiên.
 
 **Cập nhật 2026-10-15 — ponytail từ đầu:** Rà lại cả A/B/C đã viết theo
 ponytail (full), giữ các hành vi người dùng đã chốt. Danh sách file và các
@@ -24,9 +24,9 @@ kiểm tra lại hành vi bị tác động.
 
 ## Global Constraints
 
-- Tesseract độc lập Cube/Mastra/Pi; không dùng engine của các framework đó.
+- Tessar độc lập Cube/Mastra/Pi; không dùng engine của các framework đó.
 - Core không có third-party production dependencies, không import filesystem, provider SDK hoặc SQLite; Agent/Controller/Session nằm trong core.
-- Một package chính @tesseract/core cung cấp SDK; không tạo @tesseract/sdk, SDK runtime hoặc RuntimePort để nối các thành phần core.
+- Một package chính @tessar/core cung cấp SDK; không tạo @tessar/sdk, SDK runtime hoặc RuntimePort để nối các thành phần core.
 - Agent trực tiếp sở hữu loop; Controller sở hữu lifecycle/resources; Session tương tác với cùng Agent. Không tạo class engine bọc bên dưới Agent.
 - Storage/checkpoint luôn có sẵn; memory backend default, SQLite reference backend qua node:sqlite trong package riêng.
 - Agent và Controller bắt buộc id do dev định danh; Session không có public id.
@@ -63,9 +63,9 @@ Không làm setup/scaffolding thành một deliverable rỗng.
 
 | Phần | Deliverable có thể kiểm chứng | Gate |
 | --- | --- | --- |
-| [A — Core contracts và storage](2026-10-15-tesseract-core-storage-plan.md) | Message/tool/event primitives, plugin host, state APIs, memory/SQLite cùng conformance | Core tests và SQLite child-process tests |
-| [B — Durable engine](2026-10-15-tesseract-durable-engine-plan.md) | Model/tool loop, checkpoints, interruption/recovery, cancellation và tracked child operations | Scripted-model fault-injection suite |
-| [C — SDK và integrations](2026-10-15-tesseract-sdk-integrations-plan.md) | Agent/Controller/Session, automatic profiles, OpenAI helper, external plugins và CLI/headless examples | Public-import tests, offline integration, built examples |
+| [A — Core contracts và storage](2026-10-15-tessar-core-storage-plan.md) | Message/tool/event primitives, plugin host, state APIs, memory/SQLite cùng conformance | Core tests và SQLite child-process tests |
+| [B — Durable engine](2026-10-15-tessar-durable-engine-plan.md) | Model/tool loop, checkpoints, interruption/recovery, cancellation và tracked child operations | Scripted-model fault-injection suite |
+| [C — SDK và integrations](2026-10-15-tessar-sdk-integrations-plan.md) | Agent/Controller/Session, automatic profiles, OpenAI helper, external plugins và CLI/headless examples | Public-import tests, offline integration, built examples |
 
 ## Package và file ownership
 

@@ -2,13 +2,14 @@ import OpenAI, { OpenAIError } from "openai";
 import type { ResponseUsage } from "openai/resources/responses/responses";
 import {
   errorInfo,
+  MessageCodec,
   fail,
   normalizeUsage,
   type ModelAdapter,
   type ModelChunk,
   type ModelRef,
   type ModelRequest,
-} from "@tesseract/core";
+} from "@tessar/core";
 import { decodeOutput, encodeInput } from "./codec.js";
 export interface OpenAIOptions {
   apiKey: string;
@@ -64,7 +65,7 @@ export class OpenAIAdapter implements ModelAdapter {
       fail("UnsupportedContext", "Model identity mismatch");
     encodeInput(request);
     } catch (error) {
-      errorInfo(error, { source: "tesseract", ...this.ref });
+      errorInfo(error, { source: "tessar", ...this.ref });
       throw error;
     }
   }
@@ -129,10 +130,12 @@ export class OpenAIAdapter implements ModelAdapter {
             yield {
               type: "response",
               response: {
-                message: decodeOutput(
-                  event.response.output,
-                  this.ref,
-                  event.response.id,
+                message: MessageCodec.encode(
+                  decodeOutput(
+                    event.response.output,
+                    this.ref,
+                    event.response.id,
+                  ),
                 ),
                 usage: normalized,
                 finishReason: "completed",
@@ -154,7 +157,7 @@ export class OpenAIAdapter implements ModelAdapter {
         throw failure("OpenAI stream ended before completion", "ProviderIncomplete");
     } catch (error) {
       if (context.signal.aborted) throw context.signal.reason;
-      errorInfo(error, { source: error instanceof OpenAIError ? "provider" : "tesseract", ...this.ref });
+      errorInfo(error, { source: error instanceof OpenAIError ? "provider" : "tessar", ...this.ref });
       throw error;
     }
   }

@@ -17,7 +17,7 @@ it("detaches overflowing consumers at 512 events without cancelling execution",a
 });
 it("cancels a suspended execution and its pending interrupt durably",async()=>{
  const Question=defineInterruption({id:"pause.question",version:1,response:{jsonSchema:{},parse:()=>({})},resolve:()=>ToolDecision.allow()});
- const harness=await AgentHarness.create({plugins:[{id:"pause",setup(tesseract){tesseract.interruptions.register(Question);tesseract.hook(AgentEvents.BeforeStream,(_event,ctx)=>ctx.suspend(Question,{}));}}]});
+ const harness=await AgentHarness.create({plugins:[{id:"pause",setup(tessar){tessar.interruptions.register(Question);tessar.hook(AgentEvents.BeforeStream,(_event,ctx)=>ctx.suspend(Question,{}));}}]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
   const events=await harness.collect(stream),interrupt=events.find(e=>e.is(AgentEvents.StreamSuspended))!.payload.interrupt;
@@ -29,7 +29,7 @@ it("cancels a suspended execution and its pending interrupt durably",async()=>{
 it("keeps an abort-ignoring in-flight tool interrupted instead of unlocking the thread",async()=>{
  let started!:()=>void,release!:()=>void,errored!:()=>void;
  const start=new Promise<void>(resolve=>started=resolve),done=new Promise<void>(resolve=>errored=resolve),gate=new Promise<void>(resolve=>release=resolve);
- const harness=await AgentHarness.create({plugins:[{id:"tools",setup(tesseract){tesseract.tools.register(createTool({name:"write",description:"write",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{started();await gate;return toolResult("late");}}));}}],modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"c",name:"write",arguments:{}}]))}}]});
+ const harness=await AgentHarness.create({plugins:[{id:"tools",setup(tessar){tessar.tools.register(createTool({name:"write",description:"write",input:{jsonSchema:{},parse:()=>({})},execute:async()=>{started();await gate;return toolResult("late");}}));}}],modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"c",name:"write",arguments:{}}]))}}]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}},{kind:"observer",observe:event=>{if(event.is(AgentEvents.StreamError))errored();}});
   await start;await harness.agent.cancel(thread.id,stream.id!);

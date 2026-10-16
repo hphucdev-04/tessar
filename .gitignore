@@ -3,7 +3,12 @@ dist/
 .superpowers/
 .worktrees/
 .agents/
-docs/
+docs/**
+!docs/superpowers/
+!docs/superpowers/plans/
+!docs/superpowers/specs/
+!docs/superpowers/plans/*-tessar-*.md
+!docs/superpowers/specs/*-tessar-*.md
 examples/
 *.db
 *.db-shm

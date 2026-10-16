@@ -2,12 +2,12 @@ import { expect,it } from "vitest";
 import { mkdtemp,rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { storageConformance,initialBatch } from "@tesseract/core/testing/storage-conformance";
-import { CommitCoordinator } from "@tesseract/core";
+import { storageConformance,initialBatch } from "@tessar/core/testing/storage-conformance";
+import { CommitCoordinator } from "@tessar/core";
 import { createSqliteBackend } from "../src/backend.js";
 storageConformance("sqlite",async()=>createSqliteBackend({filename:":memory:"}));
 it("reopens committed state and fences independently connected owners",async()=>{
- const path=await mkdtemp(join(tmpdir(),"tesseract-"));
+ const path=await mkdtemp(join(tmpdir(),"tessar-"));
  const filename=join(path,"state.db"),a=await createSqliteBackend({filename}),b=await createSqliteBackend({filename});
  try {
    const lease=await a.ownership.acquire({threadId:"t1",ownerToken:"a",ttlMs:60000});

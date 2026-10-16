@@ -1,4 +1,4 @@
-# Tesseract Minimal Core Design
+# Tessar Minimal Core Design
 
 Status: implemented and locally verified on Windows. This English spec
 supersedes the earlier core/public-API specs and their implementation plans.
@@ -7,11 +7,11 @@ Existing code is an unfinished migration, not a clean baseline to discard.
 
 ## Purpose and boundaries
 
-Tesseract is an independent framework and SDK for CLI agents and agents embedded
+Tessar is an independent framework and SDK for CLI agents and agents embedded
 in applications. Cube is a consumer. "Anything is a plugin" means a minimal
 working runtime with public extension points, not a built-in product policy.
 
-One main package, `@tesseract/core`, exports Agent, Controller, Session, Thread,
+One main package, `@tessar/core`, exports Agent, Controller, Session, Thread,
 messages, tools, instructions, event constants/types and plugin contracts.
 SDK describes these public APIs; it is not another package or runtime layer.
 Agent directly owns the loop. Controller owns initialization and resources.
@@ -22,8 +22,8 @@ Agent delegates the turn, model and tool steps to internal functions in
 admission, checkpoint commits, interruption handling and finalization remain
 owned by Agent. This is an internal refactor with no public API change.
 
-`@tesseract/openai` implements OpenAI protocol/auth/metadata. Storage adapters,
-including `@tesseract/sqlite`, implement physical persistence. Core
+`@tessar/openai` implements OpenAI protocol/auth/metadata. Storage adapters,
+including `@tessar/sqlite`, implement physical persistence. Core
 owns state management and checkpoint semantics and has a default memory backend.
 Core has no third-party runtime dependencies or Node filesystem/database imports.
 
@@ -32,13 +32,13 @@ Core has no third-party runtime dependencies or Node filesystem/database imports
 ```ts
 interface Plugin {
   readonly id: string;
-  setup(tesseract: PluginContext): void | Disposer | Promise<void | Disposer>;
+  setup(tessar: PluginContext): void | Disposer | Promise<void | Disposer>;
 }
 
 class BlockWritePlugin implements Plugin {
   readonly id = "block-write";
-  setup(tesseract: PluginContext): void {
-    tesseract.hook(AgentEvents.BeforeTool, event => {
+  setup(tessar: PluginContext): void {
+    tessar.hook(AgentEvents.BeforeTool, event => {
       if (event.payload.tool.name === "write") {
         return { decision: "deny", reason: "Write tool disabled" };
       }
@@ -57,7 +57,7 @@ loader passes it to the same core lifecycle without constructing it again.
 
 `PluginContext` exposes hook, emit, tools.register, models.registerProvider,
 storage.registerBackend, state.define, interruptions.register, effects.register,
-registry.register and defer. The callback parameter is named `tesseract` in
+registry.register and defer. The callback parameter is named `tessar` in
 examples/implementations. There is no `.on` alias and no required apiVersion.
 Optional plugin version/configuration identifiers remain available for durable
 continuation checks; ordinary plugins need not provide them.
@@ -181,15 +181,15 @@ OpenAI preserves available encrypted reasoning continuity and ordered tool calls
 
 ## Scope and verification
 
-Errors have an explicit component source: tesseract, provider, plugin, tool,
+Errors have an explicit component source: tessar, provider, plugin, tool,
 storage or application. There is no unknown source or blanket InternalError
-classification. TesseractError represents framework failures. Provider/plugin
+classification. TessarError represents framework failures. Provider/plugin
 exceptions propagate without replacing their identity; checkpoint/trace records
 store JSON error snapshots with source, name, code and available SDK fields.
 OpenAI SDK failures remain SDK exceptions; adapter implementation failures remain
 framework failures. AgentEvents.Diagnostic exposes diagnostic records to plugins
 and isolates diagnostic handler failures without recursive emission.
-The optional @tesseract/plugins/logger subpath writes lifecycle/error notifications to
+The optional @tessar/plugins/logger subpath writes lifecycle/error notifications to
 stderr as JSON or a host-supplied write callback. Core owns no logging destination.
 
 Host applications own UI, transport, auth and processes. Skills, long-term memory,

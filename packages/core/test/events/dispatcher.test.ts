@@ -10,19 +10,19 @@ it("exports identity metadata without leaking runtime capabilities",()=>{
  expect(event.type).toBe(Notice);expect(event.threadId).toBe("t");expect(Object.hasOwn(event,"state")).toBe(false);expect(Object.hasOwn(event,"effects")).toBe(false);
 });
 it("chains transformations and never overturns a denial",async()=>{
- const host=new PluginHost();await host.initialize([{id:"test",setup(tesseract){
-  tesseract.hook(Transform,e=>e.payload+"A",{kind:"transformation"});tesseract.hook(Transform,e=>e.payload+"B");
-  tesseract.hook(Decide,()=>({decision:"deny"}),{kind:"decision"});tesseract.hook(Decide,()=>({decision:"allow"}));
+ const host=new PluginHost();await host.initialize([{id:"test",setup(tessar){
+  tessar.hook(Transform,e=>e.payload+"A",{kind:"transformation"});tessar.hook(Transform,e=>e.payload+"B");
+  tessar.hook(Decide,()=>({decision:"deny"}),{kind:"decision"});tessar.hook(Decide,()=>({decision:"allow"}));
  }}]);expect(await host.dispatch(Transform,"x")).toBe("xAB");expect(await host.dispatch(Decide,{})).toEqual({decision:"deny"});await host.dispose();
 });
 it("looks hooks up by string and isolates observer errors",async()=>{
  const diagnostics:string[]=[];const host=new PluginHost({diagnostics:e=>diagnostics.push(e.source+":"+e.pluginId)});
- await host.initialize([{id:"test",setup(tesseract){tesseract.hook(Notice,()=>{throw Error("observer");});}}]);
+ await host.initialize([{id:"test",setup(tessar){tessar.hook(Notice,()=>{throw Error("observer");});}}]);
  await expect(host.dispatch("test.notice","x")).resolves.toBeUndefined();expect(diagnostics).toEqual(["plugin:test"]);expect(new EventEnvelope(Notice,"hello").is(Notice)).toBe(true);await host.dispose();
 });
 it("continues handlers in saved manifest order after plugin reordering",async()=>{
  const seen:string[]=[];const host=new PluginHost();
- for(const id of ["b","a"])await host.attach({id,setup(tesseract){tesseract.hook(Decide,()=>{seen.push(id);return {decision:"allow"};},{kind:"decision"});}});
+ for(const id of ["b","a"])await host.attach({id,setup(tessar){tessar.hook(Decide,()=>{seen.push(id);return {decision:"allow"};},{kind:"decision"});}});
  await host.dispatch(Decide,{}, {allowedHandlerIds:["a:test.decide:0","b:test.decide:0"],startIndex:1});
  expect(seen).toEqual(["b"]);await host.dispose();
 });
