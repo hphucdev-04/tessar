@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Tool, createTool, toolResult } from "@tesseract/core/tool";
+import { Tool, createTool, toolResult } from "@tessar/core/tool";
 import type { InputDefinition } from "../../src/tools/input-definition.js";
 const input: InputDefinition<{ count: number }> = {
   jsonSchema: { type: "object", properties: { count: { type: "number" } } },

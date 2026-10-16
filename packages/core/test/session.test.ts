@@ -6,7 +6,7 @@ function boundary(session:import("../src/session.js").Session,type:string){retur
 it("rejects new work while the close barrier is pending and reopens when that barrier fails",async()=>{
  let release!:()=>void,arrive!:()=>void,rejectClose=true;
  let gate=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>arrive=resolve);
- const {controller,provider}=await fixture([{text:"ok"}],[{id:"close",setup(tesseract){tesseract.hook(SessionEvents.BeforeClose,async()=>{arrive();await gate;if(rejectClose)throw Error("close refused");});}}]);
+ const {controller,provider}=await fixture([{text:"ok"}],[{id:"close",setup(tessar){tessar.hook(SessionEvents.BeforeClose,async()=>{arrive();await gate;if(rejectClose)throw Error("close refused");});}}]);
  try{const session=controller.createSession();await session.thread.create();const closing=session.dispose();void closing.catch(()=>{});await entered;
  await expect(session.followUp(new HumanMessage("during close"))).rejects.toMatchObject({code:"Disposed"});
  await expect(session.thread.create()).rejects.toMatchObject({code:"Disposed"});expect(provider.calls).toHaveLength(0);
@@ -33,7 +33,7 @@ it("routes events per Session and drains accepted input FIFO after closing the p
 });
 it("holds queued input while suspended, preserves it on invalid resume, then drains",async()=>{
  const question=defineInterruption({id:"approve",version:1,response:{jsonSchema:{type:"boolean"},parse(value){if(typeof value!=="boolean")throw Error("boolean required");return value;}},resolve:()=>ToolDecision.allow()});
- let asks=0;const {controller,provider}=await fixture([{text:"one"},{text:"two"}],[{id:"approval",setup(tesseract){tesseract.interruptions.register(question);tesseract.hook(AgentEvents.BeforeStream,(_e,context)=>++asks===1?context.suspend(question,{}):ToolDecision.allow());}}]);
+ let asks=0;const {controller,provider}=await fixture([{text:"one"},{text:"two"}],[{id:"approval",setup(tessar){tessar.interruptions.register(question);tessar.hook(AgentEvents.BeforeStream,(_e,context)=>++asks===1?context.suspend(question,{}):ToolDecision.allow());}}]);
  try{
   const session=controller.createSession();await session.thread.create();const pending=boundary(session,AgentEvents.StreamSuspended);
   await session.followUp(new HumanMessage("one"));await session.followUp(new HumanMessage("two"));const event=await pending;
@@ -46,7 +46,7 @@ it("accepts a follow-up from a terminal observer after releasing the prior lease
  const backend=createMemoryBackend(),releaseLease=backend.ownership.release.bind(backend.ownership);let hold=false,unlock!:()=>void,arrive!:()=>void;
  const held=new Promise<void>(r=>unlock=r),reached=new Promise<void>(r=>arrive=r);
  backend.ownership.release=async lease=>{if(hold){hold=false;arrive();await held;}return releaseLease(lease);};
- const {controller,provider}=await fixture([{text:"one"},{text:"two"}],[{id:"slow-release",setup(tesseract){tesseract.storage.registerBackend(backend);}}]);
+ const {controller,provider}=await fixture([{text:"one"},{text:"two"}],[{id:"slow-release",setup(tessar){tessar.storage.registerBackend(backend);}}]);
  try{const session=controller.createSession();await session.thread.create();
  const done=new Promise<void>((resolve,reject)=>{let turns=0;session.subscribe(event=>{
   if(event.type===AgentEvents.StreamError)reject(Error(event.payload.error.code));
@@ -64,7 +64,7 @@ it("discards queued input on cancellation and preserves selection when switching
 });
 it("forks without selecting and allows suspended state to survive Session disposal and reattachment",async()=>{
  const question=defineInterruption({id:"pause",version:1,response:{jsonSchema:{},parse:()=>({})},resolve:()=>ToolDecision.allow()});
- const {controller}=await fixture([{text:"done"}],[{id:"pause",setup(tesseract){tesseract.interruptions.register(question);tesseract.hook(AgentEvents.BeforeStream,(_e,ctx)=>ctx.suspend(question,{}));}}]);
+ const {controller}=await fixture([{text:"done"}],[{id:"pause",setup(tessar){tessar.interruptions.register(question);tessar.hook(AgentEvents.BeforeStream,(_e,ctx)=>ctx.suspend(question,{}));}}]);
  try{const session=controller.createSession({scope:{user:"u"}}),thread=await session.thread.create();const fork=await session.thread.fork();expect(fork.id).not.toBe(thread.id);expect(session.thread.getId()).toBe(thread.id);
  const pending=boundary(session,AgentEvents.StreamSuspended);await session.followUp(new HumanMessage("ask"));const event=await pending;await session.dispose();
  const next=controller.createSession({scope:{user:"u"}});await next.thread.switch(thread.id);const done=boundary(next,AgentEvents.StreamEnd);const receipt=await next.resume({interruptId:event.payload.interrupt.id,value:{}});expect(receipt.streamId).toBe(event.streamId);await done;

@@ -1,16 +1,16 @@
-# Tesseract Public API and Integrations Implementation Plan
+# Tessar Public API and Integrations Implementation Plan
 
-> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tessar-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship public Agent/Controller/Session APIs, automatic model profiles, reference provider và examples chứng minh khả năng viết plugins độc lập.
 
-**Architecture:** @tesseract/core cung cấp trực tiếp Agent/Controller/Session/Thread cùng agent loop, model registry và public plugin APIs. SDK là các public exports này; không thêm package hoặc bridge runtime trung gian. Provider protocol và SQLite là packages riêng. Host tự sở hữu CLI/UI/backend/transport.
+**Architecture:** @tessar/core cung cấp trực tiếp Agent/Controller/Session/Thread cùng agent loop, model registry và public plugin APIs. SDK là các public exports này; không thêm package hoặc bridge runtime trung gian. Provider protocol và SQLite là packages riêng. Host tự sở hữu CLI/UI/backend/transport.
 
 **Tech Stack:** Node.js >=24.14.0; pnpm 11.5.3; TypeScript 7.0.2; Vitest 5.0.4; OpenAI SDK 7.34.0; compiled ESM examples.
 
-**Spec:** [Master](2026-10-15-tesseract-implementation-plan.md), [B prerequisites](2026-10-15-tesseract-durable-engine-plan.md), [public API](../specs/2026-10-15-tesseract-public-api-state-machine-design.md).
+**Spec:** [Master](2026-10-15-tessar-implementation-plan.md), [B prerequisites](2026-10-15-tessar-durable-engine-plan.md), [public API](../specs/2026-10-15-tessar-public-api-state-machine-design.md).
 
 ## Global Constraints
 
@@ -40,7 +40,7 @@
 Core src gồm agent.ts, controller.ts, thread.ts, session.ts, session-thread.ts,
 session-events.ts và model registry/resolution. Controller dùng trực tiếp cùng
 agent loop trong package. Không tạo RuntimePort, bindRuntime, /runtime export
-hoặc package @tesseract/sdk. Provider package chỉ phụ thuộc core + official SDK.
+hoặc package @tessar/sdk. Provider package chỉ phụ thuộc core + official SDK.
 Các file hiện ở packages/sdk là implementation cũ cần chuyển vào core, sửa
 internal imports và kiểm thử trước khi xóa package cũ; không bỏ logic đã test.
 
@@ -182,7 +182,7 @@ git commit -m "feat(provider): add OpenAI streaming helper and profile resolver"
   override → Agent default → MissingModel.
 - Produces: Controller sở hữu và dùng trực tiếp cùng core agent loop.
   Một Agent instance gắn với một Controller; Controller thứ hai bị từ chối.
-  Agent/Controller/Thread được export trực tiếp từ @tesseract/core, không cần
+  Agent/Controller/Thread được export trực tiếp từ @tessar/core, không cần
   bridge runtime hoặc testing subpath để chạy production.
 - Produces: Controller({id,agent,plugins?}), initialize():Promise<void>, dispose():Promise<void>,
   models, plugins, create/get/list/delete/forkThread exact signatures public spec.
@@ -314,7 +314,7 @@ git commit -m "feat(sdk): add scoped sessions subscriptions and follow-up queue"
 
 **Interfaces**
 
-- Consumes: only public @tesseract/core, /testing and sqlite
+- Consumes: only public @tessar/core, /testing and sqlite
   exports; no imports to src paths/engine implementation.
 - Produces: createSkillsPlugin({load:()=>Promise<SkillData[]>}), SkillData {id,content};
   inject via ContextPrepare, loader owns source, no core SKILL.md parser.
@@ -382,7 +382,7 @@ git commit -m "test(sdk): prove external skill memory command and subagent plugi
   offline mode mandatory; OpenAI env opt-in; no full coding agent/TUI claims.
 - Produces: headless example uses Agent.generate/stream on same initialized runtime
   and scoped Session example, no HTTP framework/auth/server included.
-- Produces: @tesseract/core exports '.' cho public APIs và './testing' cho test
+- Produces: @tessar/core exports '.' cho public APIs và './testing' cho test
   helpers; public import smoke runs outside source alias resolver.
 - Produces: check:boundaries rejects core Node/platform/provider imports, cycles,
   external examples importing private src paths, executable barrels.

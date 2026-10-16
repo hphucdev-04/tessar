@@ -1,4 +1,4 @@
-import type { Plugin, PluginContext } from "@tesseract/core";
+import type { Plugin, PluginContext } from "@tessar/core";
 import { OpenAIAdapter, createClient, type OpenAIOptions } from "./adapter.js";
 import { metadataResolver } from "./metadata.js";
 export class OpenAIPlugin implements Plugin {
@@ -12,10 +12,10 @@ export class OpenAIPlugin implements Plugin {
     this.id = "provider." + this.providerId;
   }
 
-  setup(tesseract: PluginContext): void {
+  setup(tessar: PluginContext): void {
     const options = this.options, id = this.providerId;
     const client = createClient(options);
-    tesseract.models.registerProvider({
+    tessar.models.registerProvider({
       id,
       endpoint: options.baseURL ?? "https://api.openai.com/v1",
       metadataPartition: options.metadataPartition,

@@ -10,7 +10,7 @@ import { AssistantMessage } from "../messages/message.js";
 import { MessageCodec } from "../messages/codec.js";
 import { immutable } from "../json.js";
 import { normalizeUsage, type TokenCounts } from "../trace/usage.js";
-import { TesseractError } from "../errors.js";
+import { TessarError } from "../errors.js";
 export interface ModelScript {
   text?: string;
   response?: ModelResponse;
@@ -25,7 +25,7 @@ export class ScriptedProvider implements ModelAdapter {
   constructor(private readonly scripts: readonly ModelScript[]) {}
   validate(request: ModelRequest): void {
     if (request.model.providerId !== this.ref.providerId)
-      throw new TesseractError("ModelContextIncompatible", "Wrong provider");
+      throw new TessarError("ModelContextIncompatible", "Wrong provider");
   }
   async *stream(
     request: ModelRequest,
@@ -36,23 +36,23 @@ export class ScriptedProvider implements ModelAdapter {
     this.calls.push(immutable(request));
     const script = this.scripts[index];
     if (!script)
-      throw new TesseractError("ProviderError", "No scripted response");
+      throw new TessarError("ProviderError", "No scripted response");
     if (script.gate)
       await Promise.race([
         script.gate,
         new Promise<never>((_, reject) => {
           if (context.signal.aborted)
-            reject(new TesseractError("Cancelled", "Cancelled"));
+            reject(new TessarError("Cancelled", "Cancelled"));
           else
             context.signal.addEventListener(
               "abort",
-              () => reject(new TesseractError("Cancelled", "Cancelled")),
+              () => reject(new TessarError("Cancelled", "Cancelled")),
               { once: true },
             );
         }),
       ]);
     if (context.signal.aborted)
-      throw new TesseractError("Cancelled", "Cancelled");
+      throw new TessarError("Cancelled", "Cancelled");
     if (script.chunks) for (const chunk of script.chunks) yield chunk;
     if (script.error) throw script.error;
     const usage = normalizeUsage(script.usage ?? {});

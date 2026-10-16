@@ -1,5 +1,5 @@
 import type OpenAI from "openai";
-import type { MetadataResolver } from "@tesseract/core";
+import type { MetadataResolver } from "@tessar/core";
 export function metadataResolver(client: OpenAI): MetadataResolver {
   return {
     async resolve(ref, options) {

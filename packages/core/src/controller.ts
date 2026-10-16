@@ -2,7 +2,7 @@ import {
   requireId,
   fail,
   errorInfo,
-  TesseractError,
+  TessarError,
   type ErrorInfo,
 } from "./errors.js";
 import { immutable, randomIds } from "./json.js";
@@ -97,7 +97,7 @@ export class Controller {
   initialize(): Promise<void> {
     if (this.disposal)
       return Promise.reject(
-        new TesseractError("Disposed", "Controller is disposed"),
+        new TessarError("Disposed", "Controller is disposed"),
       );
     if (this.initialization) return this.initialization;
     if (this.phase !== "new")

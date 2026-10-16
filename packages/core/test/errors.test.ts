@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { errorInfo, TesseractError } from "../src/errors.js";
+import { errorInfo, TessarError } from "../src/errors.js";
 
 it("retains the provider origin and SDK fields across outer catches", () => {
   const error = Object.assign(new Error("Rate limited"), {
@@ -14,6 +14,6 @@ it("retains the provider origin and SDK fields across outer catches", () => {
 });
 
 it("identifies framework errors and plain core exceptions without an unknown source", () => {
-  expect(new TesseractError("ThreadBusy", "Busy").toJSON()).toMatchObject({ source: "tesseract", code: "ThreadBusy" });
-  expect(errorInfo(new TypeError("Core bug"))).toMatchObject({ source: "tesseract", name: "TypeError", code: "TypeError" });
+  expect(new TessarError("ThreadBusy", "Busy").toJSON()).toMatchObject({ source: "tessar", code: "ThreadBusy" });
+  expect(errorInfo(new TypeError("Core bug"))).toMatchObject({ source: "tessar", name: "TypeError", code: "TypeError" });
 });

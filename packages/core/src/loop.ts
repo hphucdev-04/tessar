@@ -1,5 +1,5 @@
 import type { ExecutionFrame } from "./agent.js";
-import { TesseractError, errorInfo, fail } from "./errors.js";
+import { TessarError, errorInfo, fail } from "./errors.js";
 import { immutable, type Clock, type IdGenerator } from "./json.js";
 import { AgentEvents, type ToolPreparation } from "./events/catalog.js";
 import type { AnyEvent, PayloadOf, ResultOf } from "./events/definition.js";
@@ -56,7 +56,7 @@ export async function loop(
 ): Promise<void> {
   while (true) {
     if (frame.sink.controller.signal.aborted)
-      throw new TesseractError("Cancelled", "Execution cancelled");
+      throw new TessarError("Cancelled", "Execution cancelled");
     const position = frame.cp.execution!;
     if (position.phase === "BeforeTurn") {
       if (position.budgets.turns >= position.budgets.limits.maxTurns) {

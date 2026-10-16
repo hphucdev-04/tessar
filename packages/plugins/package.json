@@ -1,15 +1,22 @@
 {
-  "name": "@tesseract/plugins",
-  "version": "0.0.0",
+  "name": "@tessar/plugins",
+  "version": "0.1.0-alpha.0",
+  "description": "Node plugin loading, npm package management and a built-in logger for Tessar.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hphucdev-04/tesseract.git",
+    "directory": "packages/plugins"
+  },
+  "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },
   "exports": {
     ".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"},
     "./logger": {"types": "./dist/logger.d.ts", "import": "./dist/logger.js"}
   },
   "files": ["dist"],
   "engines": {"node": ">=24.14.0"},
-  "peerDependencies": {"@tesseract/core": "workspace:^"},
-  "peerDependenciesMeta": {"@tesseract/core": {"optional": true}},
-  "devDependencies": {"@tesseract/core": "workspace:*"},
-  "scripts": {"build": "tsc -p tsconfig.json", "typecheck": "tsc --noEmit -p tsconfig.json"}
+  "peerDependencies": {"@tessar/core": "workspace:^"},
+  "peerDependenciesMeta": {"@tessar/core": {"optional": true}},
+  "devDependencies": {"@tessar/core": "workspace:*"},
+  "scripts": {"build": "tsc -p tsconfig.json", "prepack": "tsc -p tsconfig.json", "typecheck": "tsc --noEmit -p tsconfig.json"}
 }

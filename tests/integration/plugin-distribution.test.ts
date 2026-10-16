@@ -1,7 +1,7 @@
 import {expect,it} from "vitest";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve,dirname} from "node:path";
 import {delimiter} from "node:path";
@@ -18,22 +18,24 @@ async function command(name:"npm"|"pnpm",args:string[],cwd:string,cache:string){
  return execute(process.execPath,[cli,...args],options).catch(detailed);
 }
 it("runs a packed installed CLI from another project and discovers a plugin added after installation",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract installed host "));
+ const root=await mkdtemp(join(tmpdir(),"tessar installed host "));
  try{
-  const pluginDir=join(root,"project/.tesseract/plugins");await mkdir(pluginDir,{recursive:true});
+  const pluginDir=join(root,"project/.tessar/plugins");await mkdir(pluginDir,{recursive:true});
   const packs=join(root,"packs"),host=join(root,"host"),fixture=join(root,"fixture"),cache=join(root,"npm-cache");await mkdir(packs);await mkdir(host);await mkdir(fixture);
   await writeFile(join(host,"package.json"),JSON.stringify({private:true}));
-  await writeFile(join(fixture,"package.json"),JSON.stringify({name:"tesseract-test-host",version:"1.0.0",type:"module",bin:{"test-host":"main.mjs"},dependencies:{"@tesseract/core":"0.0.0","@tesseract/plugins":"0.0.0"}}));
+  const coreVersion=JSON.parse(await readFile(resolve("packages/core/package.json"),"utf8")).version;
+  const pluginsVersion=JSON.parse(await readFile(resolve("packages/plugins/package.json"),"utf8")).version;
+  await writeFile(join(fixture,"package.json"),JSON.stringify({name:"tessar-test-host",version:"1.0.0",type:"module",bin:{"test-host":"main.mjs"},dependencies:{"@tessar/core":coreVersion,"@tessar/plugins":pluginsVersion}}));
   await writeFile(join(fixture,"main.mjs"),`#!/usr/bin/env node
-   import {Agent,Controller,HumanMessage} from '@tesseract/core';
-   import {ScriptedProvider} from '@tesseract/core/testing';
-   import {PluginManager} from '@tesseract/plugins';
+   import {Agent,Controller,HumanMessage} from '@tessar/core';
+   import {ScriptedProvider} from '@tessar/core/testing';
+   import {PluginManager} from '@tessar/plugins';
    import {resolve} from 'node:path';
-   const manager=new PluginManager({directory:resolve('.tesseract'),hostUrl:import.meta.url});let controller;
+   const manager=new PluginManager({directory:resolve('.tessar'),hostUrl:import.meta.url});let controller;
    try{if(process.argv[2]==='plugins'){console.log(JSON.stringify(await manager.discover()));}
    else{const provider=new ScriptedProvider([{text:'fixture answer'}]);
     const agent=new Agent({id:'packed',model:{providerId:'scripted',modelId:'test'}});
-    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate({input:new HumanMessage('hello')});
+    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate({input:new HumanMessage('hello')});
     console.log(JSON.stringify({status:result.status,output:result.output.flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text).join('')}));
    }}finally{try{await controller?.dispose();}finally{manager.dispose();}}
   `);
@@ -45,15 +47,15 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
   const packedHost=await command("npm",["pack","--json","--pack-destination",packs],fixture,cache);
   tarballs.push(resolve(packs,JSON.parse(packedHost.stdout)[0].filename));
   await command("npm",["install","--offline","--ignore-scripts","--omit=peer","--no-audit","--no-fund",...tarballs],host,cache);
-  const cli=join(host,"node_modules/tesseract-test-host/main.mjs");
-  const {stdout}=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tesseract")],{cwd:join(root,"project")});
+  const cli=join(host,"node_modules/tessar-test-host/main.mjs");
+  const {stdout}=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(stdout).output).toBe("fixture answer");
-  await writeFile(join(pluginDir,"answer.mts"),`import {AgentEvents,AssistantMessage,MessageCodec,type Plugin,type PluginContext} from '@tesseract/core';
-   class AnswerPlugin implements Plugin {readonly id='installed-local';setup(tesseract:PluginContext){tesseract.hook(AgentEvents.InputPrepare,event=>({...event.payload,handled:{output:[MessageCodec.encode(new AssistantMessage('external plugin answer'))]}}));}}
+  await writeFile(join(pluginDir,"answer.mts"),`import {AgentEvents,AssistantMessage,MessageCodec,type Plugin,type PluginContext} from '@tessar/core';
+   class AnswerPlugin implements Plugin {readonly id='installed-local';setup(tessar:PluginContext){tessar.hook(AgentEvents.InputPrepare,event=>({...event.payload,handled:{output:[MessageCodec.encode(new AssistantMessage('external plugin answer'))]}}));}}
    export default new AnswerPlugin();`);
-  const result=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tesseract")],{cwd:join(root,"project")});
+  const result=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(result.stdout)).toMatchObject({status:"completed",output:"external plugin answer"});
-  const listed=await execute(process.execPath,[cli,"plugins","list","--plugin-dir",join(root,"project/.tesseract")],{cwd:join(root,"project")});
+  const listed=await execute(process.execPath,[cli,"plugins","list","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(listed.stdout)).toHaveLength(1);
   const demo=await execute(process.execPath,[resolve("examples/cli/dist/main.js"),"hello"],{cwd:join(root,"project")});
   expect(JSON.parse(demo.stdout).output).toBe("external plugin answer");
@@ -65,22 +67,22 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 },60000);
 it("loads the packed logger subpath using the host SDK without installing core in the plugin environment",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract logger "));
+ const root=await mkdtemp(join(tmpdir(),"tessar logger "));
  try{
   const managed=join(root,"managed"),npmDirectory=join(managed,"npm"),cache=join(root,"cache");await mkdir(npmDirectory,{recursive:true});
-  await writeFile(join(managed,"plugins.json"),JSON.stringify({packages:["@tesseract/plugins/logger"]}));
+  await writeFile(join(managed,"plugins.json"),JSON.stringify({packages:["@tessar/plugins/logger"]}));
   await writeFile(join(npmDirectory,"package.json"),JSON.stringify({private:true,type:"module"}));
   const packed=await command("pnpm",["pack","--json","--pack-destination",root],resolve("packages/plugins"),cache);
   const tarball=resolve(root,JSON.parse(packed.stdout).filename);
   await command("npm",["install","--offline","--ignore-scripts","--no-audit","--no-fund",tarball],npmDirectory,cache);
-  expect(existsSync(join(npmDirectory,"node_modules/@tesseract/plugins/dist/logger.js"))).toBe(true);
-  expect(existsSync(join(npmDirectory,"node_modules/@tesseract/core"))).toBe(false);
-  expect(existsSync(join(npmDirectory,"node_modules/@tesseract/plugins/node_modules/@tesseract/core"))).toBe(false);
+  expect(existsSync(join(npmDirectory,"node_modules/@tessar/plugins/dist/logger.js"))).toBe(true);
+  expect(existsSync(join(npmDirectory,"node_modules/@tessar/core"))).toBe(false);
+  expect(existsSync(join(npmDirectory,"node_modules/@tessar/plugins/node_modules/@tessar/core"))).toBe(false);
   await execute(process.execPath,["--input-type=module","-e",`
    import assert from 'node:assert/strict';
-   import {Agent,Controller,HumanMessage,AgentEvents} from '@tesseract/core';
-   import {ScriptedProvider} from '@tesseract/core/testing';
-   import {PluginManager} from '@tesseract/plugins';
+   import {Agent,Controller,HumanMessage,AgentEvents} from '@tessar/core';
+   import {ScriptedProvider} from '@tessar/core/testing';
+   import {PluginManager} from '@tessar/plugins';
    const manager=new PluginManager({directory:process.argv[1],hostUrl:import.meta.url});
    const original=console.error,logs=[];let controller;
    console.error=line=>{logs.push(JSON.parse(line));};
@@ -88,7 +90,7 @@ it("loads the packed logger subpath using the host SDK without installing core i
     const [logger]=await manager.load();assert.equal(logger.id,'logger');
     const provider=new ScriptedProvider([{text:'logger works'}]);
     const agent=new Agent({id:'logger-host',model:{providerId:'scripted',modelId:'test'}});
-    controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}}]});await controller.initialize();
+    controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}}]});await controller.initialize();
     const result=await agent.generate({input:new HumanMessage('hello')});
     assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'logger works');
     assert.ok(logs.some(entry=>entry.type===AgentEvents.StreamEnd&&entry.agentId==='logger-host'&&entry.controllerId==='logger-controller'));
@@ -97,7 +99,7 @@ it("loads the packed logger subpath using the host SDK without installing core i
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 },60000);
 it("validates a tarball's actual package name before activating an existing helper",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract tarball "));
+ const root=await mkdtemp(join(tmpdir(),"tessar tarball "));
  try{
   const source=join(root,"source"),helper=join(root,"helper"),managed=join(root,"managed"),cache=join(root,"cache");
   await Promise.all([mkdir(source),mkdir(helper),mkdir(managed)]);

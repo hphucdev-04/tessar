@@ -1,5 +1,5 @@
 export interface ErrorOrigin {
-  source: "tesseract" | "provider" | "plugin" | "tool" | "storage" | "application";
+  source: "tessar" | "provider" | "plugin" | "tool" | "storage" | "application";
   providerId?: string;
   modelId?: string;
   pluginId?: string;
@@ -19,15 +19,15 @@ export interface ErrorInfo extends ErrorOrigin {
 const origins = new WeakMap<object, ErrorOrigin>();
 const causes = new WeakMap<ErrorInfo, unknown>();
 
-export class TesseractError extends Error {
+export class TessarError extends Error {
   constructor(readonly code: string, message: string, readonly details?: Record<string, unknown>) {
     super(message);
-    this.name = "TesseractError";
+    this.name = "TessarError";
   }
   toJSON(): ErrorInfo { return errorInfo(this); }
 }
 export function fail(code: string, message: string): never {
-  throw new TesseractError(code, message);
+  throw new TessarError(code, message);
 }
 export function requireId(id: string, name = "id"): string {
   if (typeof id !== "string" || !id.trim())
@@ -39,7 +39,7 @@ export function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo {
   const previous = object && origins.get(object);
   if (object && origin && !previous) origins.set(object, origin);
   const value = object as Record<string, unknown> | undefined;
-  const details = error instanceof TesseractError ? error.details : Object.fromEntries(
+  const details = error instanceof TessarError ? error.details : Object.fromEntries(
     ["status", "requestID", "request_id", "type", "param"].flatMap(key => {
       const field = value?.[key];
       return typeof field === "string" || typeof field === "boolean" ||
@@ -50,7 +50,7 @@ export function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo {
     ? error.name === "Error" ? error.constructor.name : error.name
     : "Error";
   const info: ErrorInfo = {
-    ...(previous ?? origin ?? { source: "tesseract" as const }),
+    ...(previous ?? origin ?? { source: "tessar" as const }),
     name,
     code: typeof value?.code === "string" ? value.code : name,
     message: error instanceof Error ? error.message : String(error),
@@ -63,8 +63,8 @@ export function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo {
 /** Retain the original exception in-process; persisted errors retain their source. */
 export function errorFromInfo(info: ErrorInfo): unknown {
   if (causes.has(info)) return causes.get(info);
-  const error = info.source === "tesseract"
-    ? new TesseractError(info.code, info.message, info.details)
+  const error = info.source === "tessar"
+    ? new TessarError(info.code, info.message, info.details)
     : Object.assign(new Error(info.message), { name: info.name, code: info.code, ...info.details });
   origins.set(error, info);
   return error;

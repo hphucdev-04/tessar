@@ -5,7 +5,7 @@ it("requires explicit IDs and binds an Agent to exactly one Controller",()=>{
  new Controller({id:"r",agent});expect(()=>new Controller({id:"other",agent})).toThrow();
 });
 it("initializes once and rolls back failed setup in reverse order",async()=>{
- const log:string[]=[];const plugin=(id:string):Plugin=>({id,setup(tesseract){log.push(id);tesseract.defer(()=>{log.push("close:"+id);});}});
+ const log:string[]=[];const plugin=(id:string):Plugin=>({id,setup(tessar){log.push(id);tessar.defer(()=>{log.push("close:"+id);});}});
  const plugins=[plugin("a"),plugin("b")];
  const controller=new Controller({id:"r",agent:new Agent({id:"a"}),plugins});
  plugins.push(plugin("not-initial"));
@@ -14,7 +14,7 @@ it("initializes once and rolls back failed setup in reverse order",async()=>{
  await expect(broken.initialize()).rejects.toThrow("setup");expect(log.at(-1)).toBe("close:c");await expect(broken.initialize()).rejects.toThrow();await broken.dispose();
 });
 it("rejects conflicting backends and backend attachment after initialization",async()=>{
- const storage=(id:string):Plugin=>({id,setup(tesseract){tesseract.storage.registerBackend(createMemoryBackend());}});
+ const storage=(id:string):Plugin=>({id,setup(tessar){tessar.storage.registerBackend(createMemoryBackend());}});
  const broken=new Controller({id:"r",agent:new Agent({id:"a"}),plugins:[storage("one"),storage("two")]});await expect(broken.initialize()).rejects.toMatchObject({code:"RegistrationConflict"});await broken.dispose();
  const ready=new Controller({id:"r",agent:new Agent({id:"a"})});await ready.initialize();await expect(ready.plugins.attach(storage("late"))).rejects.toMatchObject({code:"InvalidTransition"});await ready.dispose();
 });

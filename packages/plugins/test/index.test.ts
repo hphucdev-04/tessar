@@ -19,16 +19,16 @@ async function run(root:string,body:string){return execute(process.execPath,["--
  try {${body}} finally {manager.dispose();}
 `,root,managerUrl,hostUrl],{timeout:25000,env:{...process.env,npm_config_offline:"true",npm_config_cache:join(root,".npm-cache")}});}
 it("discovers local JS/TS and folders, preserves the host SDK for lazy imports and releases its resolver",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract plugins "));
+ const root=await mkdtemp(join(tmpdir(),"tessar plugins "));
  try{
-  await file(root,"plugins/a.mts",`import {Tool,AgentEvents} from '@tesseract/core';
+  await file(root,"plugins/a.mts",`import {Tool,AgentEvents} from '@tessar/core';
    const id: string = 'a'; export default {id, sdkClass:Tool, event:AgentEvents.BeforeTool, setup(){}, async lazy(){return (await import('./lazy.mjs')).Tool;}, async after(){return (await import('./after.mjs')).Tool;}};`);
-  await file(root,"plugins/lazy.mjs",`export {Tool} from '@tesseract/core'; export default {id:'helper',setup(){}};`);
-  await file(root,"plugins/folder/index.cjs",`const {Tool}=require('@tesseract/core');module.exports={id:'folder',sdkClass:Tool,setup(){}};`);
+  await file(root,"plugins/lazy.mjs",`export {Tool} from '@tessar/core'; export default {id:'helper',setup(){}};`);
+  await file(root,"plugins/folder/index.cjs",`const {Tool}=require('@tessar/core');module.exports={id:'folder',sdkClass:Tool,setup(){}};`);
   await file(root,"plugins/types.d.ts","export type Ignore = string;");
-  await file(root,"node_modules/@tesseract/core/package.json",JSON.stringify({type:"module",exports:"./index.mjs"}));
-  await file(root,"node_modules/@tesseract/core/index.mjs","export class Tool {};");
-  await file(root,"outside.mjs",`export {Tool} from '@tesseract/core';`);
+  await file(root,"node_modules/@tessar/core/package.json",JSON.stringify({type:"module",exports:"./index.mjs"}));
+  await file(root,"node_modules/@tessar/core/index.mjs","export class Tool {};");
+  await file(root,"outside.mjs",`export {Tool} from '@tessar/core';`);
   await run(root,`
    const {Tool}=await import(${JSON.stringify(pathToFileURL(resolve("packages/core/dist/index.js")).href)});
    const sources=await manager.discover();assert.equal(sources.length,3);
@@ -36,13 +36,13 @@ it("discovers local JS/TS and folders, preserves the host SDK for lazy imports a
    assert.equal(plugins[0].sdkClass,Tool);assert.equal(plugins[0].event,'tool.before');assert.equal(await plugins[0].lazy(),Tool);
    assert.equal(plugins[1].sdkClass,Tool);
    const outside=await import(pathToFileURL(join(directory,'outside.mjs')));assert.notEqual(outside.Tool,Tool);
-   const {writeFile}=await import('node:fs/promises');await writeFile(join(directory,'plugins/after.mjs'),"export {Tool} from '@tesseract/core';");
+   const {writeFile}=await import('node:fs/promises');await writeFile(join(directory,'plugins/after.mjs'),"export {Tool} from '@tessar/core';");
    manager.dispose();assert.notEqual(await plugins[0].after(),Tool);await assert.rejects(manager.load(),/disposed/i);
   `);
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });
 it("resolves import-only package exports and their own dependencies from the plugin environment",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract package "));
+ const root=await mkdtemp(join(tmpdir(),"tessar package "));
  try{
   await file(root,"plugins.json",JSON.stringify({packages:["example-plugin"]}));
   await file(root,"npm/node_modules/example-plugin/package.json",JSON.stringify({type:"module",exports:{import:"./index.mjs"}}));
@@ -61,7 +61,7 @@ it("resolves import-only package exports and their own dependencies from the plu
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });
 it("rejects invalid manifests, invalid exports, duplicate IDs and module failures with source context",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract invalid "));
+ const root=await mkdtemp(join(tmpdir(),"tessar invalid "));
  try{
   await run(root,`assert.deepEqual(await manager.load(),[]);`);
   await file(root,"plugins.json",JSON.stringify({packages:"bad"}));
@@ -79,7 +79,7 @@ it("rejects invalid manifests, invalid exports, duplicate IDs and module failure
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });
 it("installs, updates and removes a real local npm plugin without activating helper dependencies",async()=>{
- const root=await mkdtemp(join(tmpdir(),"tesseract npm & "));
+ const root=await mkdtemp(join(tmpdir(),"tessar npm & "));
  try{
   await file(root,"fixtures/helper/package.json",JSON.stringify({name:"fixture-helper",version:"1.0.0",type:"module",exports:"./index.mjs"}));
   await file(root,"fixtures/helper/index.mjs","export const value='installed-plugin';");
@@ -97,7 +97,7 @@ it("installs, updates and removes a real local npm plugin without activating hel
    let manifest=JSON.parse(await readFile(join(directory,'npm/package.json'),'utf8'));
    let config=JSON.parse(await readFile(join(directory,'plugins.json'),'utf8'));
    assert.equal(manifest.description,'preserved');assert.equal(config.other,true);
-   assert.deepEqual(config.packages,['fixture-plugin']);assert.equal(manifest.tesseract,undefined);
+   assert.deepEqual(config.packages,['fixture-plugin']);assert.equal(manifest.tessar,undefined);
    assert.ok(manifest.dependencies['fixture-helper']);assert.ok(manifest.dependencies['fixture-plugin']);
    await assert.rejects(manager.install('./missing; unexpected-command',{name:'missing-plugin'}));
    assert.deepEqual(await manager.discover(),['fixture-plugin']);

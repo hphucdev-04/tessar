@@ -1,6 +1,6 @@
 import {expect,it} from "vitest";
 import OpenAI from "openai";
-import {normalizeInstruction,HumanMessage,errorInfo,type ModelChunk} from "@tesseract/core";
+import {normalizeInstruction,HumanMessage,MessageCodec,errorInfo,type ModelChunk} from "@tessar/core";
 import {OpenAIAdapter} from "../src/adapter.js";
 const ref={providerId:"openai",modelId:"fixture"};
 const request={model:ref,instructions:normalizeInstruction("system"),messages:[new HumanMessage("hello")],tools:[]};
@@ -17,6 +17,7 @@ it("streams official SDK SSE, retains reasoning state and counts cumulative usag
  expect(chunks.filter(c=>c.type==="message-delta").map(c=>c.partKind)).toEqual(["reasoning","text"]);
  const response=chunks.find(c=>c.type==="response")!;expect(response.type==="response"&&response.response.usage).toMatchObject({inputTokens:100,cacheReadInputTokens:40,uncachedInputTokens:60,outputTokens:30,reasoningOutputTokens:10,totalTokens:130});
  expect(response.type==="response"&&response.response.message.providerState).toMatchObject({items:output});
+ if(response.type==="response")expect(()=>MessageCodec.decode(response.response.message)).not.toThrow();
 });
 it("preserves the SDK HTTP429 error and does not retry implicitly",async()=>{
  let calls=0;const adapter=new OpenAIAdapter({apiKey:"fixture",fetch:async()=>{calls++;return new Response(JSON.stringify({error:{message:"Rate limited",code:"rate_limit_exceeded"}}),{status:429,headers:{"x-request-id":"request-1"}});}},ref);
@@ -36,7 +37,7 @@ it("does not label an adapter implementation exception as a remote provider erro
  const client={responses:{create:async()=>{throw error;}}} as unknown as OpenAI;
  const adapter=new OpenAIAdapter({apiKey:"fixture"},ref,client);
  await expect(async()=>{for await(const _ of adapter.stream(request,{signal:new AbortController().signal})){} }).rejects.toBe(error);
- expect(errorInfo(error)).toMatchObject({source:"tesseract",name:"TypeError"});
+ expect(errorInfo(error)).toMatchObject({source:"tessar",name:"TypeError"});
 });
 it("assembles fragmented function arguments using ordered authoritative completed items",async()=>{
  const calls=[{type:"function_call",id:"fc_1",call_id:"call_1",name:"lookup",arguments:'{"x":42}'},{type:"function_call",id:"fc_2",call_id:"call_2",name:"next",arguments:'{}'}];

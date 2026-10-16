@@ -1,6 +1,6 @@
-# Tesseract Core Contracts and Storage Implementation Plan
+# Tessar Core Contracts and Storage Implementation Plan
 
-> Historical document — superseded by [Minimal Core Plan](2026-10-15-tesseract-minimal-core-plan.md) and its English spec.
+> Historical document — superseded by [Minimal Core Plan](2026-10-15-tessar-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** Node.js >=24.14.0; pnpm 11.5.3; TypeScript 7.0.2; Vitest 5.0.4; ESM/NodeNext; isolated node:sqlite backend.
 
-**Spec:** [Master plan](2026-10-15-tesseract-implementation-plan.md), [public contract §§3–12,16](../specs/2026-10-15-tesseract-public-api-state-machine-design.md), [state records](../specs/2026-10-14-tesseract-state-design.md).
+**Spec:** [Master plan](2026-10-15-tessar-implementation-plan.md), [public contract §§3–12,16](../specs/2026-10-15-tessar-public-api-state-machine-design.md), [state records](../specs/2026-10-14-tessar-state-design.md).
 
 ## Global Constraints
 
@@ -102,7 +102,7 @@ Deleted thread có tombstone, không tái sử dụng identity hoặc làm mất
 **Interfaces**
 
 - Consumes: MessageData/part variants từ state/core spec, baseline §16.
-- Produces: JsonValue, JsonObject, ErrorInfo, TesseractError(code, message, details?);
+- Produces: JsonValue, JsonObject, ErrorInfo, TessarError(code, message, details?);
   SystemMessage/HumanMessage/AssistantMessage(content, options?), ToolMessage({toolCallId, content, ...options});
   MessageCodec.encode(message: Message): MessageData, decode(data: MessageData): Message;
   buildInstruction(sections: readonly InstructionSection[]): Instruction.

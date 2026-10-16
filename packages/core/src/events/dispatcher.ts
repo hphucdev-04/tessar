@@ -1,4 +1,4 @@
-import { TesseractError, errorInfo } from "../errors.js";
+import { TessarError, errorInfo } from "../errors.js";
 import {
   EventEnvelope,
   type AnyEvent,
@@ -35,7 +35,7 @@ export async function dispatch<D extends AnyEvent>(
       kind !== "notification" &&
       kind !== "barrier"
     )
-      throw new TesseractError("Cancelled", "Execution cancelled");
+      throw new TessarError("Cancelled", "Execution cancelled");
     try {
       const event = new EventEnvelope(
         definition,
@@ -69,14 +69,14 @@ export async function dispatch<D extends AnyEvent>(
       }
     } catch (cause) {
       if (
-        cause instanceof TesseractError &&
+        cause instanceof TessarError &&
         ["StorageUnavailable", "CommitConflict", "OwnershipLost"].includes(
           cause.code,
         )
       )
         throw cause;
       const error = cause !== null && typeof cause === "object" ? cause : new Error(String(cause), { cause });
-      const info = errorInfo(error, error instanceof TesseractError ? undefined : { source: "plugin", pluginId: registration.pluginId, eventId: definition });
+      const info = errorInfo(error, error instanceof TessarError ? undefined : { source: "plugin", pluginId: registration.pluginId, eventId: definition });
       if (kind !== "notification") throw error;
       try {
         diagnostics(info, context);

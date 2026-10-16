@@ -1,8 +1,16 @@
 {
-  "name": "@tesseract/sqlite",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@tessar/sqlite",
+  "version": "0.1.0-alpha.0",
+  "description": "SQLite persistence for Tessar state and checkpoints using Node's built-in SQLite API.",
   "type": "module",
+  "files": ["dist"],
+  "engines": { "node": ">=24.14.0" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hphucdev-04/tesseract.git",
+    "directory": "packages/sqlite"
+  },
+  "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -10,10 +18,11 @@
     }
   },
   "dependencies": {
-    "@tesseract/core": "workspace:*"
+    "@tessar/core": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

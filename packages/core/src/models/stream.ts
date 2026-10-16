@@ -1,8 +1,8 @@
-import { errorInfo, TesseractError } from "../errors.js";
+import { errorInfo, TessarError } from "../errors.js";
 import type { ModelAdapter, ModelCallContext, ModelRef, ModelRequest } from "./contract.js";
 
 function record(error: unknown, ref: ModelRef): void {
-  if (!(error instanceof TesseractError))
+  if (!(error instanceof TessarError))
     errorInfo(error, { source: "provider", providerId: ref.providerId, modelId: ref.modelId });
 }
 export function providerCall<T>(ref: ModelRef, operation: () => T): T {

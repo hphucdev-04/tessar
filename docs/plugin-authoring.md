@@ -1,16 +1,16 @@
-# Writing a Tesseract plugin
+# Writing a Tessar plugin
 
-Use public exports from `@tesseract/core`. Built-in and custom plugins are classes
+Use public exports from `@tessar/core`. Built-in and custom plugins are classes
 instantiated with `new`. Implement `Plugin` to describe the instance's ID and setup
-method; no base class or apiVersion is required. Setup receives `tesseract: PluginContext`.
+method; no base class or apiVersion is required. Setup receives `tessar: PluginContext`.
 
 ```ts
-import { AgentEvents, createTool, toolResult, type Plugin, type PluginContext } from "@tesseract/core";
+import { AgentEvents, createTool, toolResult, type Plugin, type PluginContext } from "@tessar/core";
 
 export class GreetingPlugin implements Plugin {
   readonly id = "greeting";
-  setup(tesseract: PluginContext): void {
-    tesseract.tools.register(createTool({
+  setup(tessar: PluginContext): void {
+    tessar.tools.register(createTool({
       name: "greet",
       description: "Greet one person",
       input: {
@@ -29,7 +29,7 @@ export class GreetingPlugin implements Plugin {
       },
       async execute(input) { return toolResult(`Hello, ${input.name}`); },
     }));
-    tesseract.hook(AgentEvents.ModelUsage, event => {
+    tessar.hook(AgentEvents.ModelUsage, event => {
       console.log(event.payload.usage);
     });
   }
@@ -44,7 +44,7 @@ Core does not require a schema library. Both Tool and createTool use one executo
 
 ## Hooks and lifecycle
 
-`tesseract.hook(AgentEvents.BeforeTool, handler)` registers a typed hook. Constants
+`tessar.hook(AgentEvents.BeforeTool, handler)` registers a typed hook. Constants
 are string values without a framework prefix. Transform hooks return replacements;
 decision hooks return explicit allow/deny/continue/stop decisions. A later handler
 cannot overturn a denial. Required handler failures stop execution; notification
@@ -52,11 +52,11 @@ errors go to Controller diagnostics. Notifications do not expose mutable executi
 services. Session.subscribe is observation and is not awaited as a policy hook.
 
 `AgentEvents.Diagnostic` exposes Controller diagnostics through the same hook API.
-Error records carry an explicit source (`tesseract`, `provider`, `plugin`, `tool`,
+Error records carry an explicit source (`tessar`, `provider`, `plugin`, `tool`,
 `storage`, `application`) and available component identity. Provider/plugin
 exceptions retain their original objects in-process; JSON snapshots belong to
 trace/state. A diagnostic handler failure is isolated without emitting another
-diagnostic. `@tesseract/plugins/logger` subscribes to lifecycle notifications and diagnostics;
+diagnostic. `@tessar/plugins/logger` subscribes to lifecycle notifications and diagnostics;
 its default writer emits JSON to stderr, and `write(entry)` selects another sink.
 
 Custom events extend EventMap with HookSpec payload/result/context types. Their
@@ -64,19 +64,19 @@ default runtime behavior is notification; use the optional registration options
 `{kind: "transformation" | "decision" | "barrier"}` for a custom non-notification
 contract. A host rejects conflicting kinds/versions for an existing event name.
 
-Setup may return a disposer or register cleanup with tesseract.defer. Setup failure
+Setup may return a disposer or register cleanup with tessar.defer. Setup failure
 rolls back its registrations. Captured executions keep detached plugin resources
 alive until release; new executions see the updated registry. Storage is fixed
 after initialization. Importing the core starts no runtime and performs no requests.
 
 ## State, interruption and external work
 
-Use tesseract.state.define for plugin namespaces, then state access at supported
+Use tessar.state.define for plugin namespaces, then state access at supported
 transform/decision boundaries. Thread/stream/turn state participates in Thread
 checkpoints. Explicit agent/session-owned CAS transactions have separate lifetimes;
 they are not atomic with a Thread checkpoint or rewound by a Thread fork.
 
-Register typed interruption contracts with tesseract.interruptions.register.
+Register typed interruption contracts with tessar.interruptions.register.
 Decision context.suspend persists a request and cursor; response resolution must
 be deterministic. The host handles the UI and calls Session.resume later. Schema
 and interruption versions protect actual persisted data, independently of plugin
@@ -100,13 +100,13 @@ During development, instantiate the plugin class with `new` and pass the instanc
 in Controller options. For external loading, default-export an instance, for example
 `export default new GreetingPlugin()`. The loader passes that instance to core;
 it does not instantiate classes or require a different plugin API.
-Node hosts can also use `PluginManager` from the optional `@tesseract/plugins`.
+Node hosts can also use `PluginManager` from the optional `@tessar/plugins`.
 The host chooses its directory, calls load before constructing Controller and keeps
 the manager alive through Controller disposal. Use a finally block even if loading
 or initialization fails. The loader does not call setup or install missing packages.
 
 ```ts
-const manager = new PluginManager({ directory: resolve(".tesseract"), hostUrl: import.meta.url });
+const manager = new PluginManager({ directory: resolve(".tessar"), hostUrl: import.meta.url });
 let controller: Controller | undefined;
 try {
   const agent = new Agent({ id: "host", model });
@@ -137,11 +137,11 @@ resolve from `<directory>/npm/`.
 Custom files in `plugins/` do not need entries in this configuration. The npm
 manifest and lockfile live at `npm/package.json` and `npm/package-lock.json`,
 with installed packages in `npm/node_modules/`. The host chooses the root directory
-name; `.tesseract` is only the demo's default. Constructors and loading do not
+name; `.tessar` is only the demo's default. Constructors and loading do not
 create this layout; `install()` creates the npm environment when needed. Custom
 plugin directories are created by the host or user.
 
-Local plugins may import the host's public `@tesseract/core` exports, including
+Local plugins may import the host's public `@tessar/core` exports, including
 AgentEvents/createTool/message classes, without installing another SDK copy.
 Scoped Node hooks map SDK imports in the plugin graph to the host, including lazy
 imports. Other imports resolve normally relative to the importing file; missing
@@ -151,7 +151,7 @@ the manager after runtime shutdown to deregister those hooks.
 
 Node 24.14+ directly executes local erasable TypeScript. It does not process
 tsconfig aliases, TSX, enums or parameter-property transforms. npm packages must
-publish JavaScript and declare a compatible `@tesseract/core` peer dependency.
+publish JavaScript and declare a compatible `@tessar/core` peer dependency.
 Mark that peer optional to avoid npm installing a separate SDK copy; use a
 development dependency to build and typecheck the plugin.
 The loader supplies the host SDK; it does not adapt incompatible APIs or invent a
@@ -179,7 +179,7 @@ Node caches modules, so restart the host after changing/updating a module on dis
 Runtime attach/detach still works with loaded plugin objects. This is verified for
 Node/npm hosts; Bun-compiled binaries and Node SEA require separate packaging tests.
 
-The earlier flat layout (`package.json` with `tesseract.plugins` at the manager
+The earlier flat layout (`package.json` with `tessar.plugins` at the manager
 root) is replaced. For an existing environment, put the chosen package names in
 `plugins.json` and reinstall those packages through the manager into `npm/`.
 Existing files are not moved or deleted automatically.

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { fail,type Lease,type OwnershipPort } from "@tesseract/core";
+import { fail,type Lease,type OwnershipPort } from "@tessar/core";
 type LeaseRow={thread_id:string;owner_token:string;fencing_token:number;expires_at:number};
 export function databaseNow(db:DatabaseSync):number{return (db.prepare("SELECT CAST((julianday('now') - 2440587.5)*86400000 AS INTEGER) AS now").get() as {now:number}).now;}
 export function transaction<T>(db:DatabaseSync,action:()=>T):T {db.exec("BEGIN IMMEDIATE");try{const result=action();db.exec("COMMIT");return result;}catch(error){db.exec("ROLLBACK");throw error;}}

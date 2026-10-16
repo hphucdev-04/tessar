@@ -1,13 +1,13 @@
 import {
   AssistantMessage,
-  TesseractError,
+  TessarError,
   fail,
   assertJson,
   type ContentPart,
   type JsonValue,
   type ModelRef,
   type ModelRequest,
-} from "@tesseract/core";
+} from "@tessar/core";
 import type {
   ResponseInput,
   ResponseOutputItem,
@@ -153,7 +153,7 @@ export function decodeOutput(
         try {
           args = JSON.parse(item.arguments);
         } catch {
-          throw new TesseractError(
+          throw new TessarError(
             "ProviderResponse",
             "Invalid OpenAI function arguments",
           );

@@ -11,7 +11,7 @@ import {
 } from "./engine/delivery.js";
 export type { Stream, DeliveryTarget } from "./engine/delivery.js";
 import {
-  TesseractError,
+  TessarError,
   errorInfo,
   errorFromInfo,
   fail,
@@ -549,7 +549,7 @@ export class Agent {
     } catch (error) {
       if (error instanceof Suspension) return;
       if (frame?.ownershipError)
-        error = new TesseractError(
+        error = new TessarError(
           "OwnershipLost",
           "Execution ownership was lost",
         );
@@ -1150,8 +1150,8 @@ export class Agent {
         plan.attempt.status = "interrupted";
         plan.attempt.endedAt = this.clock.now();
         plan.attempt.error = {
-          source: "tesseract",
-          name: "TesseractError",
+          source: "tessar",
+          name: "TessarError",
           code: "InterruptedModelCall",
           message: "Provider outcome was not committed",
           retryable: true,

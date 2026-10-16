@@ -48,14 +48,14 @@ export class AgentHarness {
       plugins: [
         {
           id: "test-storage",
-          setup(tesseract) {
-            tesseract.storage.registerBackend(backend);
+          setup(tessar) {
+            tessar.storage.registerBackend(backend);
           },
         },
         {
           id: "scripted",
-          setup(tesseract) {
-            tesseract.models.registerProvider({
+          setup(tessar) {
+            tessar.models.registerProvider({
               id: "scripted",
               create: () => provider,
             });

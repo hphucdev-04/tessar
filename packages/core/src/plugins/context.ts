@@ -56,5 +56,5 @@ export interface Plugin {
   readonly id: string;
   readonly version?: number;
   readonly configurationId?: string;
-  setup(tesseract: PluginContext): void | Disposer | Promise<void | Disposer>;
+  setup(tessar: PluginContext): void | Disposer | Promise<void | Disposer>;
 }
