@@ -34,4 +34,4 @@ Provider SDK exceptions retain their original identity. The adapter disables
 implicit SDK retries. Model metadata may be incomplete and carries provenance.
 
 This is an alpha release. See the
-[repository](https://github.com/hphucdev-04/tesseract) for complete contracts.
+[repository](https://github.com/hphucdev-04/tessar) for complete contracts.

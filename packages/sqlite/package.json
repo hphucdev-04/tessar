@@ -7,7 +7,7 @@
   "engines": { "node": ">=24.14.0" },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hphucdev-04/tesseract.git",
+    "url": "git+https://github.com/hphucdev-04/tessar.git",
     "directory": "packages/sqlite"
   },
   "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },
