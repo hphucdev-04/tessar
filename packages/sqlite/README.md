@@ -22,4 +22,4 @@ Node's SQLite API is experimental. This backend uses synchronous database
 operations and is a reference implementation, not a server throughput claim.
 
 This is an alpha release. See the
-[repository](https://github.com/hphucdev-04/tesseract) for usage and contracts.
+[repository](https://github.com/hphucdev-04/tessar) for usage and contracts.

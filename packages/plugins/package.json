@@ -5,7 +5,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hphucdev-04/tesseract.git",
+    "url": "git+https://github.com/hphucdev-04/tessar.git",
     "directory": "packages/plugins"
   },
   "publishConfig": { "access": "public", "tag": "next", "registry": "https://registry.npmjs.org/" },

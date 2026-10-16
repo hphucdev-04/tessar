@@ -26,6 +26,6 @@ the same `Plugin` instance contract. Providers and persistence backends are
 separate plugins: `@tessar/openai` and `@tessar/sqlite`.
 
 This is an alpha release. See the
-[repository](https://github.com/hphucdev-04/tesseract) for complete TypeScript
+[repository](https://github.com/hphucdev-04/tessar) for complete TypeScript
 examples and the current API contracts. The bundled model catalog includes its
 upstream license at `src/models/catalog.LICENSE`.

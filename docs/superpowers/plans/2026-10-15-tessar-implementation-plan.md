@@ -132,7 +132,7 @@ Tên package dùng trong workspace, chưa phải cam kết publish npm scope.
   test chạy package suites; test:integration chạy tests/integration riêng,
   không lặp toàn bộ package suite.
 - Khi thực thi task A1, kiểm tra lại root bằng git rev-parse. Nếu vẫn chưa có
-  repository, git init tại D:/Tesseract trước commit đầu. Không làm việc này
+  repository, git init tại D:/tessar trước commit đầu. Không làm việc này
   trong phase viết plan.
 - Commit từng task chỉ exact files của task; không git add toàn workspace,
   không commit .env/API keys/catalog chứa credentials hay artifacts SQLite.
