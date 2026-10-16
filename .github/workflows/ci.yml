@@ -1,5 +1,11 @@
 name: verify
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
 jobs:
   verify:
     strategy:
@@ -18,6 +24,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
-      - run: pnpm test
-      - run: pnpm test:integration
+      - run: pnpm test --maxWorkers 4
+      - run: pnpm test:integration --maxWorkers 4
       - run: pnpm check:boundaries
