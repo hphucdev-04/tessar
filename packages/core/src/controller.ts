@@ -1,4 +1,10 @@
-import { requireId, fail, errorInfo, TesseractError, type ErrorInfo } from "./errors.js";
+import {
+  requireId,
+  fail,
+  errorInfo,
+  TesseractError,
+  type ErrorInfo,
+} from "./errors.js";
 import { immutable, randomIds } from "./json.js";
 import { AgentEvents } from "./events/catalog.js";
 import { EventEnvelope, type EventContext } from "./events/definition.js";
@@ -27,10 +33,18 @@ export class Controller {
   readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
     this.diagnostics.push(error);
     // Copy only event identity, never execution services from the failing hook.
-    const event = new EventEnvelope(AgentEvents.Diagnostic, { error }, {
-      ...context, controllerId: this.id, agentId: this.agent.id,
-    });
-    void this.hooks.dispatch(AgentEvents.Diagnostic, event.payload, { ...event }).catch(() => {});
+    const event = new EventEnvelope(
+      AgentEvents.Diagnostic,
+      { error },
+      {
+        ...context,
+        controllerId: this.id,
+        agentId: this.agent.id,
+      },
+    );
+    void this.hooks
+      .dispatch(AgentEvents.Diagnostic, event.payload, { ...event })
+      .catch(() => {});
   };
   /** @internal */ readonly hooks = new PluginHost({
     diagnostics: this.report,
@@ -45,6 +59,7 @@ export class Controller {
     | "closing"
     | "closed" = "new";
   private initialization?: Promise<void>;
+  private readonly initialPlugins: readonly Plugin[];
   private disposal?: Promise<void>;
   private defaultBackend = false;
   private readonly providers = new Map<ModelProviderRegistration, () => void>();
@@ -69,21 +84,28 @@ export class Controller {
       this.syncProviders();
     },
   };
-  constructor(options: { id: string; agent: Agent }) {
+  constructor(options: {
+    id: string;
+    agent: Agent;
+    plugins?: readonly Plugin[];
+  }) {
     this.id = requireId(options.id, "controller id");
     this.agent = options.agent;
+    this.initialPlugins = Object.freeze([...(options.plugins ?? [])]);
     this.agent.attachController(this);
   }
   initialize(): Promise<void> {
     if (this.disposal)
-      return Promise.reject(new TesseractError("Disposed", "Controller is disposed"));
+      return Promise.reject(
+        new TesseractError("Disposed", "Controller is disposed"),
+      );
     if (this.initialization) return this.initialization;
     if (this.phase !== "new")
       return Promise.reject(new Error("Controller is disposed"));
     this.phase = "initializing";
     this.initialization = (async () => {
       try {
-        await this.hooks.initialize(this.agent.plugins);
+        await this.hooks.initialize(this.initialPlugins);
         const selected = this.hooks
           .registrations()
           .find((r) => r.kind === "storage");

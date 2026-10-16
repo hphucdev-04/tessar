@@ -32,8 +32,8 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
    const manager=new PluginManager({directory:resolve('.tesseract'),hostUrl:import.meta.url});let controller;
    try{if(process.argv[2]==='plugins'){console.log(JSON.stringify(await manager.discover()));}
    else{const provider=new ScriptedProvider([{text:'fixture answer'}]);
-    const agent=new Agent({id:'packed',model:{providerId:'scripted',modelId:'test'},plugins:[{id:'provider',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});
-    controller=new Controller({id:'packed',agent});await controller.initialize();const result=await agent.generate({input:new HumanMessage('hello')});
+    const agent=new Agent({id:'packed',model:{providerId:'scripted',modelId:'test'}});
+    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate({input:new HumanMessage('hello')});
     console.log(JSON.stringify({status:result.status,output:result.output.flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text).join('')}));
    }}finally{try{await controller?.dispose();}finally{manager.dispose();}}
   `);
@@ -67,14 +67,15 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
 it("loads the packed logger subpath using the host SDK without installing core in the plugin environment",async()=>{
  const root=await mkdtemp(join(tmpdir(),"tesseract logger "));
  try{
-  const managed=join(root,"managed"),cache=join(root,"cache");await mkdir(managed);
-  await writeFile(join(managed,"package.json"),JSON.stringify({private:true,type:"module",tesseract:{plugins:["@tesseract/plugins/logger"]}}));
+  const managed=join(root,"managed"),npmDirectory=join(managed,"npm"),cache=join(root,"cache");await mkdir(npmDirectory,{recursive:true});
+  await writeFile(join(managed,"plugins.json"),JSON.stringify({packages:["@tesseract/plugins/logger"]}));
+  await writeFile(join(npmDirectory,"package.json"),JSON.stringify({private:true,type:"module"}));
   const packed=await command("pnpm",["pack","--json","--pack-destination",root],resolve("packages/plugins"),cache);
   const tarball=resolve(root,JSON.parse(packed.stdout).filename);
-  await command("npm",["install","--offline","--ignore-scripts","--no-audit","--no-fund",tarball],managed,cache);
-  expect(existsSync(join(managed,"node_modules/@tesseract/plugins/dist/logger.js"))).toBe(true);
-  expect(existsSync(join(managed,"node_modules/@tesseract/core"))).toBe(false);
-  expect(existsSync(join(managed,"node_modules/@tesseract/plugins/node_modules/@tesseract/core"))).toBe(false);
+  await command("npm",["install","--offline","--ignore-scripts","--no-audit","--no-fund",tarball],npmDirectory,cache);
+  expect(existsSync(join(npmDirectory,"node_modules/@tesseract/plugins/dist/logger.js"))).toBe(true);
+  expect(existsSync(join(npmDirectory,"node_modules/@tesseract/core"))).toBe(false);
+  expect(existsSync(join(npmDirectory,"node_modules/@tesseract/plugins/node_modules/@tesseract/core"))).toBe(false);
   await execute(process.execPath,["--input-type=module","-e",`
    import assert from 'node:assert/strict';
    import {Agent,Controller,HumanMessage,AgentEvents} from '@tesseract/core';
@@ -86,8 +87,8 @@ it("loads the packed logger subpath using the host SDK without installing core i
    try{
     const [logger]=await manager.load();assert.equal(logger.id,'logger');
     const provider=new ScriptedProvider([{text:'logger works'}]);
-    const agent=new Agent({id:'logger-host',model:{providerId:'scripted',modelId:'test'},plugins:[logger,{id:'provider',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}}]});
-    controller=new Controller({id:'logger-controller',agent});await controller.initialize();
+    const agent=new Agent({id:'logger-host',model:{providerId:'scripted',modelId:'test'}});
+    controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}}]});await controller.initialize();
     const result=await agent.generate({input:new HumanMessage('hello')});
     assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'logger works');
     assert.ok(logs.some(entry=>entry.type===AgentEvents.StreamEnd&&entry.agentId==='logger-host'&&entry.controllerId==='logger-controller'));
@@ -104,7 +105,9 @@ it("validates a tarball's actual package name before activating an existing help
   await writeFile(join(source,"index.mjs"),"export default {id:'tar-plugin',setup(){}};");
   await writeFile(join(helper,"package.json"),JSON.stringify({name:"existing-helper",version:"1.0.0",main:"index.cjs"}));
   await writeFile(join(helper,"index.cjs"),"module.exports={};");
-  await writeFile(join(managed,"package.json"),JSON.stringify({private:true,dependencies:{"existing-helper":"file:"+helper},tesseract:{plugins:[]}}));
+  await mkdir(join(managed,"npm"));
+  await writeFile(join(managed,"npm/package.json"),JSON.stringify({private:true,dependencies:{"existing-helper":"file:"+helper}}));
+  await writeFile(join(managed,"plugins.json"),JSON.stringify({packages:[]}));
   const packed=await command("npm",["pack","--json","--pack-destination",root],source,cache);
   const tarball=resolve(root,JSON.parse(packed.stdout)[0].filename);
   await execute(process.execPath,["--input-type=module","-e",`

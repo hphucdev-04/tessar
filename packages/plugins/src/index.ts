@@ -1,6 +1,6 @@
 import { readFile, readdir, mkdir, writeFile, stat } from "node:fs/promises";
 import { existsSync, type Dirent } from "node:fs";
-import { registerHooks } from "node:module";
+import { createRequire, registerHooks } from "node:module";
 import { isAbsolute, join, resolve, dirname, delimiter } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -15,7 +15,10 @@ export interface PluginManagerOptions {
 }
 interface Manifest {
   dependencies?: Record<string, string>;
-  tesseract?: { plugins?: string[]; [key: string]: unknown };
+  [key: string]: unknown;
+}
+interface PluginConfig {
+  packages?: string[];
   [key: string]: unknown;
 }
 const extensions = [".mjs", ".js", ".cjs", ".mts", ".ts", ".cts"];
@@ -35,6 +38,7 @@ function validName(name: string): void {
 /** Opt-in Node host utilities; PluginHost still owns setup and resource cleanup. */
 export class PluginManager {
   readonly directory: string;
+  private readonly npmDirectory: string;
   private readonly hostUrl: string;
   private readonly prefix = "tesseract-plugin:" + randomUUID() + "/";
   private readonly graph = new Set<string>();
@@ -46,35 +50,36 @@ export class PluginManager {
     if (!options.directory.trim())
       throw Error("Plugin directory must be nonempty");
     this.directory = resolve(options.directory);
+    this.npmDirectory = join(this.directory, "npm");
     this.hostUrl = options.hostUrl ?? import.meta.url;
   }
   private check(): void {
     if (this.disposed) throw Error("PluginManager is disposed");
   }
-  private async manifest(): Promise<Manifest> {
-    const filename = join(this.directory, "package.json");
-    let data: Manifest;
+  private async readJson<T>(filename: string): Promise<T> {
+    let data: unknown;
     try {
       data = JSON.parse(await readFile(filename, "utf8"));
     } catch (error) {
-      if (missing(error)) return {};
-      throw new Error("Invalid plugin manifest " + filename, { cause: error });
+      if (missing(error)) return {} as T;
+      throw new Error("Invalid JSON file " + filename, { cause: error });
     }
+    if (!data || typeof data !== "object" || Array.isArray(data))
+      throw Error("Expected a JSON object in " + filename);
+    return data as T;
+  }
+  private manifest(): Promise<Manifest> {
+    return this.readJson(join(this.npmDirectory, "package.json"));
+  }
+  private async configuration(): Promise<PluginConfig> {
+    const filename = join(this.directory, "plugins.json");
+    const data = await this.readJson<PluginConfig>(filename);
     if (
-      !data ||
-      typeof data !== "object" ||
-      Array.isArray(data) ||
-      (data.tesseract !== undefined &&
-        (!data.tesseract ||
-          typeof data.tesseract !== "object" ||
-          Array.isArray(data.tesseract))) ||
-      (data.tesseract?.plugins !== undefined &&
-        (!Array.isArray(data.tesseract.plugins) ||
-          data.tesseract.plugins.some(
-            (value) => typeof value !== "string" || !value.trim(),
-          )))
+      data.packages !== undefined &&
+      (!Array.isArray(data.packages) ||
+        data.packages.some(value => typeof value !== "string" || !value.trim()))
     )
-      throw Error("Invalid tesseract.plugins in " + filename);
+      throw Error("Invalid packages in " + filename);
     return data;
   }
   async discover(): Promise<string[]> {
@@ -103,9 +108,9 @@ export class PluginManager {
         if (indexes[0]) sources.push(join(directory, entry.name, indexes[0]));
       }
     }
-    const manifest = await this.manifest();
+    const config = await this.configuration();
     this.check();
-    return [...sources, ...(manifest.tesseract?.plugins ?? [])];
+    return [...sources, ...(config.packages ?? [])];
   }
   private registerResolver(): void {
     if (this.resolver) return;
@@ -123,7 +128,7 @@ export class PluginManager {
           );
           const result = nextResolve(source, {
             ...context,
-            parentURL: pathToFileURL(join(this.directory, "package.json")).href,
+            parentURL: pathToFileURL(join(this.npmDirectory, "package.json")).href,
           });
           this.graph.add(result.url);
           return result;
@@ -140,9 +145,28 @@ export class PluginManager {
               ),
               shortCircuit: true,
             };
-          const result = nextResolve(specifier, context);
-          this.graph.add(result.url);
-          return result;
+          try {
+            const result = nextResolve(specifier, context);
+            this.graph.add(result.url);
+            return result;
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (
+              (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") ||
+              specifier.startsWith(".") || isAbsolute(specifier) ||
+              specifier.includes(":") || specifier.startsWith("#")
+            )
+              throw error;
+            // Custom files can also use dependencies in the managed npm environment.
+            const url = context.conditions.includes("require")
+              ? pathToFileURL(createRequire(join(this.npmDirectory, "package.json")).resolve(specifier)).href
+              : import.meta.resolve(this.prefix + encodeURIComponent(specifier));
+            this.graph.add(url);
+            return {
+              url,
+              shortCircuit: true,
+            };
+          }
         }
         return nextResolve(specifier, context);
       },
@@ -200,17 +224,17 @@ export class PluginManager {
     this.mutation = next.catch(() => {});
     return next;
   }
-  private async saveManifest(manifest: Manifest): Promise<void> {
+  private async saveConfiguration(config: PluginConfig): Promise<void> {
     await writeFile(
-      join(this.directory, "package.json"),
-      JSON.stringify(manifest, null, 2) + "\n",
+      join(this.directory, "plugins.json"),
+      JSON.stringify(config, null, 2) + "\n",
     );
   }
   private async npm(args: string[]): Promise<string> {
     const parameters = [
       ...args,
       "--prefix",
-      this.directory,
+      this.npmDirectory,
       "--no-audit",
       "--no-fund",
     ];
@@ -226,14 +250,14 @@ export class PluginManager {
       if (!cli) throw Error("npm is not installed alongside Node or on PATH");
       return (
         await execute(process.execPath, [cli, ...parameters], {
-          cwd: this.directory,
+          cwd: this.npmDirectory,
           windowsHide: true,
         })
       ).stdout;
     } else
       return (
         await execute("npm", parameters, {
-          cwd: this.directory,
+          cwd: this.npmDirectory,
           windowsHide: true,
         })
       ).stdout;
@@ -262,10 +286,13 @@ export class PluginManager {
       if (typeof name !== "string")
         throw Error("Provide a package name for Git, tarball or URL sources");
       validName(name);
-      const before = await this.manifest();
-      await mkdir(this.directory, { recursive: true });
-      if (!existsSync(join(this.directory, "package.json")))
-        await this.saveManifest({ private: true, type: "module", ...before });
+      const config = await this.configuration();
+      await mkdir(this.npmDirectory, { recursive: true });
+      if (!existsSync(join(this.npmDirectory, "package.json")))
+        await writeFile(
+          join(this.npmDirectory, "package.json"),
+          JSON.stringify({ private: true, type: "module" }, null, 2) + "\n",
+        );
       if (!sourceName) {
         const packed = JSON.parse(
           await this.npm([
@@ -291,26 +318,24 @@ export class PluginManager {
         throw Error(
           "Installed source did not provide requested package " + name,
         );
-      manifest.tesseract = {
-        ...manifest.tesseract,
-        plugins: [...new Set([...(manifest.tesseract?.plugins ?? []), name])],
-      };
-      await this.saveManifest(manifest);
+      config.packages = [...new Set([...(config.packages ?? []), name])];
+      await this.saveConfiguration(config);
       return name;
     });
   }
   update(name?: string): Promise<void> {
     return this.mutate(async () => {
       const manifest = await this.manifest();
+      const config = await this.configuration();
       const names = name
         ? [name]
-        : (manifest.tesseract?.plugins ?? []).filter(
+        : (config.packages ?? []).filter(
             (value) => manifest.dependencies?.[value],
           );
       for (const value of names) {
         validName(value);
         if (
-          !manifest.tesseract?.plugins?.includes(value) ||
+          !config.packages?.includes(value) ||
           !manifest.dependencies?.[value]
         )
           throw Error("Not an installed plugin: " + value);
@@ -322,20 +347,15 @@ export class PluginManager {
     return this.mutate(async () => {
       validName(name);
       const before = await this.manifest();
+      const config = await this.configuration();
       if (
-        !before.tesseract?.plugins?.includes(name) ||
+        !config.packages?.includes(name) ||
         !before.dependencies?.[name]
       )
         throw Error("Not an installed plugin: " + name);
       await this.npm(["uninstall", name]);
-      const manifest = await this.manifest();
-      manifest.tesseract = {
-        ...manifest.tesseract,
-        plugins: (manifest.tesseract?.plugins ?? []).filter(
-          (value) => value !== name,
-        ),
-      };
-      await this.saveManifest(manifest);
+      config.packages = (config.packages ?? []).filter(value => value !== name);
+      await this.saveConfiguration(config);
     });
   }
   dispose(): void {

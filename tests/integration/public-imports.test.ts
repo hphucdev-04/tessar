@@ -19,8 +19,8 @@ it("loads built core without product startup I/O and runs the public APIs",()=>{
   try{const [logger]=await manager.load(['@tesseract/plugins/logger']);assert.equal(logger.id,'logger');assert.equal(typeof logger.setup,'function');}finally{manager.dispose();}
   const {LoggerPlugin}=await import('@tesseract/plugins/logger');const logs=[];
   const logger=new LoggerPlugin({write:entry=>{logs.push(entry);}});assert.ok(logger instanceof LoggerPlugin);
-  const agent=new Agent({id:'consumer',model:{providerId:'scripted',modelId:'test'},plugins:[logger,{id:'fixture',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}}]});
-  const controller=new Controller({id:'consumer-runtime',agent});
+  const agent=new Agent({id:'consumer',model:{providerId:'scripted',modelId:'test'}});
+  const controller=new Controller({id:'consumer-runtime',agent,plugins:[logger,{id:'fixture',setup(tesseract){tesseract.models.registerProvider({id:'scripted',create:()=>provider});}}]});
   await controller.initialize();
   try{const result=await agent.generate({input:new HumanMessage('hello')});assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'built answer');assert.ok(logs.some(entry=>entry.type===AgentEvents.StreamEnd));}finally{await controller.dispose();}
  `],{encoding:"utf8"});

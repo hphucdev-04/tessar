@@ -2,6 +2,10 @@
 
 > Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
 
+> 2026-10-16 API update: plugin composition belongs to
+> `new Controller({ id, agent, plugins })`. Older Agent plugin/factory examples
+> below are historical and do not describe the current public API.
+
 Cập nhật sau review: đã chốt Controller sở hữu public initialize/runtime,
 controller.createSession và nhóm session.thread.* cùng subscribe/abort/followUp.
 Các đoạn Agent lifecycle/new Session/direct Session thread methods trong

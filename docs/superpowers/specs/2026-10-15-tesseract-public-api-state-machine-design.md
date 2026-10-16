@@ -2,6 +2,10 @@
 
 > Historical document — superseded by [Minimal Core Design](2026-10-15-tesseract-minimal-core-design.md) and its English implementation plan.
 
+> 2026-10-16 API update: plugins are configured on Controller, not Agent.
+> Use `new Controller({ id, agent, plugins })`; older Agent plugin snippets below
+> are historical. Plugin setup, attach/detach and cleanup belong to Controller.
+
 Ngày: 2026-10-15.
 
 Trạng thái: đang triển khai theo thiết kế đã chốt ngày 2026-10-15. Các chi

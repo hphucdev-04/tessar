@@ -1,7 +1,6 @@
 import { loop } from "./loop.js";
 import { providerCall, streamModel } from "./models/stream.js";
 import type { Controller } from "./controller.js";
-import type { Plugin } from "./plugins/context.js";
 import type { Model } from "./models/profile.js";
 import type { Scope, InterruptRecord } from "./state/schema.js";
 import {
@@ -38,7 +37,6 @@ import {
   type StreamOutcome,
 } from "./events/catalog.js";
 import {
-  EventEnvelope,
   type AnyEvent,
   type EventContext,
   type PayloadOf,
@@ -119,7 +117,6 @@ export interface AgentOptions {
   id: string;
   model?: Model | ModelRef;
   instructions?: string | Instruction;
-  plugins?: readonly Plugin[];
   limits?: Partial<StreamLimits>;
 }
 export interface AgentExecutionOptions {
@@ -172,7 +169,6 @@ export interface ExecutionFrame {
 export class Agent {
   readonly id: string;
   readonly model: Readonly<ModelRef> | undefined;
-  readonly plugins: readonly Plugin[];
   private controller?: Controller;
   /** @internal */ attachController(controller: Controller): void {
     if (this.controller)
@@ -206,7 +202,6 @@ export class Agent {
     this.model = options.model
       ? immutable("ref" in options.model ? options.model.ref : options.model)
       : undefined;
-    this.plugins = Object.freeze([...(options.plugins ?? [])]);
     this.ids = randomIds;
     this.clock = systemClock;
     this.instructions = normalizeInstruction(options.instructions);
@@ -517,8 +512,7 @@ export class Agent {
       const input = await this.hook(frame, AgentEvents.InputPrepare, {
         messages: request.input,
       });
-      if (input.rejected)
-        throw errorFromInfo(input.rejected);
+      if (input.rejected) throw errorFromInfo(input.rejected);
       for (const message of input.messages)
         cp.state = {
           ...cp.state,
@@ -637,7 +631,10 @@ export class Agent {
           frame.lease = lease;
         },
         (error) => {
-          frame.ownershipError = errorInfo(error, { source: "storage", backendId: this.backend.id });
+          frame.ownershipError = errorInfo(error, {
+            source: "storage",
+            backendId: this.backend.id,
+          });
           frame.sink.controller.abort("OwnershipLost");
         },
       );
@@ -860,7 +857,9 @@ export class Agent {
       options.model.providerId,
     );
     if (!provider) fail("MissingProvider", "Auxiliary provider is missing");
-    const adapter = providerCall(options.model, () => provider.create(options.model.modelId)),
+    const adapter = providerCall(options.model, () =>
+        provider.create(options.model.modelId),
+      ),
       request = await this.hook(
         frame,
         AgentEvents.ModelRequest,

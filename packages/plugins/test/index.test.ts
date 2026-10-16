@@ -44,21 +44,29 @@ it("discovers local JS/TS and folders, preserves the host SDK for lazy imports a
 it("resolves import-only package exports and their own dependencies from the plugin environment",async()=>{
  const root=await mkdtemp(join(tmpdir(),"tesseract package "));
  try{
-  await file(root,"package.json",JSON.stringify({private:true,tesseract:{plugins:["example-plugin"]}}));
-  await file(root,"node_modules/example-plugin/package.json",JSON.stringify({type:"module",exports:{import:"./index.mjs"}}));
-  await file(root,"node_modules/example-plugin/index.mjs",`import {value} from 'helper'; export default {id:value,setup(){}};`);
-  await file(root,"node_modules/example-plugin/node_modules/helper/package.json",JSON.stringify({type:"module",exports:"./index.mjs"}));
-  await file(root,"node_modules/example-plugin/node_modules/helper/index.mjs",`export const value='package-helper';`);
-  await run(root,`assert.deepEqual(await manager.discover(),['example-plugin']);assert.equal((await manager.load())[0].id,'package-helper');`);
+  await file(root,"plugins.json",JSON.stringify({packages:["example-plugin"]}));
+  await file(root,"npm/node_modules/example-plugin/package.json",JSON.stringify({type:"module",exports:{import:"./index.mjs"}}));
+  await file(root,"npm/node_modules/example-plugin/index.mjs",`import {value} from 'helper'; export default {id:value,setup(){}};`);
+  await file(root,"npm/node_modules/example-plugin/node_modules/helper/package.json",JSON.stringify({type:"module",exports:"./index.mjs"}));
+  await file(root,"npm/node_modules/example-plugin/node_modules/helper/index.mjs",`export const value='package-helper';`);
+  await file(root,"npm/node_modules/helper/package.json",JSON.stringify({type:"module",exports:{import:"./index.mjs",require:"./index.cjs"}}));
+  await file(root,"npm/node_modules/helper/index.mjs",`export const value='managed-helper';`);
+  await file(root,"npm/node_modules/helper/index.cjs",`module.exports={value:'managed-require-helper'};`);
+  await file(root,"plugins/custom.mjs",`import {value} from 'helper';class CustomPlugin {id=value;setup(){}} export default new CustomPlugin();`);
+  await file(root,"plugins/custom-cjs.cjs",`const {value}=require('helper');class CustomPlugin {id=value+'-cjs';setup(){}} module.exports=new CustomPlugin();`);
+  await run(root,`
+   assert.deepEqual(await manager.discover(),[join(directory,'plugins/custom-cjs.cjs'),join(directory,'plugins/custom.mjs'),'example-plugin']);
+   assert.deepEqual((await manager.load()).map(plugin=>plugin.id),['managed-require-helper-cjs','managed-helper','package-helper']);
+  `);
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });
 it("rejects invalid manifests, invalid exports, duplicate IDs and module failures with source context",async()=>{
  const root=await mkdtemp(join(tmpdir(),"tesseract invalid "));
  try{
   await run(root,`assert.deepEqual(await manager.load(),[]);`);
-  await file(root,"package.json",JSON.stringify({tesseract:{plugins:"bad"}}));
-  await run(root,`await assert.rejects(manager.discover(),/tesseract.plugins/);`);
-  await file(root,"package.json",JSON.stringify({private:true}));
+  await file(root,"plugins.json",JSON.stringify({packages:"bad"}));
+  await run(root,`await assert.rejects(manager.discover(),/plugins.json/);`);
+  await file(root,"plugins.json",JSON.stringify({packages:[]}));
   await file(root,"invalid.mjs","export default {}; ");
   await file(root,"first.mjs","export default {id:'same',setup(){}};");
   await file(root,"second.mjs","export default {id:'same',setup(){}};");
@@ -77,7 +85,8 @@ it("installs, updates and removes a real local npm plugin without activating hel
   await file(root,"fixtures/helper/index.mjs","export const value='installed-plugin';");
   await file(root,"fixtures/plugin/package.json",JSON.stringify({name:"fixture-plugin",version:"1.0.0",type:"module",exports:{import:"./index.mjs"},dependencies:{"fixture-helper":"file:"+join(root,"fixtures/helper")}}));
   await file(root,"fixtures/plugin/index.mjs",`import {value} from 'fixture-helper';export default {id:value,setup(){}};`);
-  await file(root,"package.json",JSON.stringify({private:true,description:"preserved",dependencies:{"fixture-helper":"file:"+join(root,"fixtures/helper")},tesseract:{other:true,plugins:[]}}));
+  await file(root,"npm/package.json",JSON.stringify({private:true,description:"preserved",dependencies:{"fixture-helper":"file:"+join(root,"fixtures/helper")}}));
+  await file(root,"plugins.json",JSON.stringify({other:true,packages:[]}));
   await run(root,`
    const {readFile}=await import('node:fs/promises');
    await assert.rejects(manager.install('./fixtures/plugin',{name:'fixture-helper'}),/source package/);
@@ -85,15 +94,20 @@ it("installs, updates and removes a real local npm plugin without activating hel
    await manager.install('./fixtures/plugin');
    assert.deepEqual(await manager.discover(),['fixture-plugin']);assert.equal((await manager.load())[0].id,'installed-plugin');
    await manager.update('fixture-plugin');
-   let manifest=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));
-   assert.equal(manifest.description,'preserved');assert.equal(manifest.tesseract.other,true);
+   let manifest=JSON.parse(await readFile(join(directory,'npm/package.json'),'utf8'));
+   let config=JSON.parse(await readFile(join(directory,'plugins.json'),'utf8'));
+   assert.equal(manifest.description,'preserved');assert.equal(config.other,true);
+   assert.deepEqual(config.packages,['fixture-plugin']);assert.equal(manifest.tesseract,undefined);
    assert.ok(manifest.dependencies['fixture-helper']);assert.ok(manifest.dependencies['fixture-plugin']);
    await assert.rejects(manager.install('./missing; unexpected-command',{name:'missing-plugin'}));
    assert.deepEqual(await manager.discover(),['fixture-plugin']);
    await assert.rejects(manager.install('git+https://example.invalid/repo.git'),/name/i);
    await manager.remove('fixture-plugin');
    assert.deepEqual(await manager.discover(),[]);
-   manifest=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));assert.ok(manifest.dependencies['fixture-helper']);assert.equal(manifest.dependencies['fixture-plugin'],undefined);
+   manifest=JSON.parse(await readFile(join(directory,'npm/package.json'),'utf8'));assert.ok(manifest.dependencies['fixture-helper']);assert.equal(manifest.dependencies['fixture-plugin'],undefined);
+   config=JSON.parse(await readFile(join(directory,'plugins.json'),'utf8'));assert.deepEqual(config.packages,[]);assert.equal(config.other,true);
+   const {existsSync}=await import('node:fs');assert.equal(existsSync(join(directory,'package.json')),false);
+   assert.ok(existsSync(join(directory,'npm/package-lock.json')));assert.equal(existsSync(join(directory,'node_modules')),false);
    await assert.rejects(manager.update('fixture-helper'),/not.*plugin/i);
    await assert.rejects(manager.remove('--unsafe'),/name/i);
   `);

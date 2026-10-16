@@ -22,9 +22,12 @@ import { OpenAIPlugin } from "@tesseract/openai";
 const agent = new Agent({
   id: "assistant",
   model: { providerId: "openai", modelId: process.env.OPENAI_MODEL! },
+});
+const controller = new Controller({
+  id: "application",
+  agent,
   plugins: [new OpenAIPlugin({ apiKey: process.env.OPENAI_API_KEY! })],
 });
-const controller = new Controller({ id: "application", agent });
 await controller.initialize();
 
 try {
@@ -82,7 +85,7 @@ Event constants are strings, such as `AgentEvents.BeforeTool === "tool.before"`.
 Types provide autocomplete and inferred payloads/results. Plugins do not declare
 apiVersion. Built-in and custom plugins use classes instantiated with `new`.
 `Plugin` describes the instance's ID and setup contract; no base class is required.
-Add imported plugin instances to Agent options or use
+Add imported plugin instances to Controller options or use
 `controller.plugins.attach(plugin)` / `detach(id)` while ready.
 
 [Plugin authoring](docs/plugin-authoring.md) describes tools, state, cleanup and
@@ -98,7 +101,7 @@ const manager = new PluginManager({
   directory: resolve(".tesseract"),
   hostUrl: import.meta.url,
 });
-// Pass await manager.load() to Agent's plugins.
+// Pass await manager.load() to Controller's plugins.
 // In finally: await controller.dispose(), then manager.dispose().
 ```
 
@@ -106,9 +109,29 @@ Put a default-exported plugin in `.tesseract/plugins/example.mjs` (or erasable
 `.ts`). It imports the host's `@tesseract/core` without a separate SDK install.
 Additional dependencies use normal Node resolution from the plugin environment.
 
+The host chooses the directory name. The demo uses `.tesseract`; a consuming CLI
+can use `.my-cli` instead:
+
+```text
+.my-cli/
+├── plugins/                 # Custom files or folders with an index entry
+│   ├── custom.mjs
+│   └── my-plugin/index.mjs
+├── plugins.json             # { "packages": ["some-plugin"] }
+└── npm/
+    ├── package.json         # npm dependencies
+    ├── package-lock.json
+    └── node_modules/
+```
+
+Custom plugins are discovered automatically. `install()` installs npm packages
+under `npm/` and records their names in `plugins.json`. Loading never installs
+missing packages. Local files can use their own nearby dependencies or dependencies
+from the managed `npm/` environment. `@tesseract/core` resolves from the host.
+
 ## Logging
 
-Add `new LoggerPlugin()` from `@tesseract/plugins/logger` to the Agent's `plugins` for JSON
+Add `new LoggerPlugin()` from `@tesseract/plugins/logger` to the Controller's `plugins` for JSON
 logs on stderr. Supply `new LoggerPlugin({ write: entry => yourLogger.write(entry) })`
 to choose another destination. Entries include event type, timestamp and execution
 identity. Error payloads identify their source: `tesseract`, `provider`, `plugin`,
@@ -117,7 +140,7 @@ SDK exceptions keep their original object when thrown; trace/state store JSON er
 records. Diagnostic hook failures are isolated to prevent recursive logging.
 The subpath also default-exports the stderr logger plugin for
 `PluginManager.load(["@tesseract/plugins/logger"])` when the package is available
-in the configured plugin directory. Core is an optional peer dependency; the
+in the configured directory's `npm/` environment. Core is an optional peer dependency; the
 loader supplies the host's SDK without npm installing another copy.
 
 ## Storage, models and recovery

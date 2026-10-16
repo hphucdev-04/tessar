@@ -81,8 +81,8 @@ The selected storage backend cannot change after initialization.
 ## Public runtime
 
 ```ts
-const agent = new Agent({ id: "assistant", model, instructions, plugins });
-const controller = new Controller({ id: "application", agent });
+const agent = new Agent({ id: "assistant", model, instructions });
+const controller = new Controller({ id: "application", agent, plugins });
 await controller.initialize();
 const session = controller.createSession({ scope: { userId: "u1" } });
 await session.thread.create();
@@ -96,7 +96,10 @@ Concurrent initialize calls share a promise; failed initialization cleans up.
 One Agent instance belongs to one Controller. Disposal closes runtime resources
 and cancels active work without deleting durable pending requests or history.
 
-Agent accepts immutable default model/instructions/plugins/limits.
+Agent accepts immutable default model/instructions/limits. Controller accepts
+`plugins?: readonly Plugin[]`, snapshots the initial list at construction and owns
+plugin setup, registration, attach/detach and cleanup. Agent has no plugins option
+or plugin-list property; its loop uses the Controller's registry.
 Agent.stream({input, model?, scope?, context?, signal?, limits?}) creates an
 independent Thread automatically and returns one event iterator attachment.
 Agent.generate consumes the same execution to terminal outcome or suspension:

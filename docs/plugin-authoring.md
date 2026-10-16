@@ -97,11 +97,11 @@ generic state, hooks, checkpoints, progress, cancellation and trace mechanisms.
 ## Distribution
 
 During development, instantiate the plugin class with `new` and pass the instance
-in Agent options. For external loading, default-export an instance, for example
+in Controller options. For external loading, default-export an instance, for example
 `export default new GreetingPlugin()`. The loader passes that instance to core;
 it does not instantiate classes or require a different plugin API.
 Node hosts can also use `PluginManager` from the optional `@tesseract/plugins`.
-The host chooses its directory, calls load before constructing Agent and keeps
+The host chooses its directory, calls load before constructing Controller and keeps
 the manager alive through Controller disposal. Use a finally block even if loading
 or initialization fails. The loader does not call setup or install missing packages.
 
@@ -109,8 +109,8 @@ or initialization fails. The loader does not call setup or install missing packa
 const manager = new PluginManager({ directory: resolve(".tesseract"), hostUrl: import.meta.url });
 let controller: Controller | undefined;
 try {
-  const agent = new Agent({ id: "host", model, plugins: await manager.load() });
-  controller = new Controller({ id: "host", agent });
+  const agent = new Agent({ id: "host", model });
+  controller = new Controller({ id: "host", agent, plugins: await manager.load() });
   await controller.initialize();
   // Use the ordinary Agent/Session APIs.
 } finally {
@@ -120,35 +120,55 @@ try {
 ```
 
 Discovery loads sorted files from `<directory>/plugins`, followed by package
-names in `<directory>/package.json`'s `tesseract.plugins` array. Each module must
+names in `<directory>/plugins.json`'s `packages` array. Each module must
 default-export a Plugin object. A plugin folder can expose `index.mjs`, `index.js`,
 `index.cjs`, `index.mts`, `index.ts` or `index.cts`. Put helper modules inside that
 folder; top-level files in plugins are treated as entry points. Declaration files
 are ignored. `load(["./custom.mjs", "some-package"])` selects explicit sources
-instead; relative paths and packages resolve from the configured directory.
+instead; relative paths resolve from the configured directory, while packages
+resolve from `<directory>/npm/`.
+
+```json
+{
+  "packages": ["some-plugin", "@scope/another-plugin"]
+}
+```
+
+Custom files in `plugins/` do not need entries in this configuration. The npm
+manifest and lockfile live at `npm/package.json` and `npm/package-lock.json`,
+with installed packages in `npm/node_modules/`. The host chooses the root directory
+name; `.tesseract` is only the demo's default. Constructors and loading do not
+create this layout; `install()` creates the npm environment when needed. Custom
+plugin directories are created by the host or user.
 
 Local plugins may import the host's public `@tesseract/core` exports, including
 AgentEvents/createTool/message classes, without installing another SDK copy.
 Scoped Node hooks map SDK imports in the plugin graph to the host, including lazy
-imports. Other imports resolve normally relative to the importing file. Dispose
+imports. Other imports resolve normally relative to the importing file; missing
+bare package imports can also resolve from the managed `npm/` environment, with
+the original import/require conditions. Dispose
 the manager after runtime shutdown to deregister those hooks.
 
 Node 24.14+ directly executes local erasable TypeScript. It does not process
 tsconfig aliases, TSX, enums or parameter-property transforms. npm packages must
 publish JavaScript and declare a compatible `@tesseract/core` peer dependency.
+Mark that peer optional to avoid npm installing a separate SDK copy; use a
+development dependency to build and typecheck the plugin.
 The loader supplies the host SDK; it does not adapt incompatible APIs or invent a
 separate apiVersion. Existing plugin/interruption versions still guard saved work.
 
 `install(source, {name?})`, `update(name?)` and `remove(name)` delegate to installed
-npm in the configured directory. The default source can be an npm package/version
+npm in `<directory>/npm/`. The default source can be an npm package/version
 or a local package directory. Git/URL/tarball sources should provide their package
 name, e.g. `install("git+https://example.com/team/plugin.git#v1", {name: "my-plugin"})`.
 The demo CLI accepts `plugins install <source> --name <package>` and `--plugin-dir`.
 CLI local paths resolve from the shell's working directory; PluginManager API
 local paths resolve from its configured directory. An explicit package name must
 match the source's package metadata, even if that name is already a helper dependency.
-Only successfully installed plugin names enter tesseract.plugins; other direct
-dependencies remain helpers. Existing manifest fields and npm lockfiles are preserved.
+Only successfully installed plugin names enter `plugins.json`'s `packages` array;
+other direct dependencies remain helpers. Existing config/manifest fields and npm
+lockfiles are preserved. `remove()` removes the package through npm, then removes
+its configuration entry; it does not delete custom files.
 Install saves exact versions; update obeys saved dependency constraints. Install an
 explicit newer version to move outside them. Await operations and use a single
 mutating process per directory. npm may run package lifecycle scripts, and a failed
@@ -158,3 +178,8 @@ Loading executes trusted code. Module evaluation side effects are not rolled bac
 Node caches modules, so restart the host after changing/updating a module on disk.
 Runtime attach/detach still works with loaded plugin objects. This is verified for
 Node/npm hosts; Bun-compiled binaries and Node SEA require separate packaging tests.
+
+The earlier flat layout (`package.json` with `tesseract.plugins` at the manager
+root) is replaced. For an existing environment, put the chosen package names in
+`plugins.json` and reinstall those packages through the manager into `npm/`.
+Existing files are not moved or deleted automatically.
