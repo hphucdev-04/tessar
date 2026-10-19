@@ -9,7 +9,6 @@ import {
 import { immutable, randomIds } from "./json.js";
 import { matchesScope, normalizeScope } from "./state/scope.js";
 import { snapshotModelOptions } from "./models/options.js";
-import { SessionService } from "./state/sessions.js";
 import type { StoredModelSelection, SessionRecord } from "./state/schema.js";
 
 import { EventEnvelope, type EventContext } from "./events/definition.js";
@@ -31,6 +30,7 @@ import { Thread } from "./thread.js";
 import { Session, type SessionOptions } from "./session.js";
 import { isModelAdapter } from "./models/stream.js";
 import { toolRegistrations } from "./engine/runtime.js";
+import { reserveId } from "./identity.js";
 
 export class Controller {
   readonly id: string;
@@ -66,6 +66,7 @@ export class Controller {
   private initialization?: Promise<void>;
   private readonly initialPlugins: readonly Plugin[];
   private disposal?: Promise<void>;
+  private readonly releaseId: () => void;
   private defaultBackend = false;
   private readonly providers = new Map<ModelProviderRegistration, () => void>();
   readonly plugins = {
@@ -99,6 +100,8 @@ export class Controller {
     this.hooks = new PluginHost({
       diagnostics: this.report,
       values: [
+        { kind: "agent", id: this.agent.id, value: this.agent, version: 1,
+          pluginId: this.agent.id, pluginVersion: 1, configurationId: null },
         ...toolRegistrations(this.agent.id, this.agent.tools),
         ...(isModelAdapter(this.agent.model) ? [{
           kind: "provider", id: this.agent.model.ref.providerId, version: 1,
@@ -118,7 +121,13 @@ export class Controller {
       ],
     });
     this.initialPlugins = Object.freeze([...(options.plugins ?? [])]);
-    this.agent.attachController(this);
+    this.releaseId = reserveId("Controller", this.id, this);
+    try {
+      this.agent.attachController(this);
+    } catch (error) {
+      this.releaseId();
+      throw error;
+    }
   }
   initialize(): Promise<void> {
     if (this.disposal)
@@ -242,7 +251,7 @@ export class Controller {
     this.requireReady();
     const selected = this.sessionModel(options.model ?? this.agent.model), now = this.agent.clock.now();
     const record: SessionRecord = immutable({ id: randomIds.next("session"), agentId: this.agent.id, scope: normalizeScope(options.scope), metadata: options.metadata ?? {}, selectedThreadId: null, selectedModel: selected.stored, revision: 1, createdAt: now, updatedAt: now });
-    await new SessionService(this.backend).create(record);
+    await this.backend.sessions.compareAndSet(record, 0);
     this.requireReady();
     const session = new Session(this, record, selected.model);
     session.created();
@@ -250,7 +259,7 @@ export class Controller {
   }
   async getSession(id: string, query: StateQuery = {}): Promise<Session | null> {
     this.requireReady();
-    const record = await new SessionService(this.backend).get(id, query);
+    const record = await this.backend.sessions.get(id, query);
     if (!record) return null;
     if (record.agentId !== this.agent.id) fail("SessionAgentMismatch", "Session belongs to another Agent");
     const selected = this.sessionModel(record.selectedModel.ref);
@@ -347,10 +356,14 @@ export class Controller {
       } catch (error) {
         this.report(errorInfo(error));
       } finally {
-        this.models.dispose();
-        await this.hooks.dispose();
-        if (this.defaultBackend) await this.backend?.close();
-        this.phase = "closed";
+        try {
+          this.models.dispose();
+          await this.hooks.dispose();
+          if (this.defaultBackend) await this.backend?.close();
+        } finally {
+          this.phase = "closed";
+          this.releaseId();
+        }
       }
     })();
     return this.disposal;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { stream as streamHooks, model as modelHooks } from "../src/index.js";
 import { expect, it } from "vitest";
 import { z } from "zod";
@@ -20,7 +21,7 @@ it("requires a default model at construction", () => {
 });
 
 it("generates and streams standalone with fresh message context each time", async () => {
-  const model = new EchoModel(), agent = new Agent({ id: "test", model });
+  const model = new EchoModel(), agent = new Agent({ id: randomUUID(), model });
   const result = await agent.generate("hello");
   expect(result.output[0]!.content[0]).toMatchObject({ text: "first" });
   const events = [];
@@ -31,7 +32,7 @@ it("generates and streams standalone with fresh message context each time", asyn
 });
 
 it("isolates concurrent shallow overrides and keeps the default model and options", async () => {
-  const model = new EchoModel(), agent = new Agent({ id: "test", model });
+  const model = new EchoModel(), agent = new Agent({ id: randomUUID(), model });
   await Promise.all([
     agent.generate("a", { model: "second", modelOptions: { reasoning: { effort: "low" } } }),
     agent.generate([new HumanMessage("b")], { model: "third", modelOptions: { max_output_tokens: 1024 } }),
@@ -50,7 +51,7 @@ it("runs tools and the next model step through the existing standalone loop", as
     yield { type: "response", response: { message: MessageCodec.encode(new AssistantMessage(calls.length === 1 ? [{ type: "tool-call", toolCallId: "call-1", name: "add", arguments: { a: 1, b: 2 } }] : "done")) } };
   } };
   const add = createTool({ name: "add", description: "add", schema: z.object({ a: z.number(), b: z.number() }), execute: ({ a, b }) => ({ sum: a + b }) });
-  const result = await new Agent({ id: "test", model, tools: { add } }).generate("add");
+  const result = await new Agent({ id: randomUUID(), model, tools: { add } }).generate("add");
   expect(result.status).toBe("completed"); expect(calls).toHaveLength(2);
   expect(calls[1]!.messages.find(message => message.role === "tool")).toMatchObject({ toolCallId: "call-1", content: [{ type: "data", data: { sum: 3 } }] });
 });
@@ -61,14 +62,14 @@ it("preserves native model errors and can be reused after a failed call", async 
     if (++calls === 1) throw failure;
     yield { type: "response", response: { message: MessageCodec.encode(new AssistantMessage("ok")) } };
   } };
-  const agent = new Agent({ id: "test", model });
+  const agent = new Agent({ id: randomUUID(), model });
   await expect(agent.generate("one")).rejects.toBe(failure);
   expect((await agent.generate("two")).status).toBe("completed");
 });
 
 it("uses default executable-model options through Controller and queued Session turns", async () => {
   const model = new EchoModel({ providerId: "echo", modelId: "first", connectionId: "one" });
-  const agent = new Agent({ id: "test", model }), controller = new Controller({ id: "host", agent });
+  const agent = new Agent({ id: randomUUID(), model }), controller = new Controller({ id: "host", agent });
   try {
     await controller.initialize();
     const session = await controller.createSession(); await session.thread.create();
@@ -95,7 +96,7 @@ it("cleans up an aborted execution and leaves the Agent reusable", async () => {
     }
     yield { type: "response", response: { message: MessageCodec.encode(new AssistantMessage("ok")) } };
   } };
-  const agent = new Agent({ id: "test", model }); const stream = agent.stream("one");
+  const agent = new Agent({ id: randomUUID(), model }); const stream = agent.stream("one");
   const collect = (async () => { const events = []; for await (const event of stream) events.push(event); return events; })();
   await entered; stream.abort("user cancelled");
   const events = await collect;
@@ -108,7 +109,7 @@ it("uses the selected provider defaults when a hook changes connection", async (
   const other: ModelAdapter = { ref: { providerId: "other", modelId: "test" }, options: { temperature: 0.3 }, validate() {}, async *stream(request) {
     calls.push(request); yield { type: "response", response: { message: MessageCodec.encode(new AssistantMessage("ok")) } };
   } };
-  const agent = new Agent({ id: "test", model: new EchoModel() });
+  const agent = new Agent({ id: randomUUID(), model: new EchoModel() });
   const controller = new Controller({ id: "host", agent, plugins: [{ id: "other", setup(tessar) {
     tessar.models.registerProvider({ id: "other", create: () => other });
     tessar.hook(modelHooks.select, () => ({ decision: "select", model: other.ref }));
@@ -130,7 +131,7 @@ function pausePlugin(): Plugin {
 it.each(["echo", "another"])("retains a per-call %s connection across suspension and recovery", async providerId => {
   const first = new EchoModel({ providerId: "echo", modelId: "first", connectionId: "one" });
   const second = new EchoModel({ providerId, modelId: "second", connectionId: "two" });
-  const agent = new Agent({ id: "test", model: first });
+  const agent = new Agent({ id: randomUUID(), model: first });
   const controller = new Controller({ id: "host", agent, plugins: [pausePlugin()] });
   try {
     await controller.initialize();
@@ -151,7 +152,7 @@ it.each(["resume", "recover"])("discards old connection options on a %s model ov
   const other: ModelAdapter = { ref: { providerId: "other", modelId: "test" }, options: { max_tokens: 100 }, validate() {}, async *stream(request) {
     calls.push(request); yield { type: "response", response: { message: MessageCodec.encode(new AssistantMessage("ok")) } };
   } };
-  const agent = new Agent({ id: "test", model: first });
+  const agent = new Agent({ id: randomUUID(), model: first });
   const controller = new Controller({ id: "host", agent, plugins: [pausePlugin(), { id: "other", setup(tessar) {
     tessar.models.registerProvider({ id: "other", create: () => other });
   } }] });

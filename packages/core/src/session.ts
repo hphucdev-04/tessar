@@ -1,3 +1,4 @@
+import { notifyObserver } from "./events/observer.js";
 import { session as sessionHooks, stream as streamHooks } from "./events/type.js";
 import type { Controller } from "./controller.js";
 import { Thread, type ThreadStreamOptions } from "./thread.js";
@@ -154,7 +155,7 @@ export class Session {
       typeof nameOrObserver === "function"
         ? nameOrObserver
         : (event) => {
-            if (event.type === nameOrObserver) observer!(event);
+            if (event.type === nameOrObserver) return observer!(event);
           };
     this.observers.add(handler);
     return () => {
@@ -162,26 +163,8 @@ export class Session {
     };
   }
   private emit(event: EventEnvelope): void {
-    for (const observer of [...this.observers]) {
-      try {
-        const result = observer(event as StreamEvent);
-        if (
-          result &&
-          typeof (result as PromiseLike<unknown>).then === "function"
-        )
-          void Promise.resolve(result).catch((error) =>
-            this.controller.report(
-              errorInfo(error, { source: "application", eventId: event.type }),
-              event,
-            ),
-          );
-      } catch (error) {
-        this.controller.report(
-          errorInfo(error, { source: "application", eventId: event.type }),
-          event,
-        );
-      }
-    }
+    for (const observer of [...this.observers])
+      notifyObserver(observer, event as StreamEvent, this.controller.report);
   }
   private context() {
     return {

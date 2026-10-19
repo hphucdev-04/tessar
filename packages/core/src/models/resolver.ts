@@ -1,7 +1,6 @@
 import { immutable, type Clock, systemClock } from "../json.js";
 import type { ModelProfile, ProfilePatch } from "./profile.js";
 import type { ModelRef, ModelProviderRegistration } from "./contract.js";
-import { PROFILE_TTL_MS, ProfileCache } from "./cache.js";
 import { bundledCatalog, type CatalogSnapshot } from "./catalog.js";
 export function emptyProfile(ref: ModelRef): ModelProfile {
   return immutable({
@@ -87,9 +86,11 @@ export function applyPatch(
   };
   return immutable(next);
 }
+const PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
+
 export class ProfileResolver {
   catalog: CatalogSnapshot;
-  readonly cache = new ProfileCache();
+  readonly cache = new Map<string, { profile: ModelProfile; fetchedAt: number }>();
   private readonly pending = new Map<string, Promise<ModelProfile>>();
   constructor(
     private readonly options: { catalog?: CatalogSnapshot; clock?: Clock } = {},
@@ -100,12 +101,12 @@ export class ProfileResolver {
     return (this.options.clock ?? systemClock).now();
   }
   private key(provider: ModelProviderRegistration, ref: ModelRef) {
-    return this.cache.key(
+    return JSON.stringify([
       ref.providerId,
       ref.modelId,
       provider.endpoint ?? "",
       provider.metadataPartition ?? "registration",
-    );
+    ]);
   }
   needsRefresh(ref: ModelRef, provider: ModelProviderRegistration): boolean {
     const cached = this.cache.get(this.key(provider, ref));
@@ -180,7 +181,7 @@ export class ProfileResolver {
           });
         }
       }
-      this.cache.set(key, profile, Date.parse(this.now()));
+      this.cache.set(key, { profile, fetchedAt: Date.parse(this.now()) });
       return profile;
     })();
     this.pending.set(key, promise);

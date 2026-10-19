@@ -9,8 +9,7 @@ import type {
   ModelRequest,
 } from "../models/contract.js";
 import { providerCall, selectAdapter, streamModel } from "../models/stream.js";
-import type { ModelAttemptRecord } from "../trace/records.js";
-import { normalizeUsage } from "../trace/usage.js";
+import { createModelAttempt } from "../trace/records.js";
 import {
   EffectService,
   childStateDefinition,
@@ -132,31 +131,7 @@ async function* auxiliary(
   )
     fail("StreamLimit", "Model attempt budget exhausted");
   providerCall(options.model, () => adapter.validate(request));
-  const attempt: ModelAttemptRecord = {
-    id: execution.ids.next("attempt"),
-    turnId: position.turnId,
-    streamId: frame.stream.id,
-    scope: frame.cp.state.scope,
-    callId: execution.ids.next("call"),
-    attemptIndex: 0,
-    purpose: "auxiliary",
-    parentToolExecutionId: toolExecutionId ?? null,
-    providerId: options.model.providerId,
-    modelId: options.model.modelId,
-    providerRequestId: null,
-    responseMessageId: null,
-    contextRevision: frame.cp.revision,
-    requestSnapshotRef: null,
-    startedAt: execution.clock.now(),
-    firstOutputAt: null,
-    endedAt: null,
-    durationMs: null,
-    timeToFirstOutputMs: null,
-    status: "running",
-    finishReason: null,
-    error: null,
-    usage: normalizeUsage({}),
-  };
+  const attempt = createModelAttempt(execution, frame.cp, options.model, "auxiliary", toolExecutionId);
   position.budgets.modelAttempts++;
   execution.put(frame, "model_attempts", attempt);
   await execution.commit(frame, "ExecutionTransition");

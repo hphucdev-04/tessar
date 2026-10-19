@@ -196,7 +196,6 @@ export async function execute(
           requiredForContinuation: r.kind !== "notification",
         })),
       ],
-      recordRevision: cp.revision,
     };
     bindExecutionModel(registry, cp.execution, request.adapter);
     const input = await execution.hook(frame, inputHooks.prepare, {

@@ -1,5 +1,6 @@
+import { notifyObserver } from "../events/observer.js";
 import { checkpoint as checkpointHooks, stream as streamHooks } from "../events/type.js";
-import { fail, errorInfo, type ErrorInfo } from "../errors.js";
+import { fail, type ErrorInfo } from "../errors.js";
 import type { IdGenerator } from "../json.js";
 import {
   EventEnvelope,
@@ -122,18 +123,7 @@ export function createDelivery(
         handleId,
       });
       if (target.kind === "observer") {
-        try {
-          const result = target.observe(event) as unknown;
-          if (
-            result &&
-            typeof (result as PromiseLike<unknown>).then === "function"
-          )
-            void Promise.resolve(result).catch((error) =>
-              report(errorInfo(error, { source: "application", eventId: event.type }), event),
-            );
-        } catch (error) {
-          report(errorInfo(error, { source: "application", eventId: event.type }), event);
-        }
+        notifyObserver((event) => target.observe(event), event, report);
         return;
       }
       if (consumerEnded) return;

@@ -36,7 +36,7 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
    try{if(process.argv[2]==='plugins'){console.log(JSON.stringify(await manager.discover()));}
    else{const provider=new ScriptedProvider([{text:'fixture answer'}]);
     const agent=new Agent({id:'packed',model:{providerId:'scripted',modelId:'test'}});
-    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate({input:new HumanMessage('hello')});
+    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate(new HumanMessage('hello'));
     console.log(JSON.stringify({status:result.status,output:result.output.flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text).join('')}));
    }}finally{try{await controller?.dispose();}finally{manager.dispose();}}
   `);
@@ -55,8 +55,12 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
   const cli=join(host,"node_modules/tessar-test-host/main.mjs");
   const {stdout}=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(stdout).output).toBe("fixture answer");
-  await writeFile(join(pluginDir,"answer.mts"),`import { AssistantMessage, MessageCodec, input as inputHooks, type Plugin, type PluginContext } from '@tessar/core';
-   class AnswerPlugin implements Plugin {readonly id='installed-local';setup(tessar:PluginContext){tessar.hook(inputHooks.prepare,event=>({...event.payload,handled:{output:[MessageCodec.encode(new AssistantMessage('external plugin answer'))]}}));}}
+  await writeFile(join(pluginDir,"answer.mts"),`import { Agent, input as inputHooks, type Plugin, type PluginContext } from '@tessar/core';
+   import { ScriptedProvider } from '@tessar/core/testing';
+   class AnswerPlugin implements Plugin {readonly id='installed-local';setup(tessar:PluginContext){
+    const worker=new Agent({id:'external-worker',model:new ScriptedProvider([{text:'external plugin answer'}])});
+    tessar.agent.register(worker);
+    tessar.hook(inputHooks.prepare,async event=>({...event.payload,handled:{output:(await worker.generate('hello')).output}}));}}
    export default new AnswerPlugin();`);
   const result=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(result.stdout)).toMatchObject({status:"completed",output:"external plugin answer"});
@@ -96,7 +100,7 @@ it("loads the packed logger subpath using the host SDK without installing core i
     const provider=new ScriptedProvider([{text:'logger works'}]);
     const agent=new Agent({id:'logger-host',model:{providerId:'scripted',modelId:'test'}});
     controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}}]});await controller.initialize();
-    const result=await agent.generate({input:new HumanMessage('hello')});
+    const result=await agent.generate(new HumanMessage('hello'));
     assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'logger works');
     assert.ok(logs.some(entry=>entry.type===streamHooks.end&&entry.agentId==='logger-host'&&entry.controllerId==='logger-controller'));
    }finally{try{await controller?.dispose();}finally{manager.dispose();console.error=original;}}

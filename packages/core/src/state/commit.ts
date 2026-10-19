@@ -1,12 +1,36 @@
 import { fail, errorInfo } from "../errors.js";
 import { assertJson } from "../json.js";
 import { MessageCodec } from "../messages/codec.js";
+import type { ThreadInfo } from "./schema.js";
+import type { StreamRecord } from "../trace/records.js";
 import type {
   CommitBatch,
   CommitReceipt,
   Lease,
   StorageBackend,
 } from "./storage-ports.js";
+
+export function buildThreadInfo(
+  batch: CommitBatch,
+  head: ThreadInfo | null | undefined,
+  stream: StreamRecord | null | undefined,
+): ThreadInfo {
+  const cp = batch.checkpoint;
+  return {
+    id: batch.threadId,
+    scope: cp.state.scope,
+    metadata: cp.state.metadata,
+    revision: cp.revision,
+    currentCheckpointId: cp.id,
+    activeStreamId: stream && !["completed", "failed", "stopped", "cancelled"].includes(stream.status)
+      ? stream.id : null,
+    createdAt: head?.createdAt ?? cp.createdAt,
+    updatedAt: cp.createdAt,
+    parentThreadId: batch.lineage?.parentThreadId ?? head?.parentThreadId ?? null,
+    sourceCheckpointId: batch.lineage?.sourceCheckpointId ?? head?.sourceCheckpointId ?? null,
+    deleted: batch.deleteThread ?? false,
+  };
+}
 export function canonicalJson(value: unknown): string {
   assertJson(value);
   const encode = (x: any): string =>

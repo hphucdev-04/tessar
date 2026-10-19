@@ -47,7 +47,7 @@ it.each([false, true])("isolates logger writer failure (async=%s)", async asynch
   });
   const silent = await AgentHarness.create({ modelScripts: [{ text: "ok" }], plugins: [new LoggerPlugin({ write })] });
   try {
-    const result = await silent.agent.generate({ input: new HumanMessage("hi"), model: silent.provider.ref });
+    const result = await silent.agent.generate(new HumanMessage("hi"), { model: silent.provider.ref });
     expect(result.status).toBe("completed");
     expect(write.mock.calls.length).toBeLessThan(100);
   } finally { await silent.dispose(); }
@@ -77,7 +77,7 @@ it("logs decision hook failures without exposing mutable services to diagnostics
     },
   }] });
   try {
-    const result = await harness.agent.generate({ input: new HumanMessage("hi"), model: harness.provider.ref });
+    const result = await harness.agent.generate(new HumanMessage("hi"), { model: harness.provider.ref });
     expect(result.status).toBe("failed");
     expect(result.error).toMatchObject({ source: "plugin", pluginId: "policy" });
     expect(entries.find(e => e.type === diagnosticHooks)).toMatchObject({ threadId: result.threadId, streamId: result.streamId });
@@ -95,13 +95,13 @@ it("writes JSON to stderr by default and stops receiving events after detach", a
   const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
   const harness = await AgentHarness.create({ modelScripts: [{ text: "one" }, { text: "two" }], plugins: [new LoggerPlugin()] });
   try {
-    await harness.agent.generate({ input: new HumanMessage("hi"), model: harness.provider.ref });
+    await harness.agent.generate(new HumanMessage("hi"), { model: harness.provider.ref });
     expect(stderr.mock.calls.map(([line]) => JSON.parse(line))).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: streamHooks.end, level: "info", agentId: "test-agent" }),
     ]));
     await harness.controller.plugins.detach("logger");
     const count = stderr.mock.calls.length;
-    await harness.agent.generate({ input: new HumanMessage("hi again"), model: harness.provider.ref });
+    await harness.agent.generate(new HumanMessage("hi again"), { model: harness.provider.ref });
     expect(stderr).toHaveBeenCalledTimes(count);
   } finally { await harness.dispose(); stderr.mockRestore(); }
 });

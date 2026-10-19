@@ -1,6 +1,6 @@
 import { fail } from "../errors.js";
 import { immutable, systemClock, type Clock } from "../json.js";
-import { canonicalJson, validateBatch, commitFingerprint } from "./commit.js";
+import { canonicalJson, validateBatch, commitFingerprint, buildThreadInfo } from "./commit.js";
 import type {
   Checkpoint,
   ThreadInfo,
@@ -250,29 +250,7 @@ export function createMemoryBackend(
           ? (merged.get("streams:" + execution.streamId)
               ?.data as RecordTypes["streams"])
           : null;
-        const info: ThreadInfo = immutable({
-          id: batch.threadId,
-          scope: cp.state.scope,
-          metadata: cp.state.metadata,
-          revision: cp.revision,
-          currentCheckpointId: cp.id,
-          activeStreamId:
-            stream &&
-            !["completed", "failed", "stopped", "cancelled"].includes(
-              stream.status,
-            )
-              ? stream.id
-              : null,
-          createdAt: head?.createdAt ?? cp.createdAt,
-          updatedAt: cp.createdAt,
-          parentThreadId:
-            batch.lineage?.parentThreadId ?? head?.parentThreadId ?? null,
-          sourceCheckpointId:
-            batch.lineage?.sourceCheckpointId ??
-            head?.sourceCheckpointId ??
-            null,
-          deleted: batch.deleteThread ?? false,
-        });
+        const info = immutable(buildThreadInfo(batch, head, stream));
         const receipt = immutable({
           commitId: batch.commitId,
           threadId: batch.threadId,

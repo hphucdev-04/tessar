@@ -108,6 +108,12 @@ export class PluginHost {
       };
       const tessar: PluginContext = {
         registry: { register },
+        agent: {
+          register: (agent) => {
+            register("agent", agent.id, agent);
+            tessar.defer(() => agent.shutdown());
+          },
+        },
         effects: {
           register: (definition) => {
             const stateDefinition = definePluginState({

@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import {
   canonicalJson,
+  buildThreadInfo,
   recordBinding,
   validateSession,
   type SessionRecord,
@@ -257,29 +258,7 @@ export async function createSqliteBackend(options: {
             ? (merged.get("streams:" + cp.execution.streamId)
                 ?.data as RecordTypes["streams"])
             : null;
-          const info: ThreadInfo = {
-            id: batch.threadId,
-            scope: cp.state.scope,
-            metadata: cp.state.metadata,
-            revision: cp.revision,
-            currentCheckpointId: cp.id,
-            activeStreamId:
-              stream &&
-              !["completed", "failed", "stopped", "cancelled"].includes(
-                stream.status,
-              )
-                ? stream.id
-                : null,
-            createdAt: old?.createdAt ?? cp.createdAt,
-            updatedAt: cp.createdAt,
-            parentThreadId:
-              batch.lineage?.parentThreadId ?? old?.parentThreadId ?? null,
-            sourceCheckpointId:
-              batch.lineage?.sourceCheckpointId ??
-              old?.sourceCheckpointId ??
-              null,
-            deleted: batch.deleteThread ?? false,
-          };
+          const info = buildThreadInfo(batch, old, stream);
           db.prepare(
             "INSERT INTO threads VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,created_at=excluded.created_at,deleted=excluded.deleted",
           ).run(info.id, canonicalJson(info), info.createdAt, Number(info.deleted));

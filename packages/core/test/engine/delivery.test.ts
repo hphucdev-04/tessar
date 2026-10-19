@@ -55,3 +55,19 @@ it("does not allocate iterator queues for observers and ignores late emissions a
  expect(events).toBe(1000);delivery.close();delivery.emit(turnHooks.start,{turnId:"t",index:1001},{});
  expect(events).toBe(1000);delivery.stream.abort();expect(delivery.controller.signal.aborted).toBe(false);
 });
+it("reports sync and async observer failures without blocking later delivery",async()=>{
+ const errors:unknown[]=[],seen:number[]=[];
+ const delivery=createDelivery("t",randomIds,{kind:"observer",observe(event){
+  seen.push(event.payload.index);
+  if(event.payload.index===0)throw Error("sync observer");
+  if(event.payload.index===1)return Promise.reject(Error("async observer"));
+ }},undefined,error=>{errors.push(error);});
+ for(let index=0;index<3;index++)delivery.emit(turnHooks.start,{turnId:"turn",index},{});
+ expect(seen).toEqual([0,1,2]);
+ await Promise.resolve();
+ expect(errors).toMatchObject([
+  {source:"application",eventId:turnHooks.start,message:"sync observer"},
+  {source:"application",eventId:turnHooks.start,message:"async observer"},
+ ]);
+ expect(delivery.controller.signal.aborted).toBe(false);delivery.close();
+});

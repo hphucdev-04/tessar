@@ -64,6 +64,7 @@ import { services } from "./engine/services.js";
 import { callAgent, modelRef, readOutcome } from "./engine/call.js";
 import type { ExecutionRuntime } from "./engine/runtime.js";
 import { isModelAdapter } from "./models/stream.js";
+import { reserveId } from "./identity.js";
 
 export type ModelSelection = ModelAdapter | Model | ModelRef;
 export type AgentInput = string | MessageData | readonly MessageData[];
@@ -85,10 +86,6 @@ export interface AgentExecutionOptions<M = ModelAdapter> {
   context?: JsonObject;
   signal?: AbortSignal;
   limits?: Partial<StreamLimits>;
-}
-/** @deprecated Pass messages as the first argument instead. */
-export interface LegacyAgentExecutionOptions extends AgentExecutionOptions {
-  input: MessageData | readonly MessageData[];
 }
 export interface GenerateOutcome {
   threadId: string;
@@ -143,6 +140,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
   private readonly active = new Map<string, ExecutionFrame>();
   private readonly pendingModels = new Map<string, ModelAdapter>();
   private closed = false;
+  private readonly releaseId: () => void;
   private readonly resumeAdmissions = new Map<
     string,
     Promise<ExecutionFrame>
@@ -182,37 +180,19 @@ export class Agent<M extends ModelSelection = ModelSelection> {
       ...options.limits,
     });
     validateLimits(this.limits);
+    this.releaseId = reserveId("Agent", this.id, this);
   }
   stream<T extends ModelAdapter = Extract<M, ModelAdapter>>(
     input: AgentInput,
-    options?: AgentExecutionOptions<T>,
-  ): Stream;
-  /** @deprecated Use stream(message, options). */
-  stream(options: LegacyAgentExecutionOptions): Stream;
-  stream(
-    input: AgentInput | LegacyAgentExecutionOptions,
-    options: AgentExecutionOptions<any> = {},
+    options: AgentExecutionOptions<T> = {},
   ): Stream {
-    if (typeof input === "object" && input !== null && "input" in input) {
-      const { input: messages, ...legacy } = input;
-      return callAgent(this, messages, legacy, this.controller);
-    }
-    return callAgent(this, input as AgentInput, options, this.controller);
+    return callAgent(this, input, options, this.controller);
   }
-  generate<T extends ModelAdapter = Extract<M, ModelAdapter>>(
+  async generate<T extends ModelAdapter = Extract<M, ModelAdapter>>(
     input: AgentInput,
-    options?: AgentExecutionOptions<T>,
-  ): Promise<GenerateOutcome>;
-  /** @deprecated Use generate(message, options). */
-  generate(options: LegacyAgentExecutionOptions): Promise<GenerateOutcome>;
-  async generate(
-    input: AgentInput | LegacyAgentExecutionOptions,
-    options: AgentExecutionOptions<any> = {},
+    options: AgentExecutionOptions<T> = {},
   ): Promise<GenerateOutcome> {
-    const stream =
-      typeof input === "object" && input !== null && "input" in input
-        ? this.stream(input)
-        : this.stream(input as AgentInput, options);
+    const stream = this.stream(input, options);
     for await (const event of stream)
       if (event.is(streamHooks.error)) throw errorFromInfo(event.payload.error);
     return this.outcomes.get(stream)!;
@@ -346,5 +326,6 @@ export class Agent<M extends ModelSelection = ModelSelection> {
       frame.sink.controller.abort("Controller disposed");
     await Promise.allSettled([...this.jobs]);
     this.pendingModels.clear();
+    this.releaseId();
   }
 }

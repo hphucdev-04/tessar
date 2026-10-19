@@ -15,6 +15,7 @@ import type { PluginStateDefinition } from "../state/plugin-state.js";
 import type { JsonValue } from "../json.js";
 import type { Session } from "../session.js";
 import type { Thread } from "../thread.js";
+import type { Agent } from "../agent.js";
 export type Disposer = () => void | Promise<void>;
 /** Controls that do not wait for completion of the active execution. */
 export type SessionHookHandle = Pick<Session, "id" | "scope" | "model" | "thread" | "setModel" | "followUp">;
@@ -37,6 +38,8 @@ export type EventHandler<D extends AnyEvent> = (
   context: ContextOf<D>,
 ) => ResultOf<D> | void | Promise<ResultOf<D> | void>;
 export interface PluginContext {
+  /** Registers an Agent owned by this plugin; shutdown follows plugin disposal. */
+  readonly agent: { register(agent: Agent): void };
   readonly effects: { register(definition: EffectDefinition): void };
   readonly interruptions: {
     register(definition: InterruptionDefinition): void;

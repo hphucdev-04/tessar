@@ -31,9 +31,7 @@ export const ExecutionPhase = {
   ModelPending: "ModelPending",
   BeforeTool: "BeforeTool",
   ToolPending: "ToolPending",
-  AfterTool: "AfterTool",
   TurnBoundary: "TurnBoundary",
-  Finalizing: "Finalizing",
   Suspended: "Suspended",
 } as const;
 export type ExecutionPhase =
@@ -79,7 +77,6 @@ export interface ExecutionPosition {
   handlerCursor: HandlerCursor | null;
   budgets: StreamBudgetState;
   registryManifest: readonly RegistrationRequirement[];
-  recordRevision: number;
 }
 export type CheckpointCause =
   | "ThreadCreated"

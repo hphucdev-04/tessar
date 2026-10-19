@@ -11,12 +11,13 @@ import type {
   ToolDescription,
 } from "./models/contract.js";
 import type { CheckpointCause, RecordEntry } from "./state/schema.js";
-import type {
-  ModelAttemptRecord,
-  ToolExecutionRecord,
-  TurnRecord,
+import {
+  createModelAttempt,
+  type ModelAttemptRecord,
+  type ToolExecutionRecord,
+  type TurnRecord,
 } from "./trace/records.js";
-import { aggregateUsage, normalizeUsage } from "./trace/usage.js";
+import { aggregateUsage } from "./trace/usage.js";
 import type { Tool } from "./tools/tool.js";
 import { ContextAssembler } from "./engine/context.js";
 import { callTools } from "./engine/tool-executor.js";
@@ -192,31 +193,7 @@ async function callModel(
       "Request transform must not bypass ModelSelect",
     );
   providerCall(position.modelRef, () => adapter.validate(request));
-  const attempt: ModelAttemptRecord = {
-    id: context.ids.next("attempt"),
-    turnId: position.turnId!,
-    streamId: frame.stream.id,
-    scope: frame.cp.state.scope,
-    callId: context.ids.next("call"),
-    attemptIndex: 0,
-    purpose: "primary",
-    parentToolExecutionId: null,
-    providerId: position.modelRef.providerId,
-    modelId: position.modelRef.modelId,
-    providerRequestId: null,
-    responseMessageId: null,
-    contextRevision: frame.cp.revision,
-    requestSnapshotRef: null,
-    startedAt: context.clock.now(),
-    firstOutputAt: null,
-    endedAt: null,
-    durationMs: null,
-    timeToFirstOutputMs: null,
-    status: "running",
-    finishReason: null,
-    error: null,
-    usage: normalizeUsage({}),
-  };
+  const attempt = createModelAttempt(context, frame.cp, position.modelRef, "primary");
   const priorAttempts = context
     .rows<ModelAttemptRecord>(frame, "model_attempts")
     .filter((a) => a.turnId === position.turnId && a.purpose === "primary");
@@ -291,7 +268,6 @@ async function callModel(
           endedAt: null,
           durationMs: null,
           resultMessageId: null,
-          resultRef: null,
           result: null,
           error: null,
           idempotencyKey: null,

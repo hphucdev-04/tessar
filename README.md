@@ -36,6 +36,10 @@ console.log(result.status, result.output);
 multiple model requests. It returns on completion or suspension. Alternatively,
 consume `agent.stream(...)` with `for await`.
 
+Migration: the deprecated `agent.generate({ input, ...options })` and
+`agent.stream({ input, ...options })` signatures have been removed. Pass
+`input` first and options second. Thread command signatures are unchanged.
+
 Agent requires a default model and runs without a Controller or public
 init/dispose. Direct calls have independent context and automatic cleanup.
 Override request settings with `modelOptions`; a string `model` keeps the
@@ -57,6 +61,14 @@ await session.followUp(new HumanMessage("Hello"));
 The receipt acknowledges queued input, not a final answer. Results arrive through
 subscribe. Unadmitted queued input is in memory. Scope is a state filter; the host
 owns authentication and authorization. Session has an automatically generated durable `id`; it has no initialize, send or stream method. Controller and Agent require developer-assigned IDs.
+
+Live Agent IDs must be unique within the loaded core runtime; Controller IDs
+have their own namespace. A duplicate constructor throws `RegistrationConflict`.
+`await agent.shutdown()` or `await controller.dispose()` releases the ID for
+reuse. Standalone calls still clean up automatically and leave the Agent reusable.
+Identity checks neither persist IDs to storage nor coordinate separate processes
+or separately loaded copies of core. Unreferenced instances are not kept alive
+by the identity tracker; garbage collection is not an immediate release guarantee.
 
 ## Plugins
 
@@ -108,6 +120,27 @@ const blockWrite = new BlockWritePlugin();
 Event constants are strings, such as `toolHooks.before === "tool.before"`.
 Types provide autocomplete and inferred payloads/results. Plugins do not declare
 apiVersion. Built-in and custom plugins use classes instantiated with `new`.
+
+Plugins can also construct and register Agents, including plugins loaded by
+PluginManager after a CLI has been packaged:
+
+```ts
+class ResearchPlugin implements Plugin {
+  readonly id = "research";
+  setup(tessar: PluginContext): void {
+    const researcher = new Agent({ id: "researcher", model });
+    tessar.agent.register(researcher);
+    // Use researcher.stream()/generate() in your own hooks or tools.
+  }
+}
+```
+
+Registration exposes the instance under the `agent` registry kind and transfers
+its shutdown lifecycle to the plugin. Detachment removes it from new registry
+captures; shutdown waits until existing captures release it. Failed setup rolls
+back registered Agents. The Controller's configured Agent is already registered.
+Registration does not attach an Agent to the Controller or execute it. Plugins
+choose delegation, context, tools and process isolation themselves.
 `Plugin` describes the instance's ID and setup contract; no base class is required.
 Add imported plugin instances to Controller options or use
 `controller.plugins.attach(plugin)` / `detach(id)` while ready.

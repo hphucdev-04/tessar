@@ -13,6 +13,11 @@ it("infers the public plugin type map and discriminated event union",()=>{
  const inspect=(event:StreamEvent)=>{if(event.type===messageHooks.delta){const kind:"text"|"reasoning"=event.payload.partKind;return kind;}return null;};
  void inspect;expect(plugin.id).toBe("typed-public");
  if(false){
+  const agent = new Agent({id:"typed",model:{providerId:"test",modelId:"test"}});
+  // @ts-expect-error Agent accepts messages first, not the legacy input wrapper
+  agent.stream({input: []});
+  // @ts-expect-error Agent accepts messages first, not the legacy input wrapper
+  agent.generate({input: []});
   new Controller({id:"runtime",agent:new Agent({id:"a",model:{providerId:"test",modelId:"test"}}),plugins:[plugin]});
   // @ts-expect-error Plugins are configured on Controller
   new Agent({id:"a",plugins:[plugin]});

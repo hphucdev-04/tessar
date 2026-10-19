@@ -86,7 +86,7 @@ async function commitNow(
     cause,
     state: { ...frame.cp.state, pluginStates: frame.state.snapshots() },
     execution: frame.cp.execution
-      ? { ...frame.cp.execution, recordRevision: frame.cp.revision + 1 }
+      ? { ...frame.cp.execution }
       : null,
   };
   if (cause === "Suspended" && cp.execution?.pendingInterruptId) {
@@ -109,7 +109,6 @@ async function commitNow(
     frame.lease,
   );
   frame.cp = { ...structuredClone(cp), execution: frame.cp.execution };
-  if (frame.cp.execution) frame.cp.execution.recordRevision = cp.revision;
   await execution.hook(frame, checkpointHooks.committed, {
     checkpointId: cp.id,
     revision: cp.revision,

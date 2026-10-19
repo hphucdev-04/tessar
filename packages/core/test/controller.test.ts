@@ -1,8 +1,8 @@
 import {expect,it} from "vitest";
 import {Agent,Controller,createMemoryBackend,type Plugin} from "../src/index.js";
-it("requires explicit IDs and binds an Agent to exactly one Controller",()=>{
+it("requires explicit IDs and binds an Agent to exactly one Controller",async()=>{
  expect(()=>new Agent({id:"",model:{providerId:"test",modelId:"test"}})).toThrow();const agent=new Agent({id:"a",model:{providerId:"test",modelId:"test"}});expect(()=>new Controller({id:"",agent})).toThrow();
- new Controller({id:"r",agent});expect(()=>new Controller({id:"other",agent})).toThrow();
+ const controller=new Controller({id:"r",agent});try{expect(()=>new Controller({id:"other",agent})).toThrow();}finally{await controller.dispose();}
 });
 it("initializes once and rolls back failed setup in reverse order",async()=>{
  const log:string[]=[];const plugin=(id:string):Plugin=>({id,setup(tessar){log.push(id);tessar.defer(()=>{log.push("close:"+id);});}});

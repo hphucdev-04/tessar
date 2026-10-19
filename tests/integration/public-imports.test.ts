@@ -24,7 +24,7 @@ it("loads built core without product startup I/O and runs the public APIs",()=>{
   const agent=new Agent({id:'consumer',model:{providerId:'scripted',modelId:'test'}});
   const controller=new Controller({id:'consumer-runtime',agent,plugins:[logger,{id:'fixture',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}}]});
   await controller.initialize();
-  try{const result=await agent.generate({input:new HumanMessage('hello')});assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'built answer');assert.ok(logs.some(entry=>entry.type===streamHooks.end));}finally{await controller.dispose();}
+  try{const result=await agent.generate(new HumanMessage('hello'));assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'built answer');assert.ok(logs.some(entry=>entry.type===streamHooks.end));}finally{await controller.dispose();}
  `],{encoding:"utf8"});
  expect(result.error).toBeUndefined();expect(result.status,result.stderr).toBe(0);expect(result.stdout).toBe("");
 });

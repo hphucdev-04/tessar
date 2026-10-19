@@ -4,6 +4,21 @@ import { HumanMessage, defineInterruption, ToolDecision, createMemoryBackend } f
 import {fixture,fixtureRef} from "./test-fixture.js";
 
 function boundary(session:import("../src/session.js").Session,type:string){return new Promise<any>(resolve=>{const off=session.subscribe(event=>{if(event.type===type){off();resolve(event);}});});}
+it("isolates sync and async subscribers while delivering the same session event",async()=>{
+ const {controller}=await fixture();
+ try{
+  const session=await controller.createSession(),seen:string[]=[];
+  session.subscribe(sessionHooks.threadCreated,()=>{throw Error("sync subscriber");});
+  session.subscribe(sessionHooks.threadCreated,async()=>{throw Error("async subscriber");});
+  session.subscribe(sessionHooks.threadCreated,event=>{seen.push(event.payload.threadId);});
+  const thread=await session.thread.create();
+  expect(seen).toEqual([thread.id]);
+  expect(controller.diagnostics).toMatchObject([
+   {source:"application",eventId:sessionHooks.threadCreated,message:"sync subscriber"},
+   {source:"application",eventId:sessionHooks.threadCreated,message:"async subscriber"},
+  ]);
+ }finally{await controller.dispose();}
+});
 it("rejects new work while the close barrier is pending and reopens when that barrier fails",async()=>{
  let release!:()=>void,arrive!:()=>void,rejectClose=true;
  let gate=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>arrive=resolve);
