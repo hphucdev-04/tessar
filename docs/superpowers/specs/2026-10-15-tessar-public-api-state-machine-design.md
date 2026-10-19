@@ -922,7 +922,7 @@ là logical ports phía sau core storage, không phải hai dịch vụ bắt de
 
 ```ts
 interface StorageRegistrationApi {
-  registerBackend(backend: StorageBackend): void;
+  register(backend: StorageBackend): void;
 }
 
 interface StorageBackend {
@@ -936,7 +936,7 @@ interface StorageBackend {
 }
 ```
 
-Plugin setup gọi api.storage.registerBackend(backend). ThreadStore thực hiện
+Plugin setup gọi api.storage.register(backend). ThreadStore thực hiện
 thread-head reads/queries; ExecutionStore chứa execution/interrupt records;
 CheckpointStore chứa immutable state snapshots. CommitPort cung cấp stage,
 publish(expectedRevision, fencingToken, commitId) và lookupCommit(commitId).

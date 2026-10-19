@@ -22,7 +22,7 @@ it("loads built core without product startup I/O and runs the public APIs",()=>{
   const {LoggerPlugin}=await import('@tessar/plugins/logger');const logs=[];
   const logger=new LoggerPlugin({write:entry=>{logs.push(entry);}});assert.ok(logger instanceof LoggerPlugin);
   const agent=new Agent({id:'consumer',model:{providerId:'scripted',modelId:'test'}});
-  const controller=new Controller({id:'consumer-runtime',agent,plugins:[logger,{id:'fixture',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}}]});
+  const controller=new Controller({id:'consumer-runtime',agent,plugins:[logger,{id:'fixture',setup(tessar){tessar.models.register({id:'scripted',create:()=>provider});}}]});
   await controller.initialize();
   try{const result=await agent.generate(new HumanMessage('hello'));assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'built answer');assert.ok(logs.some(entry=>entry.type===streamHooks.end));}finally{await controller.dispose();}
  `],{encoding:"utf8"});

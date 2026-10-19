@@ -36,7 +36,7 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
    try{if(process.argv[2]==='plugins'){console.log(JSON.stringify(await manager.discover()));}
    else{const provider=new ScriptedProvider([{text:'fixture answer'}]);
     const agent=new Agent({id:'packed',model:{providerId:'scripted',modelId:'test'}});
-    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate(new HumanMessage('hello'));
+    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.register({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate(new HumanMessage('hello'));
     console.log(JSON.stringify({status:result.status,output:result.output.flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text).join('')}));
    }}finally{try{await controller?.dispose();}finally{manager.dispose();}}
   `);
@@ -99,7 +99,7 @@ it("loads the packed logger subpath using the host SDK without installing core i
     const [logger]=await manager.load();assert.equal(logger.id,'logger');
     const provider=new ScriptedProvider([{text:'logger works'}]);
     const agent=new Agent({id:'logger-host',model:{providerId:'scripted',modelId:'test'}});
-    controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}}]});await controller.initialize();
+    controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tessar){tessar.models.register({id:'scripted',create:()=>provider});}}]});await controller.initialize();
     const result=await agent.generate(new HumanMessage('hello'));
     assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'logger works');
     assert.ok(logs.some(entry=>entry.type===streamHooks.end&&entry.agentId==='logger-host'&&entry.controllerId==='logger-controller'));

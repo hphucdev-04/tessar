@@ -63,7 +63,7 @@ it("accepts a follow-up from a terminal observer after releasing the prior lease
  const backend=createMemoryBackend(),releaseLease=backend.ownership.release.bind(backend.ownership);let hold=false,unlock!:()=>void,arrive!:()=>void;
  const held=new Promise<void>(r=>unlock=r),reached=new Promise<void>(r=>arrive=r);
  backend.ownership.release=async lease=>{if(hold){hold=false;arrive();await held;}return releaseLease(lease);};
- const {controller,provider}=await fixture([{text:"one"},{text:"two"}],[{id:"slow-release",setup(tessar){tessar.storage.registerBackend(backend);}}]);
+ const {controller,provider}=await fixture([{text:"one"},{text:"two"}],[{id:"slow-release",setup(tessar){tessar.storage.register(backend);}}]);
  try{const session=await controller.createSession();await session.thread.create();
  const done=new Promise<void>((resolve,reject)=>{let turns=0;session.subscribe(event=>{
   if(event.type===streamHooks.error)reject(Error(event.payload.error.code));

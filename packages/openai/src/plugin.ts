@@ -15,7 +15,7 @@ export class OpenAIPlugin implements Plugin {
   setup(tessar: PluginContext): void {
     const options = this.options, id = this.providerId;
     const client = createClient(options);
-    tessar.models.registerProvider({
+    tessar.models.register({
       id,
       endpoint: options.baseURL ?? "https://api.openai.com/v1",
       metadataPartition: options.metadataPartition,

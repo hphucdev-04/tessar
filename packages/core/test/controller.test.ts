@@ -14,7 +14,7 @@ it("initializes once and rolls back failed setup in reverse order",async()=>{
  await expect(broken.initialize()).rejects.toThrow("setup");expect(log.at(-1)).toBe("close:c");await expect(broken.initialize()).rejects.toThrow();await broken.dispose();
 });
 it("rejects conflicting backends and backend attachment after initialization",async()=>{
- const storage=(id:string):Plugin=>({id,setup(tessar){tessar.storage.registerBackend(createMemoryBackend());}});
+ const storage=(id:string):Plugin=>({id,setup(tessar){tessar.storage.register(createMemoryBackend());}});
  const broken=new Controller({id:"r",agent:new Agent({id:"a",model:{providerId:"test",modelId:"test"}}),plugins:[storage("one"),storage("two")]});await expect(broken.initialize()).rejects.toMatchObject({code:"RegistrationConflict"});await broken.dispose();
  const ready=new Controller({id:"r",agent:new Agent({id:"a",model:{providerId:"test",modelId:"test"}})});await ready.initialize();await expect(ready.plugins.attach(storage("late"))).rejects.toMatchObject({code:"InvalidTransition"});await ready.dispose();
 });

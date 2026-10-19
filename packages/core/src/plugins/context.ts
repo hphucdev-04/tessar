@@ -49,10 +49,10 @@ export interface PluginContext {
       definition: Omit<PluginStateDefinition<T>, "pluginId">,
     ): PluginStateDefinition<T>;
   };
-  readonly storage: { registerBackend(backend: StorageBackend): void };
+  readonly storage: { register(backend: StorageBackend): void };
   readonly tools: { register(tool: Tool): void };
   readonly models: {
-    registerProvider(provider: ModelProviderRegistration): void;
+    register(provider: ModelProviderRegistration): void;
   };
   hook<D extends AnyEvent>(
     name: D,

@@ -55,8 +55,8 @@ Built-in and user-defined plugins use the same class/instance convention:
 modules default-export an instance (`export default new MyPlugin()`), and the
 loader passes it to the same core lifecycle without constructing it again.
 
-`PluginContext` exposes hook, emit, tools.register, models.registerProvider,
-storage.registerBackend, state.define, interruptions.register, effects.register,
+`PluginContext` exposes hook, emit, tools.register, models.register,
+storage.register, state.define, interruptions.register, effects.register,
 registry.register and defer. The callback parameter is named `tessar` in
 examples/implementations. There is no `.on` alias and no required apiVersion.
 Optional plugin version/configuration identifiers remain available for durable

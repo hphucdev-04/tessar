@@ -161,11 +161,11 @@ export class PluginHost {
         },
         tools: { register: (tool) => register("tool", tool.name, tool) },
         models: {
-          registerProvider: (provider) =>
+          register: (provider) =>
             register("provider", provider.id, provider),
         },
         storage: {
-          registerBackend: (backend) => {
+          register: (backend) => {
             register("storage", "primary", backend);
             tessar.defer(() => backend.close());
           },

@@ -54,13 +54,13 @@ export class AgentHarness {
         {
           id: "test-storage",
           setup(tessar) {
-            tessar.storage.registerBackend(backend);
+            tessar.storage.register(backend);
           },
         },
         {
           id: "scripted",
           setup(tessar) {
-            tessar.models.registerProvider({
+            tessar.models.register({
               id: "scripted",
               create: () => provider,
             });

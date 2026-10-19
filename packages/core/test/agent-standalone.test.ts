@@ -111,7 +111,7 @@ it("uses the selected provider defaults when a hook changes connection", async (
   } };
   const agent = new Agent({ id: randomUUID(), model: new EchoModel() });
   const controller = new Controller({ id: "host", agent, plugins: [{ id: "other", setup(tessar) {
-    tessar.models.registerProvider({ id: "other", create: () => other });
+    tessar.models.register({ id: "other", create: () => other });
     tessar.hook(modelHooks.select, () => ({ decision: "select", model: other.ref }));
   } }] });
   try {
@@ -154,7 +154,7 @@ it.each(["resume", "recover"])("discards old connection options on a %s model ov
   } };
   const agent = new Agent({ id: randomUUID(), model: first });
   const controller = new Controller({ id: "host", agent, plugins: [pausePlugin(), { id: "other", setup(tessar) {
-    tessar.models.registerProvider({ id: "other", create: () => other });
+    tessar.models.register({ id: "other", create: () => other });
   } }] });
   try {
     await controller.initialize();
