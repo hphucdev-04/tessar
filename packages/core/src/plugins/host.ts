@@ -1,7 +1,7 @@
+import { diagnostic as diagnosticHooks } from "../events/type.js";
 import { TessarError, errorInfo, fail, requireId, type ErrorInfo } from "../errors.js";
 import { dispatch } from "../events/dispatcher.js";
-import { AgentEvents, hookKinds } from "../events/catalog.js";
-import { SessionEvents } from "../session-events.js";
+import { hookKinds, type OperationEvent } from "../events/type.js";
 import type {
   AnyEvent,
   EventContext,
@@ -20,11 +20,16 @@ export class PluginHost {
   private slots: PluginSlot[] = [];
   private generation = 0;
   private definitions = new Map<string, { kind: EventKind; version: number }>(
-    [...Object.values(AgentEvents), ...Object.values(SessionEvents)].map(
-      (name) => [name, { kind: hookKinds[name] ?? "notification", version: 1 }],
+    Object.entries(hookKinds).map(
+      ([name, kind]) => [name, { kind, version: 1 }],
     ),
   );
   private storageSealed = false;
+  async authorize<D extends OperationEvent>(name: D, payload: PayloadOf<D>, context: HookContext & EventContext): Promise<void> {
+    const decision = await this.dispatch(name, payload, context);
+    if (decision?.decision === "deny")
+      fail("OperationDenied", decision.reason ?? "Operation denied by plugin policy");
+  }
   sealStorage(): void {
     this.storageSealed = true;
   }
@@ -37,8 +42,10 @@ export class PluginHost {
   private closed = false;
   private disposal?: Promise<void>;
   private readonly diagnostics: (error: ErrorInfo, context?: EventContext) => void;
-  constructor(options: { diagnostics?: (error: ErrorInfo, context?: EventContext) => void } = {}) {
+  private readonly values: readonly ValueRegistration[];
+  constructor(options: { diagnostics?: (error: ErrorInfo, context?: EventContext) => void; values?: readonly ValueRegistration[] } = {}) {
     this.diagnostics = options.diagnostics ?? (() => {});
+    this.values = options.values ?? [];
   }
   async initialize(plugins: readonly Plugin[]): Promise<void> {
     try {
@@ -83,6 +90,7 @@ export class PluginHost {
           );
         if (
           [
+            ...this.values,
             ...this.slots.filter((s) => !s.detached).flatMap((s) => s.values),
             ...slot.values,
           ].some((v) => v.kind === kind && v.id === id)
@@ -227,6 +235,7 @@ export class PluginHost {
       this.generation,
       this.slots.filter((s) => !s.detached),
       (slot) => this.releaseSlot(slot),
+      this.values,
     );
   }
   async dispatch<D extends AnyEvent>(
@@ -242,18 +251,18 @@ export class PluginHost {
         definition,
         payload,
         context,
-        definition === AgentEvents.Diagnostic ? () => {} : this.diagnostics,
+        definition === diagnosticHooks ? () => {} : this.diagnostics,
         this.kind(definition),
       );
     } catch (error) {
-      if (definition !== AgentEvents.Diagnostic) this.diagnostics(errorInfo(error), context);
+      if (definition !== diagnosticHooks) this.diagnostics(errorInfo(error), context);
       throw error;
     } finally {
       if (!captured) await lease.release();
     }
   }
   registrations(): readonly ValueRegistration[] {
-    return this.slots.filter((s) => !s.detached).flatMap((s) => s.values);
+    return [...this.values, ...this.slots.filter((s) => !s.detached).flatMap((s) => s.values)];
   }
   dispose(): Promise<void> {
     this.closed = true;

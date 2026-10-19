@@ -2,10 +2,14 @@ import {expect,it} from "vitest";
 import {normalizeInstruction,HumanMessage,ToolMessage} from "@tessar/core";
 import {decodeOutput,encodeInput} from "../src/codec.js";
 const ref={providerId:"openai",modelId:"fixture"};
+it("encodes JSON tool data and keeps message metadata out of provider input",()=>{
+ const input=encodeInput({model:ref,instructions:normalizeInstruction(""),messages:[new ToolMessage([{type:"data",data:{sum:3}}],{toolCallId:"sum-call",metadata:{source:"cache"}})],tools:[]});
+ expect(input).toEqual([{type:"function_call_output",call_id:"sum-call",output:'{"sum":3}'}]);
+});
 it("roundtrips ordered reasoning and two function calls with opaque IDs",()=>{
  const items=[{type:"reasoning",id:"r",summary:[],encrypted_content:"secret"},{type:"function_call",id:"f1",call_id:"c1",name:"one",arguments:'{"x":1}'},{type:"function_call",id:"f2",call_id:"c2",name:"two",arguments:'{}'}];
  const message=decodeOutput(items,ref,"response");expect(message.content.filter(p=>p.type==="tool-call").map(p=>p.toolCallId)).toEqual(["c1","c2"]);
- const input=encodeInput({model:ref,instructions:normalizeInstruction(""),messages:[new HumanMessage("ask"),message,new ToolMessage({toolCallId:"c1",content:"ok"})],tools:[]});
+ const input=encodeInput({model:ref,instructions:normalizeInstruction(""),messages:[new HumanMessage("ask"),message,new ToolMessage("ok", { toolCallId: "c1" })],tools:[]});
  expect(input.slice(1,4)).toEqual(items);expect(input[4]).toMatchObject({type:"function_call_output",call_id:"c1",output:"ok"});
  expect(()=>encodeInput({model:{providerId:"other",modelId:"x"},instructions:normalizeInstruction(""),messages:[message],tools:[]})).toThrow();
 });

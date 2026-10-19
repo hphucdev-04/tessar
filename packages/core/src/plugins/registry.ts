@@ -7,8 +7,8 @@ export class RegistryLease {
   readonly handlers: readonly HandlerRegistration[];
   readonly values: readonly ValueRegistration[];
   private released = false;
-  constructor(readonly generation: number, private readonly slots: readonly PluginSlot[], private readonly releaseSlot: (slot: PluginSlot) => Promise<void>) {
-    this.handlers = slots.flatMap(s => s.handlers.slice()); this.values = slots.flatMap(s => s.values.slice());
+  constructor(readonly generation: number, private readonly slots: readonly PluginSlot[], private readonly releaseSlot: (slot: PluginSlot) => Promise<void>, values: readonly ValueRegistration[] = []) {
+    this.handlers = slots.flatMap(s => s.handlers.slice()); this.values = [...values, ...slots.flatMap(s => s.values.slice())];
     for (const slot of slots) slot.references++;
   }
   async release(): Promise<void> { if (this.released) return; this.released = true; for (const slot of this.slots) { slot.references--; await this.releaseSlot(slot); } }

@@ -1,7 +1,8 @@
+import { input as inputHooks, stream as streamHooks } from "@tessar/core";
 import {expect,it} from "vitest";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {mkdtemp,mkdir,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,writeFile,rm,cp} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve,dirname} from "node:path";
 import {delimiter} from "node:path";
@@ -44,14 +45,18 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
    return resolve(packs,JSON.parse(packed.stdout).filename);
   }));
   const tarballs=results.map(result=>{if(result.status==="rejected")throw result.reason;return result.value;});
+  const zodFixture=join(root,"zod");
+  await cp(resolve("node_modules/zod"),zodFixture,{recursive:true,dereference:true});
+  const packedZod=await command("npm",["pack","--ignore-scripts","--json","--pack-destination",packs],zodFixture,cache);
+  tarballs.push(resolve(packs,JSON.parse(packedZod.stdout)[0].filename));
   const packedHost=await command("npm",["pack","--json","--pack-destination",packs],fixture,cache);
   tarballs.push(resolve(packs,JSON.parse(packedHost.stdout)[0].filename));
   await command("npm",["install","--offline","--ignore-scripts","--omit=peer","--no-audit","--no-fund",...tarballs],host,cache);
   const cli=join(host,"node_modules/tessar-test-host/main.mjs");
   const {stdout}=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(stdout).output).toBe("fixture answer");
-  await writeFile(join(pluginDir,"answer.mts"),`import {AgentEvents,AssistantMessage,MessageCodec,type Plugin,type PluginContext} from '@tessar/core';
-   class AnswerPlugin implements Plugin {readonly id='installed-local';setup(tessar:PluginContext){tessar.hook(AgentEvents.InputPrepare,event=>({...event.payload,handled:{output:[MessageCodec.encode(new AssistantMessage('external plugin answer'))]}}));}}
+  await writeFile(join(pluginDir,"answer.mts"),`import { AssistantMessage, MessageCodec, input as inputHooks, type Plugin, type PluginContext } from '@tessar/core';
+   class AnswerPlugin implements Plugin {readonly id='installed-local';setup(tessar:PluginContext){tessar.hook(inputHooks.prepare,event=>({...event.payload,handled:{output:[MessageCodec.encode(new AssistantMessage('external plugin answer'))]}}));}}
    export default new AnswerPlugin();`);
   const result=await execute(process.execPath,[cli,"hello","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(result.stdout)).toMatchObject({status:"completed",output:"external plugin answer"});
@@ -80,7 +85,7 @@ it("loads the packed logger subpath using the host SDK without installing core i
   expect(existsSync(join(npmDirectory,"node_modules/@tessar/plugins/node_modules/@tessar/core"))).toBe(false);
   await execute(process.execPath,["--input-type=module","-e",`
    import assert from 'node:assert/strict';
-   import {Agent,Controller,HumanMessage,AgentEvents} from '@tessar/core';
+   import { Agent, Controller, HumanMessage, stream as streamHooks } from '@tessar/core';
    import {ScriptedProvider} from '@tessar/core/testing';
    import {PluginManager} from '@tessar/plugins';
    const manager=new PluginManager({directory:process.argv[1],hostUrl:import.meta.url});
@@ -93,7 +98,7 @@ it("loads the packed logger subpath using the host SDK without installing core i
     controller=new Controller({id:'logger-controller',agent,plugins:[logger,{id:'provider',setup(tessar){tessar.models.registerProvider({id:'scripted',create:()=>provider});}}]});await controller.initialize();
     const result=await agent.generate({input:new HumanMessage('hello')});
     assert.equal(result.status,'completed');assert.equal(result.output[0].content[0].text,'logger works');
-    assert.ok(logs.some(entry=>entry.type===AgentEvents.StreamEnd&&entry.agentId==='logger-host'&&entry.controllerId==='logger-controller'));
+    assert.ok(logs.some(entry=>entry.type===streamHooks.end&&entry.agentId==='logger-host'&&entry.controllerId==='logger-controller'));
    }finally{try{await controller?.dispose();}finally{manager.dispose();console.error=original;}}
   `,managed],{cwd:resolve("."),timeout:30000});
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

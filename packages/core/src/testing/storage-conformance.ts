@@ -31,6 +31,19 @@ export function storageConformance(
   factory: () => Promise<StorageBackend>,
 ): void {
   describe(name, () => {
+    it("rejects publication using another thread's valid lease", async () => {
+      const backend = await factory();
+      try {
+        const a = await backend.ownership.acquire({ threadId: "a", ownerToken: "a", ttlMs: 60000 });
+        const b = await backend.ownership.acquire({ threadId: "b", ownerToken: "b", ttlMs: 60000 });
+        const batch = initialBatch("b");
+        await backend.commits.stage(batch);
+        await expect(backend.commits.publish({ commitId: batch.commitId, threadId: "b", expectedRevision: 0, lease: a })).rejects.toMatchObject({ code: "OwnershipLost" });
+        expect(await backend.threads.get("b")).toBeNull();
+        await expect(new CommitCoordinator(backend).commit(batch, a)).rejects.toMatchObject({ code: "OwnershipLost" });
+        expect((await new CommitCoordinator(backend).commit(batch, b)).threadId).toBe("b");
+      } finally { await backend.close(); }
+    });
     it("keeps staging hidden and publishes one immutable revision idempotently", async () => {
       const backend = await factory();
       try {

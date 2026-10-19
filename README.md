@@ -9,68 +9,92 @@ been published to npm, and Cube has not been migrated.
 | Package | Responsibility |
 | --- | --- |
 | `@tessar/core` | Agent, Controller, Session, Thread, messages, tools, hooks, state, checkpoints and default memory storage |
-| `@tessar/openai` | OpenAI Responses adapter and provider metadata integration |
+| `@tessar/openai` | OpenAI Responses/Chat Completions provider and model metadata integration |
 | `@tessar/plugins` | Optional Node host utilities for discovery, loading and npm package management; logger plugin at `/logger` |
 | `@tessar/sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
 
 ## Public API
 
 ```ts
+import { tool as toolHooks } from "@tessar/core";
 import { Agent, Controller, HumanMessage } from "@tessar/core";
-import { OpenAIPlugin } from "@tessar/openai";
+import { OpenAIProvider } from "@tessar/openai";
 
 const agent = new Agent({
   id: "assistant",
-  model: { providerId: "openai", modelId: process.env.OPENAI_MODEL! },
+  model: new OpenAIProvider({
+    apiKey: process.env.OPENAI_API_KEY!,
+    model: process.env.OPENAI_MODEL!,
+  }),
 });
-const controller = new Controller({
-  id: "application",
-  agent,
-  plugins: [new OpenAIPlugin({ apiKey: process.env.OPENAI_API_KEY! })],
-});
-await controller.initialize();
 
-try {
-  const result = await agent.generate({ input: new HumanMessage("Hello") });
-  console.log(result.status, result.output);
-} finally {
-  await controller.dispose();
-}
+const result = await agent.generate("Hello");
+console.log(result.status, result.output);
 ```
 
 `generate` aggregates the same execution as `stream`; it may involve tools and
 multiple model requests. It returns on completion or suspension. Alternatively,
 consume `agent.stream(...)` with `for await`.
 
+Agent requires a default model and runs without a Controller or public
+init/dispose. Direct calls have independent context and automatic cleanup.
+Override request settings with `modelOptions`; a string `model` keeps the
+default connection, while an executable model instance supplies its own.
+Nested option objects are replaced, and omitted settings are left to the SDK.
+
 For a conversation, use a Session on the initialized Controller:
 
 ```ts
-const session = controller.createSession({ scope: { userId: "u1" } });
+const controller = new Controller({ id: "application", agent });
+await controller.initialize();
+const session = await controller.createSession({ scope: { userId: "u1" } });
 await session.thread.create();
 session.subscribe(event => console.log(event.type, event.payload));
 await session.followUp(new HumanMessage("Hello"));
+// When the application exits: await controller.dispose().
 ```
 
 The receipt acknowledges queued input, not a final answer. Results arrive through
 subscribe. Unadmitted queued input is in memory. Scope is a state filter; the host
-owns authentication and authorization. Session has no public ID or initialize,
-send or stream method. Controller and Agent require developer-assigned IDs.
+owns authentication and authorization. Session has an automatically generated durable `id`; it has no initialize, send or stream method. Controller and Agent require developer-assigned IDs.
 
 ## Plugins
 
 Import tool APIs directly when defining tools:
 
 ```ts
-import { createTool, toolResult, type ToolDefinition } from "@tessar/core/tool";
+import { createTool } from "@tessar/core/tool";
+import { z } from "zod";
+
+const searchTool = createTool({
+  name: "search",
+  description: "Search the application's documents",
+  schema: z.object({ query: z.string() }),
+  execute: ({ query }) => searchDocuments(query),
+});
+
+const agent = new Agent({
+  id: "search-assistant",
+  model,
+  tools: { searchTool },
+});
 ```
 
+`searchDocuments` and `model` are supplied by the application. Tools can be
+declared directly on Agent or registered by plugins. Text/JSON results become
+correlated `ToolMessage`s automatically. Return `new ToolMessage(content,
+{ metadata })` when you need message options or explicit content parts.
+Tool calls run concurrently by default; set `tools: { concurrency: 4,
+searchTool }` to limit active executions. Retry and availability policy belong
+to tools/plugins, with no extra Agent fields.
+
 ```ts
-import { AgentEvents, type Plugin, type PluginContext } from "@tessar/core";
+import { type Plugin, type PluginContext } from "@tessar/core";
 
 class BlockWritePlugin implements Plugin {
   readonly id = "block-write";
   setup(tessar: PluginContext): void {
-    tessar.hook(AgentEvents.BeforeTool, event => {
+    tessar.hook(toolHooks.before, event => {
       if (event.payload.tool.name === "write") {
         return { decision: "deny", reason: "Write tool disabled" };
       }
@@ -81,7 +105,7 @@ class BlockWritePlugin implements Plugin {
 const blockWrite = new BlockWritePlugin();
 ```
 
-Event constants are strings, such as `AgentEvents.BeforeTool === "tool.before"`.
+Event constants are strings, such as `toolHooks.before === "tool.before"`.
 Types provide autocomplete and inferred payloads/results. Plugins do not declare
 apiVersion. Built-in and custom plugins use classes instantiated with `new`.
 `Plugin` describes the instance's ID and setup contract; no base class is required.
@@ -213,12 +237,12 @@ is needed. See [npm's trusted publisher setup](https://docs.npmjs.com/trusted-pu
 If the packages do not exist yet, publish their first versions from a logged-in
 terminal, then configure their trusted publishers. For that first publish, build
 and pack locally with pnpm and use `npm publish <archive.tgz> --access public
---tag next` for the current alpha, or `--tag latest` for a stable version.
+--tag next` for a prerelease, or `--tag latest` for a stable version.
 
-To check the current alpha locally without publishing (PowerShell):
+To check the current release locally without publishing (PowerShell):
 
 ```powershell
-$env:RELEASE_TAG = 'v0.1.0-alpha.0'
+$env:RELEASE_TAG = 'v0.1.0'
 node scripts/release.mjs check
 pnpm build
 pnpm --filter './packages/*' -r pack --pack-destination "$PWD/dist/release"

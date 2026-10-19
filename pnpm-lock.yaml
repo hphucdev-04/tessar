@@ -26,6 +26,9 @@ importers:
       vitest:
         specifier: 5.0.4
         version: 5.0.4(@types/node@24.19.2)(vite@8.3.4(@types/node@24.19.2))
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
   examples/cli:
     dependencies:
@@ -41,6 +44,9 @@ importers:
       '@tessar/sqlite':
         specifier: workspace:*
         version: link:../../packages/sqlite
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
   examples/headless:
     dependencies:
@@ -48,7 +54,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
-  packages/core: {}
+  packages/core:
+    devDependencies:
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/openai:
     dependencies:
@@ -57,7 +67,7 @@ importers:
         version: link:../core
       openai:
         specifier: 7.34.0
-        version: 7.34.0
+        version: 7.34.0(zod@4.6.7)
 
   packages/plugins:
     devDependencies:
@@ -609,6 +619,9 @@ packages:
     engines: {node: '>=20.11'}
     hasBin: true
 
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
+
 snapshots:
 
   '@jridgewell/resolve-uri@3.1.2': {}
@@ -831,7 +844,9 @@ snapshots:
 
   obug@3.0.0: {}
 
-  openai@7.34.0: {}
+  openai@7.34.0(zod@4.6.7):
+    optionalDependencies:
+      zod: 4.6.7
 
   picocolors@1.1.1: {}
 
@@ -935,3 +950,5 @@ snapshots:
       - msw
 
   why-is-node-running@3.2.1: {}
+
+  zod@4.6.7: {}

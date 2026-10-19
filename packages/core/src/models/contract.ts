@@ -6,6 +6,14 @@ import type { MetadataResolver } from "./profile.js";
 export interface ModelRef {
   providerId: string;
   modelId: string;
+  /** Non-secret identity of a concrete connection, when supplied by an adapter. */
+  connectionId?: string;
+}
+export interface ModelConnectionDescriptor {
+  providerId: string;
+  connectionId: string;
+  protocol: string;
+  endpoint: string;
 }
 export interface ToolDescription {
   name: string;
@@ -40,12 +48,19 @@ export type ModelChunk =
   | { type: "response"; response: ModelResponse };
 export interface ModelAdapter {
   readonly ref: ModelRef;
+  readonly connection?: ModelConnectionDescriptor;
+  readonly options?: object;
+  /** Select another model without changing credentials, endpoint or client. */
+  withModel?(modelId: string): ModelAdapter;
   validate(request: ModelRequest): void;
   stream(
     request: ModelRequest,
     context: ModelCallContext,
   ): AsyncIterable<ModelChunk>;
 }
+export type ModelOptions<M> = M extends { readonly options: infer O }
+  ? Partial<O>
+  : JsonObject;
 export interface ModelProviderRegistration {
   id: string;
   create(modelId: string): ModelAdapter;

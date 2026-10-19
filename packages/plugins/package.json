@@ -1,6 +1,6 @@
 {
   "name": "@tessar/plugins",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "Node plugin loading, npm package management and a built-in logger for Tessar.",
   "type": "module",
   "repository": {

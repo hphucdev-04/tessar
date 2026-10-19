@@ -1,5 +1,6 @@
+import { model as modelHooks, stream as streamHooks, diagnostic as diagnosticHooks } from "@tessar/core";
 import { expect, it, vi } from "vitest";
-import { AgentEvents, HumanMessage, MessageCodec, createMemoryBackend, type Plugin } from "@tessar/core";
+import { HumanMessage, MessageCodec, createMemoryBackend, type Plugin } from "@tessar/core";
 import { AgentHarness } from "@tessar/core/testing";
 import { LoggerPlugin, type LogEntry } from "@tessar/plugins/logger";
 
@@ -13,7 +14,7 @@ it("logs provider errors with execution identity and persists their source", asy
     const thread = await harness.createThread();
     const stream = harness.admit({ kind: "input", threadId: thread.id, input: [MessageCodec.encode(new HumanMessage("hi"))], model: harness.provider.ref });
     await harness.collect(stream);
-    expect(entries.find(e => e.type === AgentEvents.ModelError)).toMatchObject({ level: "error", threadId: thread.id,
+    expect(entries.find(e => e.type === modelHooks.error)).toMatchObject({ level: "error", threadId: thread.id,
       streamId: stream.id, payload: { error: { source: "provider", providerId: "scripted", code: "rate_limit_exceeded", details: { status: 429 } } } });
     expect((await harness.records(stream.id!)).stream.error).toMatchObject({ source: "provider", code: "rate_limit_exceeded" });
   } finally { await harness.dispose(); }
@@ -22,17 +23,17 @@ it("logs provider errors with execution identity and persists their source", asy
 it("reports observer and plugin notification failures without recursive logger errors", async () => {
   const entries: LogEntry[] = [];
   const broken: Plugin = { id: "broken", setup(tessar) {
-    tessar.hook(AgentEvents.ModelStart, () => { throw Error("plugin failed"); });
+    tessar.hook(modelHooks.start, () => { throw Error("plugin failed"); });
   } };
   const harness = await AgentHarness.create({ modelScripts: [{ text: "ok" }], plugins: [new LoggerPlugin({ write: entry => { entries.push(entry); } }), broken] });
   try {
-    const session = harness.controller.createSession({ model: harness.provider.ref });
+    const session = await harness.controller.createSession({ model: harness.provider.ref });
     const thread = await session.thread.create();
-    const done = new Promise<void>(resolve => session.subscribe(AgentEvents.StreamEnd, () => resolve()));
-    session.subscribe(AgentEvents.ModelStart, () => { throw Error("observer failed"); });
+    const done = new Promise<void>(resolve => session.subscribe(streamHooks.end, () => resolve()));
+    session.subscribe(modelHooks.start, () => { throw Error("observer failed"); });
     await session.followUp(new HumanMessage("hi"));
     await done;
-    expect(entries.filter(e => e.type === AgentEvents.Diagnostic)).toEqual(expect.arrayContaining([
+    expect(entries.filter(e => e.type === diagnosticHooks)).toEqual(expect.arrayContaining([
       expect.objectContaining({ threadId: thread.id, payload: { error: expect.objectContaining({ source: "plugin", pluginId: "broken" }) } }),
       expect.objectContaining({ threadId: thread.id, payload: { error: expect.objectContaining({ source: "application" }) } }),
     ]));
@@ -62,7 +63,7 @@ it("logs storage failures and rethrows the original exception", async () => {
     const error = Error("disk failed");
     backend.commits.stage = async () => { throw error; };
     await expect(harness.collect(harness.admit({ kind: "input", threadId: thread.id, input: [MessageCodec.encode(new HumanMessage("hi"))], model: harness.provider.ref }))).rejects.toBe(error);
-    expect(entries.find(e => e.type === AgentEvents.Diagnostic)).toMatchObject({ payload: { error: { source: "storage", backendId: "memory", message: "disk failed" } } });
+    expect(entries.find(e => e.type === diagnosticHooks)).toMatchObject({ payload: { error: { source: "storage", backendId: "memory", message: "disk failed" } } });
   } finally { backend.commits.stage = original; await harness.dispose(); }
 });
 
@@ -71,15 +72,15 @@ it("logs decision hook failures without exposing mutable services to diagnostics
   const entries: LogEntry[] = [];
   const harness = await AgentHarness.create({ plugins: [new LoggerPlugin({ write: entry => { entries.push(entry); } }), {
     id: "policy", setup(tessar) {
-      tessar.hook(AgentEvents.BeforeStream, () => { throw Error("policy failed"); });
-      tessar.hook(AgentEvents.Diagnostic, (_event, context) => { contexts.push(context); });
+      tessar.hook(streamHooks.before, () => { throw Error("policy failed"); });
+      tessar.hook(diagnosticHooks, (_event, context) => { contexts.push(context); });
     },
   }] });
   try {
     const result = await harness.agent.generate({ input: new HumanMessage("hi"), model: harness.provider.ref });
     expect(result.status).toBe("failed");
     expect(result.error).toMatchObject({ source: "plugin", pluginId: "policy" });
-    expect(entries.find(e => e.type === AgentEvents.Diagnostic)).toMatchObject({ threadId: result.threadId, streamId: result.streamId });
+    expect(entries.find(e => e.type === diagnosticHooks)).toMatchObject({ threadId: result.threadId, streamId: result.streamId });
     expect(contexts.length).toBeGreaterThan(0);
     for (const context of contexts) {
       expect(context).not.toHaveProperty("state");
@@ -96,7 +97,7 @@ it("writes JSON to stderr by default and stops receiving events after detach", a
   try {
     await harness.agent.generate({ input: new HumanMessage("hi"), model: harness.provider.ref });
     expect(stderr.mock.calls.map(([line]) => JSON.parse(line))).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: AgentEvents.StreamEnd, level: "info", agentId: "test-agent" }),
+      expect.objectContaining({ type: streamHooks.end, level: "info", agentId: "test-agent" }),
     ]));
     await harness.controller.plugins.detach("logger");
     const count = stderr.mock.calls.length;

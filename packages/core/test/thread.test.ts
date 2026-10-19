@@ -1,5 +1,6 @@
+import { thread as threadHooks } from "../src/index.js";
 import {expect,it} from "vitest";
-import {AgentEvents,HumanMessage} from "../src/index.js";
+import { HumanMessage } from "../src/index.js";
 import {fixture,fixtureRef} from "./test-fixture.js";
 it("binds queries and mutations to actual Thread scope and exposes committed trace",async()=>{
  const {controller}=await fixture();try{
@@ -10,6 +11,6 @@ it("binds queries and mutations to actual Thread scope and exposes committed tra
  }finally{await controller.dispose();}
 });
 it("runs Thread lifecycle hooks and prevents execution from disposed handles",async()=>{
- const seen:string[]=[];const {controller}=await fixture([],[{id:"lifecycle",setup(tessar){tessar.hook(AgentEvents.ThreadPrepare,e=>({...e.payload,title:"prepared"}));tessar.hook(AgentEvents.ThreadStarted,()=>{seen.push("started");});tessar.hook(AgentEvents.ThreadBeforeShutdown,()=>{seen.push("before");});tessar.hook(AgentEvents.ThreadShutdown,()=>{seen.push("closed");});}}]);
+ const seen:string[]=[];const {controller}=await fixture([],[{id:"lifecycle",setup(tessar){tessar.hook(threadHooks.prepare,e=>({...e.payload,title:"prepared"}));tessar.hook(threadHooks.started,()=>{seen.push("started");});tessar.hook(threadHooks.beforeShutdown,()=>{seen.push("before");});tessar.hook(threadHooks.shutdown,()=>{seen.push("closed");});}}]);
  try{const thread=await controller.createThread();expect((await thread.snapshot()).state.metadata.title).toBe("prepared");await thread.dispose();expect(seen).toEqual(["started","before","closed"]);expect(()=>thread.stream({input:new HumanMessage("ask"),model:fixtureRef})).toThrow();}finally{await controller.dispose();}
 });

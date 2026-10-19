@@ -87,7 +87,8 @@ export abstract class Message implements MessageData {
       this.metadata = immutable(options.metadata);
     if (options.providerState !== undefined)
       this.providerState = immutable(options.providerState);
-    if (role === "tool") this.toolCallId = requireId(toolCallId!, "toolCallId");
+    if (toolCallId !== undefined)
+      this.toolCallId = requireId(toolCallId, "toolCallId");
     Object.freeze(this);
   }
 }
@@ -117,11 +118,9 @@ export class AssistantMessage extends Message {
 }
 export class ToolMessage extends Message {
   constructor(
-    options: MessageOptions & {
-      toolCallId: string;
-      content: string | readonly ContentPart[];
-    },
+    content: string | readonly ContentPart[],
+    options?: MessageOptions & { toolCallId?: string },
   ) {
-    super("tool", options.content, options, options.toolCallId);
+    super("tool", content, options, options?.toolCallId);
   }
 }

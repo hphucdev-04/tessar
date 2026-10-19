@@ -1,4 +1,4 @@
-import { TessarError, errorInfo } from "../errors.js";
+import { TessarError, errorInfo, fail } from "../errors.js";
 import {
   EventEnvelope,
   type AnyEvent,
@@ -9,12 +9,19 @@ import {
 } from "./definition.js";
 import type { HookContext } from "../plugins/context.js";
 import type { RegistryLease } from "../plugins/registry.js";
+const operationEvents = new Set<string>([
+  "session.model.before-change", "session.thread.before-switch",
+  "thread.before-fork", "thread.before-rename", "thread.before-delete",
+]);
 export async function dispatch<D extends AnyEvent>(
   lease: RegistryLease,
   definition: D,
   payload: PayloadOf<D>,
   context: HookContext & EventContext,
-  diagnostics: (error: ReturnType<typeof errorInfo>, context?: EventContext) => void,
+  diagnostics: (
+    error: ReturnType<typeof errorInfo>,
+    context?: EventContext,
+  ) => void,
   kind: EventKind = "notification",
 ): Promise<ResultOf<D>> {
   let current: unknown =
@@ -43,6 +50,12 @@ export async function dispatch<D extends AnyEvent>(
         context,
       );
       const result = await registration.handler(event, context);
+      if (operationEvents.has(definition) && result !== undefined) {
+        if (!result || typeof result !== "object" || Array.isArray(result) ||
+            !["allow", "deny"].includes((result as { decision: string }).decision) ||
+            ((result as { reason?: unknown }).reason !== undefined && typeof (result as { reason: unknown }).reason !== "string"))
+          fail("InvalidHookResult", "Operation hooks must return allow, deny or undefined");
+      }
       if (kind === "transformation" && result !== undefined) current = result;
       if (kind === "decision" && result !== undefined) {
         const previous = current as { decision?: string } | undefined;
@@ -75,8 +88,20 @@ export async function dispatch<D extends AnyEvent>(
         )
       )
         throw cause;
-      const error = cause !== null && typeof cause === "object" ? cause : new Error(String(cause), { cause });
-      const info = errorInfo(error, error instanceof TessarError ? undefined : { source: "plugin", pluginId: registration.pluginId, eventId: definition });
+      const error =
+        cause !== null && typeof cause === "object"
+          ? cause
+          : new Error(String(cause), { cause });
+      const info = errorInfo(
+        error,
+        error instanceof TessarError
+          ? undefined
+          : {
+              source: "plugin",
+              pluginId: registration.pluginId,
+              eventId: definition,
+            },
+      );
       if (kind !== "notification") throw error;
       try {
         diagnostics(info, context);

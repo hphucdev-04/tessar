@@ -13,14 +13,14 @@ it("streams official SDK SSE, retains reasoning state and counts cumulative usag
   {type:"response.completed",sequence_number:3,response:{id:"resp_1",status:"completed",output,usage:{input_tokens:100,output_tokens:30,total_tokens:130,input_tokens_details:{cached_tokens:40},output_tokens_details:{reasoning_tokens:10}}}}
  ]);}},ref);
  const chunks:ModelChunk[]=[];for await(const chunk of adapter.stream(request,{signal:new AbortController().signal}))chunks.push(chunk);
- expect(bodies).toHaveLength(1);expect(bodies[0].model).toBe("fixture");expect(bodies[0].instructions).toBe("system");expect(bodies[0].include).toContain("reasoning.encrypted_content");
+ expect(bodies).toHaveLength(1);expect(bodies[0].model).toBe("fixture");expect(bodies[0].instructions).toBe("system");expect(bodies[0]).not.toHaveProperty("include");expect(bodies[0]).not.toHaveProperty("store");
  expect(chunks.filter(c=>c.type==="message-delta").map(c=>c.partKind)).toEqual(["reasoning","text"]);
  const response=chunks.find(c=>c.type==="response")!;expect(response.type==="response"&&response.response.usage).toMatchObject({inputTokens:100,cacheReadInputTokens:40,uncachedInputTokens:60,outputTokens:30,reasoningOutputTokens:10,totalTokens:130});
  expect(response.type==="response"&&response.response.message.providerState).toMatchObject({items:output});
  if(response.type==="response")expect(()=>MessageCodec.decode(response.response.message)).not.toThrow();
 });
-it("preserves the SDK HTTP429 error and does not retry implicitly",async()=>{
- let calls=0;const adapter=new OpenAIAdapter({apiKey:"fixture",fetch:async()=>{calls++;return new Response(JSON.stringify({error:{message:"Rate limited",code:"rate_limit_exceeded"}}),{status:429,headers:{"x-request-id":"request-1"}});}},ref);
+it("preserves the SDK HTTP429 error with explicitly disabled retries",async()=>{
+ let calls=0;const adapter=new OpenAIAdapter({apiKey:"fixture",maxRetries:0,fetch:async()=>{calls++;return new Response(JSON.stringify({error:{message:"Rate limited",code:"rate_limit_exceeded"}}),{status:429,headers:{"x-request-id":"request-1"}});}},ref);
  try {for await(const _ of adapter.stream(request,{signal:new AbortController().signal})){};throw Error("Expected SDK failure");}
  catch(error){expect(error).toBeInstanceOf(OpenAI.RateLimitError);expect(error).toMatchObject({status:429,code:"rate_limit_exceeded",requestID:"request-1"});}
  expect(calls).toBe(1);

@@ -23,6 +23,9 @@ export class ScriptedProvider implements ModelAdapter {
   readonly ref: ModelRef = { providerId: "scripted", modelId: "test" };
   readonly calls: ModelRequest[] = [];
   constructor(private readonly scripts: readonly ModelScript[]) {}
+  withModel(modelId: string): ModelAdapter {
+    return { ref: { ...this.ref, modelId }, validate: this.validate.bind(this), stream: this.stream.bind(this) };
+  }
   validate(request: ModelRequest): void {
     if (request.model.providerId !== this.ref.providerId)
       throw new TessarError("ModelContextIncompatible", "Wrong provider");

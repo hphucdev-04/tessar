@@ -1,3 +1,4 @@
+import { thread as threadHooks } from "./events/type.js";
 import { fail } from "./errors.js";
 import { immutable, type JsonObject, type JsonValue } from "./json.js";
 import { inputMessages, type ExecutionOrigin } from "./agent.js";
@@ -12,12 +13,14 @@ import type {
   ThreadInfo,
 } from "./state/schema.js";
 import type { HistoryOptions } from "./state/queries.js";
-import { AgentEvents } from "./events/catalog.js";
+
 import type { DeliveryTarget, Stream } from "./engine/delivery.js";
 import { aggregateUsage } from "./trace/usage.js";
+import type { SessionHookHandle } from "./plugins/context.js";
 export type ThreadStreamOptions = {
   signal?: AbortSignal;
   context?: JsonObject;
+  modelOptions?: JsonObject;
   limits?: Partial<StreamLimits>;
 } & (
   | {
@@ -116,13 +119,14 @@ export class Thread {
   /** @internal */ admit(
     options: ThreadStreamOptions,
     target: DeliveryTarget,
+    session?: SessionHookHandle,
   ): Stream {
     this.check();
     const controller = this.controller,
       model = options.model
         ? controller.resolveModel(options.model).ref
         : undefined;
-    const common = { threadId: this.id, signal: options.signal };
+    const common = { threadId: this.id, signal: options.signal, thread: this, session };
     const prepare = async () => {
       await controller.queries.requireThread(this.id, this.filter);
     };
@@ -136,6 +140,7 @@ export class Thread {
           input: inputMessages(options.input),
           model: controller.resolveModel(options.model).ref,
           context: options.context,
+          modelOptions: options.modelOptions,
           limits: options.limits,
           origin: options.origin,
         },
@@ -163,7 +168,7 @@ export class Thread {
   async cancelStream(streamId: string, reason?: string): Promise<void> {
     this.check();
     await this.query.requireThread(this.id, this.filter);
-    await this.controller.agent.cancel(this.id, streamId, reason);
+    await this.controller.agent.cancel(this.id, streamId, reason, undefined, { thread: this });
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
@@ -175,13 +180,13 @@ export class Thread {
       scope: this.scope,
     };
     await this.controller.hooks.dispatch(
-      AgentEvents.ThreadBeforeShutdown,
+      threadHooks.beforeShutdown,
       { threadId: this.id },
       context,
     );
     this.disposed = true;
     await this.controller.hooks.dispatch(
-      AgentEvents.ThreadShutdown,
+      threadHooks.shutdown,
       { threadId: this.id },
       context,
     );

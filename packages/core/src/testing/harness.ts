@@ -1,8 +1,10 @@
+import { stream as streamHooks } from "../events/type.js";
 import {
   Agent,
   type ExecutionRequest,
   type Stream,
   type DeliveryTarget,
+  type AgentTools,
 } from "../agent.js";
 import { Controller } from "../controller.js";
 import type { Plugin } from "../plugins/context.js";
@@ -11,7 +13,7 @@ import type { StorageBackend } from "../state/storage-ports.js";
 import { ThreadService, type CreateThreadOptions } from "../state/threads.js";
 import type { StreamLimits } from "../state/schema.js";
 import { ScriptedProvider, type ModelScript } from "./scripted-provider.js";
-import { AgentEvents } from "../events/catalog.js";
+
 import { errorFromInfo } from "../errors.js";
 export class AgentHarness {
   private constructor(
@@ -33,14 +35,17 @@ export class AgentHarness {
       backend?: StorageBackend;
       instructions?: string;
       limits?: Partial<StreamLimits>;
+      tools?: AgentTools;
     } = {},
   ): Promise<AgentHarness> {
     const backend = options.backend ?? createMemoryBackend(),
       provider = new ScriptedProvider(options.modelScripts ?? []);
     const agent = new Agent({
       id: "test-agent",
+      model: provider.ref,
       instructions: options.instructions,
       limits: options.limits,
+      tools: options.tools,
     });
     const controller = new Controller({
       id: "test-controller",
@@ -77,7 +82,7 @@ export class AgentHarness {
     const events = [];
     for await (const event of stream) {
       events.push(event);
-      if (event.is(AgentEvents.StreamError))
+      if (event.is(streamHooks.error))
         throw errorFromInfo(event.payload.error);
     }
     return events;

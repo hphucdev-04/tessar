@@ -1,3 +1,4 @@
+import { checkpoint as checkpointHooks, stream as streamHooks } from "../events/type.js";
 import { fail, errorInfo, type ErrorInfo } from "../errors.js";
 import type { IdGenerator } from "../json.js";
 import {
@@ -5,7 +6,7 @@ import {
   type AnyEvent,
   type EventContext,
 } from "../events/definition.js";
-import { AgentEvents } from "../events/catalog.js";
+
 export interface Stream extends AsyncIterable<EventEnvelope> {
   readonly id: string | null;
   readonly threadId: string;
@@ -112,7 +113,7 @@ export function createDelivery(
     },
     emit(definition, payload, context) {
       if (closed) return;
-      if (definition === AgentEvents.CheckpointCommitted)
+      if (definition === checkpointHooks.committed)
         lastCheckpoint = payload.checkpointId;
       const event = new EventEnvelope(definition, payload, {
         ...context,
@@ -158,7 +159,7 @@ export function createDelivery(
         consumerEnded = true;
         queue.push({
           event: new EventEnvelope(
-            AgentEvents.StreamError,
+            streamHooks.error,
             {
               error,
               lastKnownCheckpointId: lastCheckpoint,

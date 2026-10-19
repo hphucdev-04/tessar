@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { expect, it } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { AgentHarness } from "@tessar/core/testing";
-import { createTool, toolResult } from "@tessar/core";
+import { createTool } from "@tessar/core";
 import { createSqliteBackend } from "@tessar/sqlite";
 import { appendFileSync } from "node:fs";
 const supportsSpawn = !spawnSync(process.execPath, ["--version"]).error;
@@ -84,10 +85,10 @@ it.skipIf(!supportsSpawn).each(["crash-model-result", "crash-tool-dispatch"])(
                 createTool({
                   name: "write",
                   description: "write",
-                  input: { jsonSchema: {}, parse: () => ({}) },
+                  schema: z.object({}),
                   execute: async () => {
                     appendFileSync(filename + ".effects", "write\n");
-                    return toolResult("done");
+                    return "done";
                   },
                 }),
               );

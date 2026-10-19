@@ -1,6 +1,6 @@
 import type { ErrorInfo } from "../errors.js";
 import type { JsonObject } from "../json.js";
-import type { ToolResult } from "../tools/tool.js";
+import type { MessageData } from "../messages/message.js";
 import type { ModelUsage, UsageSummary } from "./usage.js";
 export type StreamStatus =
   | "pending"
@@ -91,7 +91,7 @@ export interface ToolExecutionRecord {
   durationMs: number | null;
   resultMessageId: string | null;
   resultRef: string | null;
-  result: ToolResult | null;
+  result: MessageData | null;
   error: ErrorInfo | null;
   idempotencyKey: string | null;
 }

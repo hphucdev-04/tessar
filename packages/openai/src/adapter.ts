@@ -1,5 +1,5 @@
-import OpenAI, { OpenAIError } from "openai";
-import type { ResponseUsage } from "openai/resources/responses/responses";
+import OpenAI, { OpenAIError, type ClientOptions } from "openai";
+import type { ResponseUsage, ResponseCreateParamsStreaming } from "openai/resources/responses/responses";
 import {
   errorInfo,
   MessageCodec,
@@ -9,22 +9,23 @@ import {
   type ModelChunk,
   type ModelRef,
   type ModelRequest,
+  type ModelConnectionDescriptor,
 } from "@tessar/core";
 import { decodeOutput, encodeInput } from "./codec.js";
-export interface OpenAIOptions {
-  apiKey: string;
-  baseURL?: string;
+export interface OpenAIOptions extends ClientOptions {
   providerId?: string;
-  fetch?: typeof fetch;
   metadataPartition?: string;
 }
+// Connection settings must never enter either protocol's request body.
+export const clientKeys = [
+  "apiKey", "adminAPIKey", "organization", "project", "webhookSecret", "baseURL",
+  "dataResidency", "timeout", "fetchOptions", "fetch", "maxRetries", "defaultHeaders",
+  "defaultQuery", "dangerouslyAllowBrowser", "logLevel", "logger", "workloadIdentity",
+  "credential", "provider", "x509Transport",
+] as const satisfies readonly (keyof ClientOptions)[];
 export function createClient(options: OpenAIOptions): OpenAI {
-  return new OpenAI({
-    apiKey: options.apiKey,
-    baseURL: options.baseURL,
-    fetch: options.fetch,
-    maxRetries: 0,
-  });
+  const { providerId, metadataPartition, ...clientOptions } = options;
+  return new OpenAI(clientOptions);
 }
 function usage(value: ResponseUsage | null | undefined) {
   return normalizeUsage(
@@ -48,11 +49,12 @@ function usage(value: ResponseUsage | null | undefined) {
   );
 }
 export class OpenAIAdapter implements ModelAdapter {
-  private readonly client: OpenAI;
+  protected readonly client: OpenAI;
   constructor(
     options: OpenAIOptions,
     readonly ref: ModelRef,
     client?: OpenAI,
+    readonly connection?: ModelConnectionDescriptor,
   ) {
     this.client = client ?? createClient(options);
   }
@@ -63,7 +65,14 @@ export class OpenAIAdapter implements ModelAdapter {
       request.model.modelId !== this.ref.modelId
     )
       fail("UnsupportedContext", "Model identity mismatch");
-    encodeInput(request);
+    if (request.model.connectionId !== this.ref.connectionId)
+      fail("UnsupportedContext", "Model connection mismatch");
+    for (const key of ["connectionId", "api", "model", "input", "messages", "instructions", "tools", "stream", ...clientKeys])
+      if (request.options && key in request.options)
+        fail("UnsupportedOption", key + " is owned by the model connection or Agent runtime");
+    if (request.options?.background === true || request.options?.conversation != null || request.options?.previous_response_id != null || request.options?.context_management != null)
+      fail("UnsupportedOption", "Background, provider-managed conversations and compaction are not supported by the Agent loop");
+    encodeInput(request, this.connection);
     } catch (error) {
       errorInfo(error, { source: "tessar", ...this.ref });
       throw error;
@@ -83,22 +92,21 @@ export class OpenAIAdapter implements ModelAdapter {
     try {
       const stream = await this.client.responses.create(
         {
+          ...request.options,
           model: this.ref.modelId,
-          instructions: request.instructions.sections
+          ...(request.instructions.sections.some(section => section.content.length > 0) ? { instructions: request.instructions.sections
             .map((s) => s.content)
-            .join("\n\n"),
-          input: encodeInput(request),
-          tools: request.tools.map((t) => ({
+            .join("\n\n") } : {}),
+          input: encodeInput(request, this.connection),
+          ...(request.tools.length ? { tools: request.tools.map((t) => ({
             type: "function" as const,
             name: t.name,
             description: t.description,
             parameters: t.inputSchema,
             strict: false,
-          })),
-          include: ["reasoning.encrypted_content"],
-          store: false,
+          })) } : {}),
           stream: true,
-        },
+        } as ResponseCreateParamsStreaming,
         { signal: context.signal },
       );
       let terminal = false;
@@ -135,6 +143,7 @@ export class OpenAIAdapter implements ModelAdapter {
                     event.response.output,
                     this.ref,
                     event.response.id,
+                    this.connection,
                   ),
                 ),
                 usage: normalized,

@@ -1,10 +1,10 @@
-import type { ExecutionFrame } from "./agent.js";
+import { turn as turnHooks, model as modelHooks, tools as toolsHooks, context as contextHooks, message as messageHooks } from "./events/type.js";
+import type { ExecutionFrame } from "./engine/frame.js";
 import { TessarError, errorInfo, fail } from "./errors.js";
 import { immutable, type Clock, type IdGenerator } from "./json.js";
-import { AgentEvents, type ToolPreparation } from "./events/catalog.js";
+
 import type { AnyEvent, PayloadOf, ResultOf } from "./events/definition.js";
-import { MessageCodec } from "./messages/codec.js";
-import { ToolMessage, type MessageData } from "./messages/message.js";
+import type { MessageData } from "./messages/message.js";
 import type {
   ModelProviderRegistration,
   ModelResponse,
@@ -17,20 +17,22 @@ import type {
   TurnRecord,
 } from "./trace/records.js";
 import { aggregateUsage, normalizeUsage } from "./trace/usage.js";
-import { toolResult, type Tool } from "./tools/tool.js";
+import type { Tool } from "./tools/tool.js";
 import { ContextAssembler } from "./engine/context.js";
-import { executeTool } from "./engine/tool-executor.js";
-import { Suspension } from "./engine/interrupt.js";
-import { providerCall, streamModel } from "./models/stream.js";
+import { callTools } from "./engine/tool-executor.js";
+import { providerCall, bindExecutionModel, streamModel } from "./models/stream.js";
+import { snapshotModelOptions } from "./models/options.js";
 import type { TrackedServices } from "./engine/tracked-effects.js";
 
-type LoopContext = {
+export type LoopContext = {
+  toolConcurrency: number;
   ids: IdGenerator;
   clock: Clock;
   hook<D extends AnyEvent>(
     frame: ExecutionFrame,
     definition: D,
     payload: PayloadOf<D>,
+    toolExecutionId?: string,
   ): Promise<ResultOf<D>>;
   put(
     frame: ExecutionFrame,
@@ -63,6 +65,7 @@ export async function loop(
         await context.finish(frame, "stopped", "MaxTurns");
         return;
       }
+      frame.turnStartedAt = performance.now();
       const turn: TurnRecord = {
         id: context.ids.next("turn"),
         streamId: frame.stream.id,
@@ -82,7 +85,7 @@ export async function loop(
       position.turnId = turn.id;
       position.phase = "BeforeModel";
       await context.commit(frame, "ExecutionTransition");
-      await context.hook(frame, AgentEvents.TurnStart, {
+      await context.hook(frame, turnHooks.start, {
         turnId: turn.id,
         index: turn.index,
       });
@@ -93,7 +96,7 @@ export async function loop(
       continue;
     }
     if (position.phase === "BeforeTool") {
-      await callTool(frame, context);
+      await callTools(frame, context);
       if (frame.stream.endedAt) return;
       continue;
     }
@@ -103,17 +106,17 @@ export async function loop(
         .find((t) => t.id === position.turnId)!;
       turn.status = "completed";
       turn.endedAt = context.clock.now();
-      turn.durationMs = Date.parse(turn.endedAt) - Date.parse(turn.startedAt);
+      turn.durationMs = frame.turnStartedAt === undefined ? null : Math.max(0, performance.now() - frame.turnStartedAt);
       await context.updateUsage(frame);
       await context.commit(frame, "ExecutionTransition");
-      await context.hook(frame, AgentEvents.TurnEnd, {
+      await context.hook(frame, turnHooks.end, {
         turnId: turn.id,
         usage: turn.usage,
       });
       const hadTools = !!frame.cp.state.messages
         .find((m) => m.id === turn.assistantMessageId)
         ?.content.some((p) => p.type === "tool-call");
-      const decision = await context.hook(frame, AgentEvents.TurnDecision, {
+      const decision = await context.hook(frame, turnHooks.decision, {
         turnId: turn.id,
         hadTools,
       });
@@ -146,27 +149,22 @@ async function callModel(
     await context.finish(frame, "stopped", "MaxModelAttempts");
     return false;
   }
-  const selection = await context.hook(frame, AgentEvents.ModelSelect, {
+  const selection = await context.hook(frame, modelHooks.select, {
     model: position.modelRef,
   });
-  if (selection?.decision === "select") position.modelRef = selection.model;
-  const provider = frame.registry.find<ModelProviderRegistration>(
-    "provider",
-    position.modelRef.providerId,
-  );
-  if (!provider) fail("MissingProvider", "Model provider is not registered");
-  const adapter = providerCall(position.modelRef, () =>
-    provider.create(position.modelRef.modelId),
-  );
+  const adapter = bindExecutionModel(frame.registry, position, frame.request.adapter,
+    selection?.decision === "select" ? selection.model : undefined);
+  if (adapter.options || position.modelOptions)
+    position.modelOptions = snapshotModelOptions({ ...adapter.options, ...position.modelOptions });
   const tools = frame.registry.list<Tool>("tool"),
     descriptions: ToolDescription[] = tools.map((t) => ({
       name: t.name,
       description: t.description,
-      inputSchema: t.input.jsonSchema,
+      inputSchema: t.jsonSchema,
     }));
   const selected = await context.hook(
     frame,
-    AgentEvents.ToolsSelect,
+    toolsHooks.select,
     immutable(descriptions),
   );
   if (selected.some((t) => !tools.some((tool) => tool.name === t.name)))
@@ -177,15 +175,17 @@ async function callModel(
     selected,
     position.modelRef,
   );
-  request = await context.hook(frame, AgentEvents.ContextPrepare, request);
+  if (position.modelOptions) request = { ...request, options: position.modelOptions };
+  request = await context.hook(frame, contextHooks.prepare, request);
   request = await context.hook(
     frame,
-    AgentEvents.ModelRequest,
+    modelHooks.request,
     immutable(request),
   );
   if (
     request.model.providerId !== position.modelRef.providerId ||
-    request.model.modelId !== position.modelRef.modelId
+    request.model.modelId !== position.modelRef.modelId ||
+    request.model.connectionId !== position.modelRef.connectionId
   )
     fail(
       "ModelContextIncompatible",
@@ -228,25 +228,29 @@ async function callModel(
   budgets.modelAttempts++;
   position.phase = "ModelPending";
   await context.commit(frame, "ExecutionTransition");
-  await context.hook(frame, AgentEvents.ModelStart, {
+  await context.hook(frame, modelHooks.start, {
     attemptId: attempt.id,
     model: position.modelRef,
   });
+  const attemptStartedAt = performance.now();
   let response: ModelResponse | undefined;
   try {
     for await (const chunk of streamModel(adapter, immutable(request), {
       signal: frame.sink.controller.signal,
     })) {
       if (chunk.type === "message-delta") {
-        if (!attempt.firstOutputAt) attempt.firstOutputAt = context.clock.now();
-        await context.hook(frame, AgentEvents.MessageDelta, {
+        if (!attempt.firstOutputAt) {
+          attempt.firstOutputAt = context.clock.now();
+          attempt.timeToFirstOutputMs = Math.max(0, performance.now() - attemptStartedAt);
+        }
+        await context.hook(frame, messageHooks.delta, {
           ...chunk,
           attemptId: attempt.id,
         });
       }
       if (chunk.type === "usage") {
         attempt.usage = chunk.usage;
-        await context.hook(frame, AgentEvents.ModelUsage, {
+        await context.hook(frame, modelHooks.usage, {
           attemptId: attempt.id,
           usage: chunk.usage,
         });
@@ -255,12 +259,13 @@ async function callModel(
     }
     if (!response)
       fail("ProviderError", "Model stream ended without complete response");
-    response = await context.hook(frame, AgentEvents.ModelResponse, response);
+    response = await context.hook(frame, modelHooks.response, response);
     if (response.message.role !== "assistant")
       fail("InvalidMessage", "Model response must be assistant");
     attempt.usage = response.usage ?? attempt.usage;
     attempt.status = "succeeded";
     attempt.endedAt = context.clock.now();
+    attempt.durationMs = Math.max(0, performance.now() - attemptStartedAt);
     attempt.finishReason = response.finishReason ?? null;
     attempt.providerRequestId = response.providerRequestId ?? null;
     attempt.responseMessageId = response.message.id;
@@ -295,7 +300,7 @@ async function callModel(
     frame.cp.execution!.pendingToolExecutionIds = pending.map((t) => t.id);
     frame.cp.execution!.phase = pending.length ? "BeforeTool" : "TurnBoundary";
     await context.appendMessage(frame, response.message);
-    await context.hook(frame, AgentEvents.ModelEnd, {
+    await context.hook(frame, modelHooks.end, {
       attemptId: attempt.id,
       response,
     });
@@ -307,12 +312,13 @@ async function callModel(
       : "failed";
     attempt.error = errorInfo(error);
     attempt.endedAt = context.clock.now();
+    attempt.durationMs = Math.max(0, performance.now() - attemptStartedAt);
     await context.commit(frame, "ExecutionTransition");
-    await context.hook(frame, AgentEvents.ModelError, {
+    await context.hook(frame, modelHooks.error, {
       attemptId: attempt.id,
       error: attempt.error,
     });
-    const recovery = await context.hook(frame, AgentEvents.ModelRecover, {
+    const recovery = await context.hook(frame, modelHooks.recover, {
       attemptId: attempt.id,
       error: attempt.error,
     });
@@ -326,163 +332,4 @@ async function callModel(
     }
     throw error;
   }
-}
-async function callTool(
-  frame: ExecutionFrame,
-  context: LoopContext,
-): Promise<void> {
-  const position = frame.cp.execution!,
-    id = position.pendingToolExecutionIds[0];
-  if (!id) {
-    position.phase = "TurnBoundary";
-    return;
-  }
-  const record = context
-    .rows<ToolExecutionRecord>(frame, "tool_executions")
-    .find((t) => t.id === id)!;
-  if (position.budgets.toolCalls >= position.budgets.limits.maxToolCalls) {
-    await context.finish(frame, "stopped", "MaxToolCalls");
-    return;
-  }
-  const tool = frame.registry.find<Tool>("tool", record.toolName);
-  let result;
-  try {
-    if (!tool) fail("UnknownTool", "No registered tool executor");
-    const saved =
-      position.handlerCursor?.eventId === AgentEvents.BeforeTool
-        ? position.handlerCursor.payload
-        : null;
-    const prepared = (saved ??
-      (record.policyDecision?.decision === "allowed"
-        ? {
-            tool: {
-              name: tool.name,
-              description: tool.description,
-              inputSchema: tool.input.jsonSchema,
-            },
-            toolExecutionId: id,
-            toolCallId: record.toolCallId,
-            arguments: record.arguments,
-          }
-        : await context.hook(frame, AgentEvents.ToolPrepare, {
-            tool: {
-              name: tool.name,
-              description: tool.description,
-              inputSchema: tool.input.jsonSchema,
-            },
-            toolExecutionId: id,
-            toolCallId: record.toolCallId,
-            arguments: record.arguments,
-          }))) as ToolPreparation;
-    record.arguments = immutable(prepared.arguments);
-    tool.input.parse(record.arguments);
-    const decision =
-      record.policyDecision?.decision === "allowed"
-        ? { decision: "allow" as const }
-        : await context.hook(
-            frame,
-            AgentEvents.BeforeTool,
-            immutable(prepared),
-          );
-    if (decision?.decision === "stop") {
-      await context.finish(
-        frame,
-        "stopped",
-        decision.reason ?? "PolicyStopped",
-      );
-      return;
-    }
-    record.policyDecision = {
-      decision: decision?.decision === "deny" ? "denied" : "allowed",
-      ...(decision?.decision === "deny" && decision.reason
-        ? { reason: decision.reason }
-        : {}),
-    };
-    if (decision?.decision === "deny") {
-      record.status = "denied";
-      result = toolResult(decision.reason ?? "Tool denied");
-    } else {
-      record.status = "running";
-      record.startedAt = context.clock.now();
-      record.idempotencyKey =
-        tool.recovery?.idempotencyKey(tool.input.parse(record.arguments), {
-          toolExecutionId: record.id,
-        }) ?? null;
-      position.budgets.toolCalls++;
-      position.phase = "ToolPending";
-      await context.commit(frame, "ExecutionTransition");
-      await context.hook(frame, AgentEvents.ToolStart, {
-        toolExecutionId: id,
-        toolCallId: record.toolCallId,
-      });
-      frame.currentToolExecutionId = id;
-      result = await executeTool(tool, record.arguments, {
-        ...context.services(frame, id),
-        signal: frame.sink.controller.signal,
-        threadId: frame.cp.threadId,
-        streamId: frame.stream.id,
-        turnId: record.turnId,
-        toolExecutionId: id,
-        emit: (progress) => {
-          void context.hook(frame, AgentEvents.ToolUpdate, {
-            toolExecutionId: id,
-            progress,
-          });
-        },
-      });
-      frame.currentToolExecutionId = undefined;
-      record.status = "succeeded";
-    }
-  } catch (error) {
-    if (error instanceof Suspension) throw error;
-    if (errorInfo(error).code === "RecoveryRequired") {
-      record.status = "interrupted";
-      frame.stream.status = "interrupted";
-      await context.commit(frame, "ExecutionTransition");
-      throw error;
-    }
-    if (
-      [
-        "StorageUnavailable",
-        "CommitConflict",
-        "OwnershipLost",
-        "PluginError",
-      ].includes(errorInfo(error).code) ||
-      ["plugin", "storage", "provider"].includes(errorInfo(error).source)
-    )
-      throw error;
-    record.status = "failed";
-    record.error = errorInfo(error, {
-      source: "tool",
-      toolName: record.toolName,
-    });
-    result = toolResult("Tool failed: " + record.error.message);
-    await context.hook(frame, AgentEvents.ToolError, {
-      toolExecutionId: id,
-      error: record.error,
-    });
-  }
-  result = await context.hook(frame, AgentEvents.ToolResult, result);
-  record.result = result;
-  record.endedAt = context.clock.now();
-  const message = MessageCodec.encode(
-    new ToolMessage({
-      toolCallId: record.toolCallId,
-      content: result.content,
-      metadata: result.metadata,
-    }),
-  );
-  record.resultMessageId = message.id;
-  frame.cp.execution!.pendingToolExecutionIds =
-    frame.cp.execution!.pendingToolExecutionIds.filter((value) => value !== id);
-  frame.cp.execution!.phase = frame.cp.execution!.pendingToolExecutionIds.length
-    ? "BeforeTool"
-    : "TurnBoundary";
-  await context.appendMessage(frame, message);
-  await context.hook(frame, AgentEvents.ToolEnd, {
-    toolExecutionId: id,
-    toolCallId: record.toolCallId,
-    result,
-    status: record.status,
-  });
 }

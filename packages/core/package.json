@@ -1,6 +1,6 @@
 {
   "name": "@tessar/core",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "Minimal agent execution, sessions, hooks, state and checkpoints.",
   "type": "module",
   "engines": { "node": ">=24.14.0" },
@@ -36,5 +36,11 @@
   "files": [
     "dist",
     "src/models/catalog.LICENSE"
-  ]
+  ],
+  "devDependencies": {
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "zod": "^4.6.7"
+  }
 }

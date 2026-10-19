@@ -1,4 +1,11 @@
-import { fail, requireId, TessarError, errorInfo, errorFromInfo, type ErrorInfo } from "../errors.js";
+import {
+  fail,
+  requireId,
+  TessarError,
+  errorInfo,
+  errorFromInfo,
+  type ErrorInfo,
+} from "../errors.js";
 import {
   assertJson,
   immutable,
@@ -229,12 +236,14 @@ export class EffectService {
       });
       return immutable(output) as O;
     } catch (error) {
-      const info = errorInfo(error, { source: "plugin", pluginId: binding.pluginId }),
-        unknown = [
-          "StorageUnavailable",
-          "OwnershipLost",
-          "RecoveryRequired",
-        ].includes(info.code) || info.source === "storage";
+      const info = errorInfo(error, {
+          source: "plugin",
+          pluginId: binding.pluginId,
+        }),
+        unknown =
+          ["StorageUnavailable", "OwnershipLost", "RecoveryRequired"].includes(
+            info.code,
+          ) || info.source === "storage";
       await save({
         digest,
         status: unknown ? "unknown" : "failed",

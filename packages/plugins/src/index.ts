@@ -77,7 +77,9 @@ export class PluginManager {
     if (
       data.packages !== undefined &&
       (!Array.isArray(data.packages) ||
-        data.packages.some(value => typeof value !== "string" || !value.trim()))
+        data.packages.some(
+          (value) => typeof value !== "string" || !value.trim(),
+        ))
     )
       throw Error("Invalid packages in " + filename);
     return data;
@@ -128,7 +130,8 @@ export class PluginManager {
           );
           const result = nextResolve(source, {
             ...context,
-            parentURL: pathToFileURL(join(this.npmDirectory, "package.json")).href,
+            parentURL: pathToFileURL(join(this.npmDirectory, "package.json"))
+              .href,
           });
           this.graph.add(result.url);
           return result;
@@ -152,15 +155,24 @@ export class PluginManager {
           } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
             if (
-              (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") ||
-              specifier.startsWith(".") || isAbsolute(specifier) ||
-              specifier.includes(":") || specifier.startsWith("#")
+              (code !== "ERR_MODULE_NOT_FOUND" &&
+                code !== "MODULE_NOT_FOUND") ||
+              specifier.startsWith(".") ||
+              isAbsolute(specifier) ||
+              specifier.includes(":") ||
+              specifier.startsWith("#")
             )
               throw error;
             // Custom files can also use dependencies in the managed npm environment.
             const url = context.conditions.includes("require")
-              ? pathToFileURL(createRequire(join(this.npmDirectory, "package.json")).resolve(specifier)).href
-              : import.meta.resolve(this.prefix + encodeURIComponent(specifier));
+              ? pathToFileURL(
+                  createRequire(
+                    join(this.npmDirectory, "package.json"),
+                  ).resolve(specifier),
+                ).href
+              : import.meta.resolve(
+                  this.prefix + encodeURIComponent(specifier),
+                );
             this.graph.add(url);
             return {
               url,
@@ -348,13 +360,12 @@ export class PluginManager {
       validName(name);
       const before = await this.manifest();
       const config = await this.configuration();
-      if (
-        !config.packages?.includes(name) ||
-        !before.dependencies?.[name]
-      )
+      if (!config.packages?.includes(name) || !before.dependencies?.[name])
         throw Error("Not an installed plugin: " + name);
       await this.npm(["uninstall", name]);
-      config.packages = (config.packages ?? []).filter(value => value !== name);
+      config.packages = (config.packages ?? []).filter(
+        (value) => value !== name,
+      );
       await this.saveConfiguration(config);
     });
   }

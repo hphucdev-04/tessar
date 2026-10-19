@@ -1,10 +1,5 @@
-import {
-  AgentEvents,
-  SessionEvents,
-  type EventContext,
-  type Plugin,
-  type PluginContext,
-} from "@tessar/core";
+import { ready as readyHooks, thread as threadHooks, stream as streamHooks, turn as turnHooks, model as modelHooks, tool as toolHooks, diagnostic as diagnosticHooks, session as sessionHooks } from "@tessar/core";
+import { type EventContext, type Plugin, type PluginContext } from "@tessar/core";
 export interface LogEntry extends EventContext {
   level: "info" | "warn" | "error";
   type: string;
@@ -15,34 +10,37 @@ export interface LoggerOptions {
   write?: (entry: LogEntry) => void | Promise<void>;
 }
 const events = [
-  AgentEvents.Ready,
-  AgentEvents.ThreadStarted,
-  AgentEvents.ThreadShutdown,
-  AgentEvents.StreamStarted,
-  AgentEvents.StreamEnd,
-  AgentEvents.StreamError,
-  AgentEvents.StreamSuspended,
-  AgentEvents.StreamResumed,
-  AgentEvents.StreamCancel,
-  AgentEvents.TurnStart,
-  AgentEvents.TurnEnd,
-  AgentEvents.ModelStart,
-  AgentEvents.ModelEnd,
-  AgentEvents.ModelError,
-  AgentEvents.ToolStart,
-  AgentEvents.ToolEnd,
-  AgentEvents.ToolError,
-  AgentEvents.Diagnostic,
-  SessionEvents.Created,
-  SessionEvents.ModelChanged,
-  SessionEvents.ThreadCreated,
-  SessionEvents.ThreadSwitched,
-  SessionEvents.ThreadRenamed,
-  SessionEvents.ThreadForked,
-  SessionEvents.ThreadDeleted,
-  SessionEvents.InputQueued,
-  SessionEvents.InputDiscarded,
-  SessionEvents.Closed,
+  readyHooks,
+  threadHooks.started,
+  threadHooks.shutdown,
+  threadHooks.forked,
+  threadHooks.renamed,
+  threadHooks.deleted,
+  streamHooks.started,
+  streamHooks.end,
+  streamHooks.error,
+  streamHooks.suspended,
+  streamHooks.resumed,
+  streamHooks.cancel,
+  turnHooks.start,
+  turnHooks.end,
+  modelHooks.start,
+  modelHooks.end,
+  modelHooks.error,
+  toolHooks.start,
+  toolHooks.end,
+  toolHooks.error,
+  diagnosticHooks,
+  sessionHooks.created,
+  sessionHooks.modelChanged,
+  sessionHooks.threadCreated,
+  sessionHooks.threadSwitched,
+  sessionHooks.threadRenamed,
+  sessionHooks.threadForked,
+  sessionHooks.threadDeleted,
+  sessionHooks.inputQueued,
+  sessionHooks.inputDiscarded,
+  sessionHooks.closed,
 ] as const;
 
 /** Structured lifecycle/error logs. Destinations and formatting belong to the host. */
@@ -51,9 +49,11 @@ export class LoggerPlugin implements Plugin {
   private readonly write: NonNullable<LoggerOptions["write"]>;
 
   constructor(options: LoggerOptions = {}) {
-    this.write = options.write ?? ((entry) => {
-      console.error(JSON.stringify(entry));
-    });
+    this.write =
+      options.write ??
+      ((entry) => {
+        console.error(JSON.stringify(entry));
+      });
   }
 
   setup(tessar: PluginContext): void {
@@ -66,7 +66,7 @@ export class LoggerPlugin implements Plugin {
             level:
               "error" in event.payload && event.payload.error
                 ? "error"
-                : event.type === AgentEvents.StreamSuspended
+                : event.type === streamHooks.suspended
                   ? "warn"
                   : "info",
           }),

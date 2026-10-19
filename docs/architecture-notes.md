@@ -26,6 +26,13 @@ gọi model/tool, dùng chung cho input mới, resume và recovery. Agent vẫn 
 admission, checkpoint, interrupt và finalization; API công khai giữ nguyên.
 Giữ storage/checkpoint, validation và các bảo đảm chống mất dữ liệu đã chốt.
 
+Cập nhật 2026-10-16: Agent giữ cấu hình, public API và quản lý tác vụ đang chạy.
+Các function nội bộ cho execution/cancel, hook/suspend, checkpoint/message,
+tracked services và resume/recovery nằm trong `core/src/engine/` theo trách nhiệm.
+Input, resume và recovery dùng chung dựng frame và nạp record. Loop vẫn là
+function trong `loop.ts`; API công khai giữ nguyên. Chi tiết và kết quả kiểm tra:
+[Agent refactor](superpowers/plans/2026-10-16-tessar-agent-refactor.md).
+
 ## Core và SDK: package chính đã chốt
 
 `@tessar/core` cung cấp trực tiếp `Agent`, `Controller`, `Session`,

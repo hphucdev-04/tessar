@@ -23,6 +23,7 @@ export interface HookOptions {
 export interface EventContext {
   controllerId?: string;
   agentId?: string;
+  sessionId?: string;
   scope?: JsonObject;
   threadId?: string;
   streamId?: string | null;
@@ -37,6 +38,7 @@ export class EventEnvelope<
 > implements EventContext {
   readonly controllerId?: string;
   readonly agentId?: string;
+  readonly sessionId?: string;
   readonly scope?: JsonObject;
   readonly threadId?: string;
   readonly streamId?: string | null;
@@ -52,6 +54,7 @@ export class EventEnvelope<
     for (const key of [
       "controllerId",
       "agentId",
+      "sessionId",
       "scope",
       "threadId",
       "streamId",

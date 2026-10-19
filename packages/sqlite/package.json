@@ -1,6 +1,6 @@
 {
   "name": "@tessar/sqlite",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "SQLite persistence for Tessar state and checkpoints using Node's built-in SQLite API.",
   "type": "module",
   "files": ["dist"],

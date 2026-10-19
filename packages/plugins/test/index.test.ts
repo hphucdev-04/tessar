@@ -1,3 +1,4 @@
+import { tool as toolHooks } from "@tessar/core";
 import {expect,it} from "vitest";
 import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -21,8 +22,8 @@ async function run(root:string,body:string){return execute(process.execPath,["--
 it("discovers local JS/TS and folders, preserves the host SDK for lazy imports and releases its resolver",async()=>{
  const root=await mkdtemp(join(tmpdir(),"tessar plugins "));
  try{
-  await file(root,"plugins/a.mts",`import {Tool,AgentEvents} from '@tessar/core';
-   const id: string = 'a'; export default {id, sdkClass:Tool, event:AgentEvents.BeforeTool, setup(){}, async lazy(){return (await import('./lazy.mjs')).Tool;}, async after(){return (await import('./after.mjs')).Tool;}};`);
+  await file(root,"plugins/a.mts",`import { Tool, tool as toolHooks } from '@tessar/core';
+   const id: string = 'a'; export default {id, sdkClass:Tool, event:toolHooks.before, setup(){}, async lazy(){return (await import('./lazy.mjs')).Tool;}, async after(){return (await import('./after.mjs')).Tool;}};`);
   await file(root,"plugins/lazy.mjs",`export {Tool} from '@tessar/core'; export default {id:'helper',setup(){}};`);
   await file(root,"plugins/folder/index.cjs",`const {Tool}=require('@tessar/core');module.exports={id:'folder',sdkClass:Tool,setup(){}};`);
   await file(root,"plugins/types.d.ts","export type Ignore = string;");

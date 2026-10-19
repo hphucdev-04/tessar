@@ -1,7 +1,8 @@
+import { session as sessionHooks } from "../../src/events/type.js";
 import {expect,it} from "vitest";
 import {PluginHost} from "../../src/plugins/host.js";
 import type {HookSpec} from "../../src/events/definition.js";
-import {SessionEvents} from "../../src/session-events.js";
+
 declare module "../../src/events/definition.js"{interface EventMap {"test.value":HookSpec<string,string>;"test.barrier":HookSpec<{}>;}}
 it("rolls back setup and retains captured resources until release",async()=>{
  const order:string[]=[];const host=new PluginHost();
@@ -22,5 +23,5 @@ it("disposes resources when shutdown races an asynchronous plugin setup",async()
  await start;const closing=host.dispose();release();await Promise.allSettled([installing,closing]);expect(closed).toBe(1);expect(host.registrations()).toHaveLength(0);
 });
 it("protects Session lifecycle barriers from notification overrides",async()=>{
- const host=new PluginHost();await expect(host.attach({id:"override",setup(tessar){tessar.hook(SessionEvents.BeforeClose,()=>{},{kind:"notification"});}})).rejects.toMatchObject({code:"RegistrationConflict"});await host.dispose();
+ const host=new PluginHost();await expect(host.attach({id:"override",setup(tessar){tessar.hook(sessionHooks.beforeClose,()=>{},{kind:"notification"});}})).rejects.toMatchObject({code:"RegistrationConflict"});await host.dispose();
 });

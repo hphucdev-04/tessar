@@ -5,7 +5,7 @@ export * from "./messages/message.js";
 export * from "./messages/codec.js";
 export * from "./instructions/instruction.js";
 export * from "./events/definition.js";
-export * from "./events/catalog.js";
+export * from "./events/type.js";
 export * from "./plugins/context.js";
 export * from "./plugins/host.js";
 export * from "./plugins/registry.js";
@@ -30,5 +30,8 @@ export * from "./agent.js";
 export * from "./controller.js";
 export * from "./thread.js";
 export * from "./models/registry.js";
+export { ProfileResolver } from "./models/resolver.js";
+export { snapshotModelOptions } from "./models/options.js";
 export * from "./session.js";
-export * from "./session-events.js";
+
+export * from "./state/sessions.js";

@@ -4,7 +4,7 @@ Optional Node host utilities for loading plugins after an application is package
 managing npm plugin packages, and structured logging. Requires Node 24.14 or newer.
 
 ```sh
-npm install @tessar/core@next @tessar/plugins@next
+npm install @tessar/core @tessar/plugins
 ```
 
 ```ts
@@ -32,5 +32,5 @@ missing dependencies. A consuming CLI chooses its own command name and directory
 Logger writes JSON lifecycle/error entries to stderr by default. Use
 `new LoggerPlugin({ write: entry => yourLogger.write(entry) })` for another sink.
 
-This is an alpha release. See the
+This is an early 0.x release. See the
 [repository](https://github.com/hphucdev-04/tessar) for usage and contracts.

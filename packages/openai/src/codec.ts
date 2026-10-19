@@ -7,6 +7,7 @@ import {
   type JsonValue,
   type ModelRef,
   type ModelRequest,
+  type ModelConnectionDescriptor,
 } from "@tessar/core";
 import type {
   ResponseInput,
@@ -17,7 +18,9 @@ interface Continuity {
   version: 1;
   providerId: string;
   modelId: string;
+  connectionId?: string;
   items: JsonValue[];
+  connection?: ModelConnectionDescriptor;
 }
 function continuity(value: unknown): Continuity | null {
   if (
@@ -32,14 +35,16 @@ function continuity(value: unknown): Continuity | null {
     fail("UnsupportedContext", "Unknown OpenAI continuity version");
   return data;
 }
-export function encodeInput(request: ModelRequest): ResponseInput {
+export function encodeInput(request: ModelRequest, connection?: ModelConnectionDescriptor): ResponseInput {
   const input: ResponseInput = [];
   for (const message of request.messages) {
     const state = continuity(message.providerState);
     if (state) {
       if (
         state.providerId !== request.model.providerId ||
-        state.modelId !== request.model.modelId
+        state.modelId !== request.model.modelId ||
+        state.connectionId !== request.model.connectionId ||
+        (state.connection !== undefined && (state.connection.endpoint !== connection?.endpoint || state.connection.protocol !== connection?.protocol))
       )
         fail(
           "UnsupportedContext",
@@ -54,16 +59,16 @@ export function encodeInput(request: ModelRequest): ResponseInput {
     )
       fail("UnsupportedContext", "Unsupported provider continuity");
     if (message.role === "tool") {
-      if (message.content.some((p) => p.type !== "text"))
+      if (message.content.some((p) => p.type !== "text" && p.type !== "data"))
         fail(
           "UnsupportedContext",
-          "OpenAI tool output currently requires text parts",
+          "OpenAI tool output currently requires text or JSON data parts",
         );
       input.push({
         type: "function_call_output",
         call_id: message.toolCallId!,
         output: message.content
-          .map((p) => (p.type === "text" ? p.text : ""))
+          .map((p) => p.type === "text" ? p.text : p.type === "data" ? JSON.stringify(p.data) : "")
           .join(""),
       });
       continue;
@@ -129,6 +134,7 @@ export function decodeOutput(
   items: readonly unknown[],
   ref: ModelRef,
   responseId: string,
+  connection?: ModelConnectionDescriptor,
 ): AssistantMessage {
   assertJson(items);
   const parts: ContentPart[] = [];
@@ -178,6 +184,7 @@ export function decodeOutput(
       codec: "openai.responses",
       version: 1,
       ...ref,
+      ...(connection ? { connection: { ...connection } } : {}),
       items: items as JsonValue[],
     },
   });

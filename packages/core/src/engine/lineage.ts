@@ -8,7 +8,7 @@ import {
   childStateDefinition,
   type ChildReservation,
 } from "./tracked-effects.js";
-import type { ExecutionOrigin } from "../agent.js";
+import type { ExecutionOrigin } from "./frame.js";
 export function reservations(
   states: readonly PluginStateSnapshot[],
   streamId: string,

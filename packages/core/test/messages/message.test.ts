@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { AssistantMessage, HumanMessage, SystemMessage, ToolMessage } from "../../src/messages/message.js";
 import { MessageCodec } from "../../src/messages/codec.js";
 describe("message primitives", () => {
+  it("allows unbound tool results but requires correlation for serialization", () => {
+    const message = new ToolMessage("found", { metadata: { source: "cache" } });
+    expect(message).toMatchObject({ role: "tool", content: [{ type: "text", text: "found" }] });
+    expect(() => MessageCodec.encode(message)).toThrow();
+    expect(() => MessageCodec.decode({ schemaVersion: 1, id: "missing-call", role: "tool", content: [] })).toThrow();
+    const bound = new ToolMessage("found", { toolCallId: "c1", metadata: message.metadata, id: message.id });
+    expect(MessageCodec.decode(MessageCodec.encode(bound))).toMatchObject({ id: message.id, toolCallId: "c1", metadata: { source: "cache" } });
+  });
   it("round trips ordered reasoning, tool calls and opaque provider state", () => {
     const message = new AssistantMessage([
       { type: "reasoning", text: "consider", providerState: { signature: "sig" } },
@@ -28,13 +36,13 @@ describe("message primitives", () => {
     expect(() => { (message.content as unknown as unknown[]).push({}); }).toThrow();
   });
   it("preserves tool correlation and rejects invalid wire input", () => {
-    const message = new ToolMessage({ toolCallId: "c1", content: "found" });
+    const message = new ToolMessage("found" , { toolCallId: "c1" });
     expect(MessageCodec.decode(MessageCodec.encode(message))).toMatchObject({ role: "tool", toolCallId: "c1" });
     for (const bad of [NaN, undefined, () => 1, 1n, new Date()]) {
       expect(() => new HumanMessage("x", { metadata: { bad } as never })).toThrow();
     }
     expect(() => MessageCodec.decode({ schemaVersion: 1, id: "x", role: "alien", content: [] })).toThrow();
-    expect(() => new ToolMessage({ toolCallId: "", content: "x" })).toThrow();
+    expect(() => new ToolMessage("x" , { toolCallId: "" })).toThrow();
     expect(() => MessageCodec.decode({ ...MessageCodec.encode(message), schemaVersion: 99 })).toThrow();
     expect(() => MessageCodec.decode({ schemaVersion: 1, role: "user", content: [] })).toThrow();
   });

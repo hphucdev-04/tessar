@@ -13,10 +13,24 @@ import type { ModelProviderRegistration } from "../models/contract.js";
 import type { StorageBackend } from "../state/storage-ports.js";
 import type { PluginStateDefinition } from "../state/plugin-state.js";
 import type { JsonValue } from "../json.js";
+import type { Session } from "../session.js";
+import type { Thread } from "../thread.js";
 export type Disposer = () => void | Promise<void>;
+/** Controls that do not wait for completion of the active execution. */
+export type SessionHookHandle = Pick<Session, "id" | "scope" | "model" | "thread" | "setModel" | "followUp">;
+export type ThreadHookHandle = Pick<Thread, "id" | "scope" | "snapshot" | "getHistory" | "getCheckpoint" | "listCheckpoints">;
 export interface HookContext {
+  readonly sessionId?: string;
   readonly signal?: AbortSignal;
+  readonly session?: SessionHookHandle;
+  readonly thread?: ThreadHookHandle;
   readonly [key: string]: unknown;
+}
+export interface SessionHookContext extends HookContext {
+  readonly session: SessionHookHandle;
+}
+export interface ThreadHookContext extends HookContext {
+  readonly thread: ThreadHookHandle;
 }
 export type EventHandler<D extends AnyEvent> = (
   event: EventEnvelope<PayloadOf<D>, D>,

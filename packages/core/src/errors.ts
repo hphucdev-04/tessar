@@ -20,11 +20,17 @@ const origins = new WeakMap<object, ErrorOrigin>();
 const causes = new WeakMap<ErrorInfo, unknown>();
 
 export class TessarError extends Error {
-  constructor(readonly code: string, message: string, readonly details?: Record<string, unknown>) {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "TessarError";
   }
-  toJSON(): ErrorInfo { return errorInfo(this); }
+  toJSON(): ErrorInfo {
+    return errorInfo(this);
+  }
 }
 export function fail(code: string, message: string): never {
   throw new TessarError(code, message);
@@ -35,20 +41,34 @@ export function requireId(id: string, name = "id"): string {
   return id;
 }
 export function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo {
-  const object = error !== null && (typeof error === "object" || typeof error === "function") ? error : undefined;
+  const object =
+    error !== null && (typeof error === "object" || typeof error === "function")
+      ? error
+      : undefined;
   const previous = object && origins.get(object);
   if (object && origin && !previous) origins.set(object, origin);
   const value = object as Record<string, unknown> | undefined;
-  const details = error instanceof TessarError ? error.details : Object.fromEntries(
-    ["status", "requestID", "request_id", "type", "param"].flatMap(key => {
-      const field = value?.[key];
-      return typeof field === "string" || typeof field === "boolean" ||
-        (typeof field === "number" && Number.isFinite(field)) ? [[key, field]] : [];
-    }),
-  );
-  const name = error instanceof Error
-    ? error.name === "Error" ? error.constructor.name : error.name
-    : "Error";
+  const details =
+    error instanceof TessarError
+      ? error.details
+      : Object.fromEntries(
+          ["status", "requestID", "request_id", "type", "param"].flatMap(
+            (key) => {
+              const field = value?.[key];
+              return typeof field === "string" ||
+                typeof field === "boolean" ||
+                (typeof field === "number" && Number.isFinite(field))
+                ? [[key, field]]
+                : [];
+            },
+          ),
+        );
+  const name =
+    error instanceof Error
+      ? error.name === "Error"
+        ? error.constructor.name
+        : error.name
+      : "Error";
   const info: ErrorInfo = {
     ...(previous ?? origin ?? { source: "tessar" as const }),
     name,
@@ -63,9 +83,14 @@ export function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo {
 /** Retain the original exception in-process; persisted errors retain their source. */
 export function errorFromInfo(info: ErrorInfo): unknown {
   if (causes.has(info)) return causes.get(info);
-  const error = info.source === "tessar"
-    ? new TessarError(info.code, info.message, info.details)
-    : Object.assign(new Error(info.message), { name: info.name, code: info.code, ...info.details });
+  const error =
+    info.source === "tessar"
+      ? new TessarError(info.code, info.message, info.details)
+      : Object.assign(new Error(info.message), {
+          name: info.name,
+          code: info.code,
+          ...info.details,
+        });
   origins.set(error, info);
   return error;
 }

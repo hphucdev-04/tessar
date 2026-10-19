@@ -7,7 +7,7 @@ export type RecoveryPlan =
   | { kind: "continue" }
   | { kind: "pending-interrupt" }
   | { kind: "model"; attempt: ModelAttemptRecord }
-  | { kind: "tool"; tool: ToolExecutionRecord }
+  | { kind: "tools" }
   | { kind: "incompatible" };
 export class RecoveryService {
   plan(
@@ -25,10 +25,12 @@ export class RecoveryService {
       return attempt ? { kind: "model", attempt } : { kind: "incompatible" };
     }
     if (position.phase === "ToolPending") {
-      const tool = tools.find(
-        (t) => t.id === position.pendingToolExecutionIds[0],
-      );
-      return tool ? { kind: "tool", tool } : { kind: "incompatible" };
+      return position.pendingToolExecutionIds.length &&
+        position.pendingToolExecutionIds.every((id) =>
+          tools.some((tool) => tool.id === id),
+        )
+        ? { kind: "tools" }
+        : { kind: "incompatible" };
     }
     return { kind: "continue" };
   }
