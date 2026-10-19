@@ -527,7 +527,7 @@ class OpenAIPlugin implements Plugin {
   constructor(private readonly options: OpenAIProviderOptions) {}
 
   setup(api: PluginContext) {
-    api.models.registerProvider(new OpenAIProvider(this.options));
+    api.models.register(new OpenAIProvider(this.options));
   }
 }
 ```

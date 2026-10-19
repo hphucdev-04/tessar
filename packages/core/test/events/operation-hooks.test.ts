@@ -177,7 +177,7 @@ it.each(["fork", "rename", "delete"] as const)("does not emit thread %s success 
   backend.commits.publish = async (...args) => { if (failWrite) throw Error("storage failed"); return publish(...args); };
   const seen: string[] = [];
   const { controller } = await fixture([], [{ id: "storage", setup(tessar) {
-    tessar.storage.registerBackend(backend);
+    tessar.storage.register(backend);
     tessar.hook(hooks.thread.forked, event => { seen.push(event.type); });
     tessar.hook(hooks.thread.renamed, event => { seen.push(event.type); });
     tessar.hook(hooks.thread.deleted, event => { seen.push(event.type); });

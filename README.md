@@ -72,6 +72,15 @@ by the identity tracker; garbage collection is not an immediate release guarante
 
 ## Plugins
 
+Inside `setup(tessar)`, register capabilities with `agent.register()`,
+`tools.register()`, `models.register()`, `storage.register()`,
+`effects.register()` and `interruptions.register()`. State definitions use
+`state.define()`; event handlers use `hook()`.
+
+Migration: rename `tessar.models.registerProvider()` to `tessar.models.register()`
+and `tessar.storage.registerBackend()` to `tessar.storage.register()`.
+The old plugin method names are no longer available.
+
 Import tool APIs directly when defining tools:
 
 ```ts
