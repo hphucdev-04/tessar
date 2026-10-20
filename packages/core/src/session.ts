@@ -1,5 +1,8 @@
 import { notifyObserver } from "./events/observer.js";
-import { session as sessionHooks, stream as streamHooks } from "./events/type.js";
+import {
+  session as sessionHooks,
+  stream as streamHooks,
+} from "./events/type.js";
 import type { Controller } from "./controller.js";
 import { Thread, type ThreadStreamOptions } from "./thread.js";
 
@@ -9,9 +12,17 @@ import {
   type PayloadOf,
   type StreamEvent,
 } from "./events/definition.js";
-import { type ExecutionReceipt, type QueuedInputReceipt } from "./events/type.js";
+import {
+  type ExecutionReceipt,
+  type QueuedInputReceipt,
+} from "./events/type.js";
 import { errorInfo, errorFromInfo, fail, type ErrorInfo } from "./errors.js";
-import { immutable, randomIds, type JsonValue, type JsonObject } from "./json.js";
+import {
+  immutable,
+  randomIds,
+  type JsonValue,
+  type JsonObject,
+} from "./json.js";
 import { inputMessages } from "./agent.js";
 import type { Model } from "./models/profile.js";
 import type { ModelRef } from "./models/contract.js";
@@ -54,7 +65,9 @@ export class Session {
   readonly agent;
   readonly scope: Scope;
   readonly id: string;
-  get metadata(): JsonObject { return this.record.metadata; }
+  get metadata(): JsonObject {
+    return this.record.metadata;
+  }
   private selection: Thread | null = null;
   private selectedModel: Model;
   private readonly observers = new Set<Observer>();
@@ -69,10 +82,15 @@ export class Session {
 
   private async control<T>(action: () => Promise<T>): Promise<T> {
     this.check();
-    if (this.controlPending) fail("SessionBusy", "Session control operation is pending");
+    if (this.controlPending)
+      fail("SessionBusy", "Session control operation is pending");
     this.controlPending = true;
-    try { await this.assertCurrent(); return await action(); }
-    finally { this.controlPending = false; }
+    try {
+      await this.assertCurrent();
+      return await action();
+    } finally {
+      this.controlPending = false;
+    }
   }
 
   constructor(
@@ -89,18 +107,36 @@ export class Session {
     this.selectedModel = model;
   }
   /** @internal Called only after durable creation, never on restoration. */
-  created(): void { this.notify(sessionHooks.created, { model: this.model.ref }); }
-  private async persist(patch: Partial<Pick<SessionRecord, "selectedThreadId" | "selectedModel">>): Promise<void> {
+  created(): void {
+    this.notify(sessionHooks.created, { model: this.model.ref });
+  }
+  private async persist(
+    patch: Partial<Pick<SessionRecord, "selectedThreadId" | "selectedModel">>,
+  ): Promise<void> {
     const previous = this.record;
-    const next = immutable({ ...previous, ...patch, revision: previous.revision + 1, updatedAt: this.agent.clock.now() });
-    await this.controller.backend.sessions.compareAndSet(next, previous.revision);
+    const next = immutable({
+      ...previous,
+      ...patch,
+      revision: previous.revision + 1,
+      updatedAt: this.agent.clock.now(),
+    });
+    await this.controller.backend.sessions.compareAndSet(
+      next,
+      previous.revision,
+    );
     this.record = next;
   }
   private async assertCurrent(): Promise<void> {
     const expected = this.record;
-    const stored = await this.controller.backend.sessions.get(this.id, { scope: this.scope });
+    const stored = await this.controller.backend.sessions.get(this.id, {
+      scope: this.scope,
+    });
     this.check();
-    if (!stored || stored.revision !== expected.revision || this.record !== expected)
+    if (
+      !stored ||
+      stored.revision !== expected.revision ||
+      this.record !== expected
+    )
       fail("CommitConflict", "Session changed; restore a current handle");
   }
   get model(): Model {
@@ -132,9 +168,14 @@ export class Session {
   }
   setModel(model: Model | ModelRef): Promise<void> {
     return this.control(async () => {
-      const previous = this.model.ref, selected = this.controller.sessionModel(model), next = selected.model;
-      await this.controller.hooks.authorize(sessionHooks.model.beforeChange,
-        immutable({ previous, model: next.ref }), this.context());
+      const previous = this.model.ref,
+        selected = this.controller.sessionModel(model),
+        next = selected.model;
+      await this.controller.hooks.authorize(
+        sessionHooks.model.beforeChange,
+        immutable({ previous, model: next.ref }),
+        this.context(),
+      );
       this.check();
       await this.persist({ selectedModel: selected.stored });
       this.selectedModel = next;
@@ -186,38 +227,43 @@ export class Session {
       .catch((error) => this.controller.report(errorInfo(error)));
   }
   readonly thread = {
-    create: (options: SessionThreadOptions = {}): Promise<Thread> => this.control(async () => {
-      this.checkSelectionChange();
-      const thread = await this.controller.createThread({
-        ...options,
-        scope: this.scope,
-      });
-      this.checkSelectionChange();
-      await this.persist({ selectedThreadId: thread.id });
-      this.selection = thread;
-      this.notify(sessionHooks.threadCreated, { threadId: thread.id });
-      return thread;
-    }),
-    switch: (id: string): Promise<Thread> => this.control(async () => {
-      this.checkSelectionChange();
-      const thread = await this.target(id);
-      this.checkSelectionChange();
-      const previousThreadId = this.selection?.id ?? null;
-      await this.controller.hooks.authorize(sessionHooks.thread.beforeSwitch,
-        immutable({ previousThreadId, threadId: id }), this.context());
-      this.checkSelectionChange();
-      const snapshot = await thread.snapshot();
-      this.checkSelectionChange();
-      await this.persist({ selectedThreadId: thread.id });
-      this.selection = thread;
-      if (snapshot.activeStreamId) this.blocked.add(id);
-      else this.blocked.delete(id);
-      this.notify(sessionHooks.threadSwitched, {
-        previousThreadId,
-        threadId: id,
-      });
-      return thread;
-    }),
+    create: (options: SessionThreadOptions = {}): Promise<Thread> =>
+      this.control(async () => {
+        this.checkSelectionChange();
+        const thread = await this.controller.createThread({
+          ...options,
+          scope: this.scope,
+        });
+        this.checkSelectionChange();
+        await this.persist({ selectedThreadId: thread.id });
+        this.selection = thread;
+        this.notify(sessionHooks.threadCreated, { threadId: thread.id });
+        return thread;
+      }),
+    switch: (id: string): Promise<Thread> =>
+      this.control(async () => {
+        this.checkSelectionChange();
+        const thread = await this.target(id);
+        this.checkSelectionChange();
+        const previousThreadId = this.selection?.id ?? null;
+        await this.controller.hooks.authorize(
+          sessionHooks.thread.beforeSwitch,
+          immutable({ previousThreadId, threadId: id }),
+          this.context(),
+        );
+        this.checkSelectionChange();
+        const snapshot = await thread.snapshot();
+        this.checkSelectionChange();
+        await this.persist({ selectedThreadId: thread.id });
+        this.selection = thread;
+        if (snapshot.activeStreamId) this.blocked.add(id);
+        else this.blocked.delete(id);
+        this.notify(sessionHooks.threadSwitched, {
+          previousThreadId,
+          threadId: id,
+        });
+        return thread;
+      }),
     get: (id: string): Promise<Thread | null> => {
       this.check();
       return this.controller.getThread(id, { scope: this.scope });
@@ -227,41 +273,55 @@ export class Session {
       this.check();
       return this.controller.listThreads({ ...options, scope: this.scope });
     },
-    rename: (title: string, target: ThreadTarget = {}): Promise<void> => this.control(async () => {
-      this.check();
-      const id = this.selected(target.threadId);
-      await this.controller.renameThread(id, title, { scope: this.scope });
-      this.notify(sessionHooks.threadRenamed, { threadId: id, title });
-    }),
-    fork: (options: ForkOptions & ThreadTarget = {}): Promise<Thread> => this.control(async () => {
-      this.check();
-      const sourceThreadId = this.selected(options.threadId),
-        thread = await this.controller.forkThread(sourceThreadId, {
-          ...options,
+    rename: (title: string, target: ThreadTarget = {}): Promise<void> =>
+      this.control(async () => {
+        this.check();
+        const id = this.selected(target.threadId);
+        await this.controller.renameThread(id, title, { scope: this.scope });
+        this.notify(sessionHooks.threadRenamed, { threadId: id, title });
+      }),
+    fork: (options: ForkOptions & ThreadTarget = {}): Promise<Thread> =>
+      this.control(async () => {
+        this.check();
+        const sourceThreadId = this.selected(options.threadId),
+          thread = await this.controller.forkThread(sourceThreadId, {
+            ...options,
+            scope: this.scope,
+          });
+        this.notify(sessionHooks.threadForked, {
+          sourceThreadId,
+          threadId: thread.id,
+        });
+        return thread;
+      }),
+    delete: (target: ThreadTarget = {}): Promise<void> =>
+      this.control(async () => {
+        this.check();
+        const id = this.selected(target.threadId);
+        await this.controller.deleteThread(id, { scope: this.scope });
+        const stored = await this.controller.backend.sessions.get(this.id, {
           scope: this.scope,
         });
-      this.notify(sessionHooks.threadForked, {
-        sourceThreadId,
-        threadId: thread.id,
-      });
-      return thread;
-    }),
-    delete: (target: ThreadTarget = {}): Promise<void> => this.control(async () => {
-      this.check();
-      const id = this.selected(target.threadId);
-      await this.controller.deleteThread(id, { scope: this.scope });
-      const stored = await this.controller.backend.sessions.get(this.id, { scope: this.scope });
-      const expected = { ...this.record,
-        selectedThreadId: this.record.selectedThreadId === id ? null : this.record.selectedThreadId,
-        revision: this.record.revision + (this.record.selectedThreadId === id ? 1 : 0),
-        updatedAt: stored?.updatedAt,
-      };
-      if (!stored || canonicalJson(stored) !== canonicalJson(expected))
-        fail("CommitConflict", "Session changed during thread deletion; restore a current handle");
-      this.record = stored;
-      if (this.selection?.id === id) this.selection = null;
-      this.notify(sessionHooks.threadDeleted, { threadId: id });
-    }),
+        const expected = {
+          ...this.record,
+          selectedThreadId:
+            this.record.selectedThreadId === id
+              ? null
+              : this.record.selectedThreadId,
+          revision:
+            this.record.revision +
+            (this.record.selectedThreadId === id ? 1 : 0),
+          updatedAt: stored?.updatedAt,
+        };
+        if (!stored || canonicalJson(stored) !== canonicalJson(expected))
+          fail(
+            "CommitConflict",
+            "Session changed during thread deletion; restore a current handle",
+          );
+        this.record = stored;
+        if (this.selection?.id === id) this.selection = null;
+        this.notify(sessionHooks.threadDeleted, { threadId: id });
+      }),
     getHistory: async (options: HistoryOptions & ThreadTarget = {}) => {
       this.check();
       return (await this.target(options.threadId)).getHistory(options);
@@ -309,7 +369,11 @@ export class Session {
     const entry = this.queue.shift()!;
     void this.attach(
       entry.thread,
-      { input: entry.messages, model: entry.model, modelOptions: entry.modelOptions },
+      {
+        input: entry.messages,
+        model: entry.model,
+        modelOptions: entry.modelOptions,
+      },
       true,
     ).catch(() => {});
   }
@@ -355,26 +419,30 @@ export class Session {
         queueMicrotask(() => this.pump());
       };
       try {
-        foreground.stream = thread.admit(options, {
-          kind: "observer",
-          admitted: (receipt) => {
-            foreground.admitted = true;
-            foreground.streamId = receipt.streamId;
-            this.blocked.delete(thread.id);
-            resolve(receipt);
+        foreground.stream = thread.admit(
+          options,
+          {
+            kind: "observer",
+            admitted: (receipt) => {
+              foreground.admitted = true;
+              foreground.streamId = receipt.streamId;
+              this.blocked.delete(thread.id);
+              resolve(receipt);
+            },
+            rejected,
+            observe: (event) => {
+              if (event.is(streamHooks.end))
+                foreground.status = event.payload.status;
+              if (event.is(streamHooks.suspended))
+                foreground.status = "suspended";
+              if (event.is(streamHooks.error))
+                foreground.status = event.payload.persistedStatus ?? "failed";
+              this.emit(event);
+            },
+            closed,
           },
-          rejected,
-          observe: (event) => {
-            if (event.is(streamHooks.end))
-              foreground.status = event.payload.status;
-            if (event.is(streamHooks.suspended))
-              foreground.status = "suspended";
-            if (event.is(streamHooks.error))
-              foreground.status = event.payload.persistedStatus ?? "failed";
-            this.emit(event);
-          },
-          closed,
-        }, this);
+          this,
+        );
       } catch (error) {
         foreground.status = "failed";
         rejected(errorInfo(error));
@@ -426,10 +494,16 @@ export class Session {
       snapshot = await thread.snapshot();
     if (!snapshot.activeStreamId) return;
     await foreground?.done;
-    await this.agent.cancel(thread.id, snapshot.activeStreamId, reason, {
-      kind: "observer",
-      observe: (event) => this.emit(event),
-    }, { session: this, thread });
+    await this.agent.cancel(
+      thread.id,
+      snapshot.activeStreamId,
+      reason,
+      {
+        kind: "observer",
+        observe: (event) => this.emit(event),
+      },
+      { session: this, thread },
+    );
     this.blocked.delete(thread.id);
     this.foreground = undefined;
     this.discard("cancelled");
@@ -437,7 +511,8 @@ export class Session {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     if (this.disposal) return this.disposal;
-    if (this.controlPending) fail("SessionBusy", "Session control operation is pending");
+    if (this.controlPending)
+      fail("SessionBusy", "Session control operation is pending");
     this.checkSelectionChange();
     this.closing = true;
     this.disposal = (async () => {

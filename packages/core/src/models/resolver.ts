@@ -90,7 +90,10 @@ const PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class ProfileResolver {
   catalog: CatalogSnapshot;
-  readonly cache = new Map<string, { profile: ModelProfile; fetchedAt: number }>();
+  readonly cache = new Map<
+    string,
+    { profile: ModelProfile; fetchedAt: number }
+  >();
   private readonly pending = new Map<string, Promise<ModelProfile>>();
   constructor(
     private readonly options: { catalog?: CatalogSnapshot; clock?: Clock } = {},

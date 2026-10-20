@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StorageBackend, CommitBatch } from "../state/storage-ports.js";
 import { CommitCoordinator } from "../state/commit.js";
+import { ThreadService } from "../state/threads.js";
 export function initialBatch(threadId = "t1"): CommitBatch {
   return {
     commitId: "commit-" + threadId,
@@ -31,18 +32,128 @@ export function storageConformance(
   factory: () => Promise<StorageBackend>,
 ): void {
   describe(name, () => {
+    it("rejects checkpoint identity reuse and leaves the other thread unpublished", async () => {
+      const backend = await factory();
+      try {
+        const original = initialBatch();
+        const lease = await backend.ownership.acquire({
+          threadId: original.threadId,
+          ownerToken: "owner",
+          ttlMs: 60000,
+        });
+        await new CommitCoordinator(backend).commit(original, lease);
+        const conflicting = initialBatch("other");
+        conflicting.checkpoint.id = original.checkpoint.id;
+        const other = await backend.ownership.acquire({
+          threadId: conflicting.threadId,
+          ownerToken: "other",
+          ttlMs: 60000,
+        });
+        await expect(
+          new CommitCoordinator(backend).commit(conflicting, other),
+        ).rejects.toMatchObject({ code: "CommitConflict" });
+        expect(await backend.threads.get(conflicting.threadId)).toBeNull();
+        expect(await backend.checkpoints.get(original.checkpoint.id)).toEqual(
+          original.checkpoint,
+        );
+      } finally {
+        await backend.close();
+      }
+    });
+    it("rejects an idempotent commit receipt requested with different membership", async () => {
+      const backend = await factory();
+      try {
+        const batch = initialBatch();
+        const lease = await backend.ownership.acquire({
+          threadId: batch.threadId,
+          ownerToken: "owner",
+          ttlMs: 60000,
+        });
+        await new CommitCoordinator(backend).commit(batch, lease);
+        for (const patch of [{ threadId: "other" }, { expectedRevision: 9 }])
+          await expect(
+            backend.commits.publish({
+              commitId: batch.commitId,
+              threadId: batch.threadId,
+              expectedRevision: 0,
+              lease,
+              ...patch,
+            }),
+          ).rejects.toMatchObject({ code: "CommitConflict" });
+      } finally {
+        await backend.close();
+      }
+    });
+    it("preserves fencing counters through purge and cannot revive an old same-owner lease", async () => {
+      const backend = await factory();
+      try {
+        const batch = initialBatch(),
+          ownerToken = "same-owner";
+        const old = await backend.ownership.acquire({
+          threadId: batch.threadId,
+          ownerToken,
+          ttlMs: 60000,
+        });
+        await new CommitCoordinator(backend).commit(batch, old);
+        await backend.ownership.release(old);
+        await new ThreadService(backend).delete(batch.threadId);
+        const beforePurge = await backend.ownership.acquire({
+          threadId: batch.threadId,
+          ownerToken,
+          ttlMs: 60000,
+        });
+        await backend.ownership.release(beforePurge);
+        await backend.threads.purge(batch.threadId);
+        const current = await backend.ownership.acquire({
+          threadId: batch.threadId,
+          ownerToken,
+          ttlMs: 60000,
+        });
+        expect(current.fencingToken).toBeGreaterThan(beforePurge.fencingToken);
+        await expect(backend.ownership.renew(old, 60000)).rejects.toMatchObject(
+          { code: "OwnershipLost" },
+        );
+        await backend.ownership.release(old);
+        await expect(
+          backend.ownership.renew(current, 60000),
+        ).resolves.toMatchObject({ fencingToken: current.fencingToken });
+      } finally {
+        await backend.close();
+      }
+    });
     it("rejects publication using another thread's valid lease", async () => {
       const backend = await factory();
       try {
-        const a = await backend.ownership.acquire({ threadId: "a", ownerToken: "a", ttlMs: 60000 });
-        const b = await backend.ownership.acquire({ threadId: "b", ownerToken: "b", ttlMs: 60000 });
+        const a = await backend.ownership.acquire({
+          threadId: "a",
+          ownerToken: "a",
+          ttlMs: 60000,
+        });
+        const b = await backend.ownership.acquire({
+          threadId: "b",
+          ownerToken: "b",
+          ttlMs: 60000,
+        });
         const batch = initialBatch("b");
         await backend.commits.stage(batch);
-        await expect(backend.commits.publish({ commitId: batch.commitId, threadId: "b", expectedRevision: 0, lease: a })).rejects.toMatchObject({ code: "OwnershipLost" });
+        await expect(
+          backend.commits.publish({
+            commitId: batch.commitId,
+            threadId: "b",
+            expectedRevision: 0,
+            lease: a,
+          }),
+        ).rejects.toMatchObject({ code: "OwnershipLost" });
         expect(await backend.threads.get("b")).toBeNull();
-        await expect(new CommitCoordinator(backend).commit(batch, a)).rejects.toMatchObject({ code: "OwnershipLost" });
-        expect((await new CommitCoordinator(backend).commit(batch, b)).threadId).toBe("b");
-      } finally { await backend.close(); }
+        await expect(
+          new CommitCoordinator(backend).commit(batch, a),
+        ).rejects.toMatchObject({ code: "OwnershipLost" });
+        expect(
+          (await new CommitCoordinator(backend).commit(batch, b)).threadId,
+        ).toBe("b");
+      } finally {
+        await backend.close();
+      }
     });
     it("keeps staging hidden and publishes one immutable revision idempotently", async () => {
       const backend = await factory();

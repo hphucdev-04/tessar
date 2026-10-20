@@ -8,7 +8,18 @@ it("infers the public plugin type map and discriminated event union",()=>{
    const name:string=event.payload.tool.name;
    if(name==="write")return {decision:"deny",reason:"blocked"};
   });
-  tessar.hook("example.progress",event=>{const count:number=event.payload.count;void count;});
+  tessar.hook("example.progress",(event,context)=>{
+   const count:number=event.payload.count;void count;
+   const memory=context.registry.get<{search(query:string):string}>("memory","project");
+   const memories:readonly {search(query:string):string}[]=context.registry.list("memory");
+   void memory;void memories;
+   if(false){
+    // @ts-expect-error Hook registry only exposes reads
+    context.registry.register("memory","other",{});
+    // @ts-expect-error Capability lists are readonly
+    memories.push({search:()=>""});
+   }
+  });
  }};
  const inspect=(event:StreamEvent)=>{if(event.type===messageHooks.delta){const kind:"text"|"reasoning"=event.payload.partKind;return kind;}return null;};
  void inspect;expect(plugin.id).toBe("typed-public");

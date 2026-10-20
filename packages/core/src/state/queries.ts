@@ -4,7 +4,10 @@ import { MessageCodec } from "../messages/codec.js";
 import type { Message } from "../messages/message.js";
 import type { StorageBackend } from "./storage-ports.js";
 import type {
-  Checkpoint, HistoryOptions, CheckpointInfo, RecordQuery,
+  Checkpoint,
+  HistoryOptions,
+  CheckpointInfo,
+  RecordQuery,
   Page,
   PageOptions,
   StateQuery,
@@ -14,7 +17,10 @@ import type {
 } from "./schema.js";
 import { matchesScope } from "./scope.js";
 export type { HistoryOptions, CheckpointInfo } from "./schema.js";
-export interface HistoryPage extends Page<Message> { checkpointId: string; revision: number; }
+export interface HistoryPage extends Page<Message> {
+  checkpointId: string;
+  revision: number;
+}
 export function checkpointSafety(cp: Checkpoint): {
   forkable: boolean;
   unsafeReason: string | null;
@@ -45,34 +51,93 @@ export function decodeCursor(value: string): any {
   }
 }
 export function compareOrdinal(a: string, b: string): number {
-  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
-  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i]! - y[i]!;
+  const x = new TextEncoder().encode(a),
+    y = new TextEncoder().encode(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++)
+    if (x[i] !== y[i]) return x[i]! - y[i]!;
   return x.length - y.length;
 }
-export function pageAfter(options: PageOptions, binding: string): [string, string] | null {
+export function pageAfter(
+  options: PageOptions,
+  binding: string,
+): [string, string] | null {
   if (!options.cursor) return null;
   const cursor = decodeCursor(options.cursor);
-  if (!cursor || cursor.v !== 2 || cursor.binding !== binding || !Array.isArray(cursor.after) || cursor.after.length !== 2 || cursor.after.some((v: unknown) => typeof v !== "string"))
+  if (
+    !cursor ||
+    cursor.v !== 2 ||
+    cursor.binding !== binding ||
+    !Array.isArray(cursor.after) ||
+    cursor.after.length !== 2 ||
+    cursor.after.some((v: unknown) => typeof v !== "string")
+  )
     fail("InvalidCursor", "Cursor belongs to another query");
   return cursor.after;
 }
-export function pageRows<T extends { id: string }>(rows: readonly T[], options: PageOptions = {}, binding = ""): Page<T> {
-  const key = (row: T): [string, string] => [(row as T & { createdAt?: string; startedAt?: string }).createdAt ?? (row as T & { startedAt?: string }).startedAt ?? "", row.id];
-  const compare = (a: [string,string], b: [string,string]) => compareOrdinal(a[0], b[0]) || compareOrdinal(a[1], b[1]);
-  const limit = limitOf(options.limit), after = pageAfter(options, binding);
-  const sorted = rows.filter(row => !after || compare(key(row), after) > 0).sort((a,b) => compare(key(a), key(b)));
+export function pageRows<T extends { id: string }>(
+  rows: readonly T[],
+  options: PageOptions = {},
+  binding = "",
+): Page<T> {
+  const key = (row: T): [string, string] => [
+    (row as T & { createdAt?: string; startedAt?: string }).createdAt ??
+      (row as T & { startedAt?: string }).startedAt ??
+      "",
+    row.id,
+  ];
+  const compare = (a: [string, string], b: [string, string]) =>
+    compareOrdinal(a[0], b[0]) || compareOrdinal(a[1], b[1]);
+  const limit = limitOf(options.limit),
+    after = pageAfter(options, binding);
+  const sorted = rows
+    .filter((row) => !after || compare(key(row), after) > 0)
+    .sort((a, b) => compare(key(a), key(b)));
   const items = sorted.slice(0, limit);
-  return { items, nextCursor: sorted.length > limit ? encodeCursor({ v: 2, binding, after: key(items.at(-1)!) }) : null };
+  return {
+    items,
+    nextCursor:
+      sorted.length > limit
+        ? encodeCursor({ v: 2, binding, after: key(items.at(-1)!) })
+        : null,
+  };
 }
-export function recordBinding(kind: RecordKind, threadId: string, query: RecordQuery): string {
-  return canonicalJson({ kind, threadId, streamId: query.streamId ?? null, turnId: query.turnId ?? null, status: query.status ?? null, checkpointId: query.atCheckpointId ?? null });
+export function recordBinding(
+  kind: RecordKind,
+  threadId: string,
+  query: RecordQuery,
+): string {
+  return canonicalJson({
+    kind,
+    threadId,
+    streamId: query.streamId ?? null,
+    turnId: query.turnId ?? null,
+    status: query.status ?? null,
+    checkpointId: query.atCheckpointId ?? null,
+  });
 }
-export function historyCursor(id: string, options: HistoryOptions, query: StateQuery) {
+export function historyCursor(
+  id: string,
+  options: HistoryOptions,
+  query: StateQuery,
+) {
   const binding = canonicalJson({ threadId: id, scope: query.scope ?? {} });
   const cursor = options.cursor ? decodeCursor(options.cursor) : null;
-  if (options.cursor && (!cursor || cursor.v !== 1 || cursor.binding !== binding || typeof cursor.checkpointId !== "string" || !Number.isInteger(cursor.end) || cursor.end < 0 || (options.atCheckpointId && options.atCheckpointId !== cursor.checkpointId)))
+  if (
+    options.cursor &&
+    (!cursor ||
+      cursor.v !== 1 ||
+      cursor.binding !== binding ||
+      typeof cursor.checkpointId !== "string" ||
+      !Number.isInteger(cursor.end) ||
+      cursor.end < 0 ||
+      (options.atCheckpointId &&
+        options.atCheckpointId !== cursor.checkpointId))
+  )
     fail("InvalidCursor", "History cursor mismatch");
-  return { binding, cursor: cursor as { checkpointId: string; end: number } | null };
+  return {
+    binding,
+    cursor: cursor as { checkpointId: string; end: number } | null,
+  };
 }
 export class StateQueries {
   constructor(readonly backend: StorageBackend) {}
@@ -105,7 +170,12 @@ export class StateQueries {
   ): Promise<HistoryPage> {
     await this.requireThread(id, query);
     const page = await this.backend.checkpoints.history(id, options, query);
-    return { ...page, items: Object.freeze(page.items.map(message => MessageCodec.decode(message))) };
+    return {
+      ...page,
+      items: Object.freeze(
+        page.items.map((message) => MessageCodec.decode(message)),
+      ),
+    };
   }
 
   async getCheckpoint(
@@ -158,7 +228,10 @@ export class StateQueries {
     query: StateQuery = {},
   ) {
     await this.requireThread(threadId, query);
-    return this.backend.executions.page("turns", threadId, { ...options, streamId });
+    return this.backend.executions.page("turns", threadId, {
+      ...options,
+      streamId,
+    });
   }
   async listModelAttempts(
     threadId: string,
@@ -167,7 +240,10 @@ export class StateQueries {
     query: StateQuery = {},
   ) {
     await this.requireThread(threadId, query);
-    return this.backend.executions.page("model_attempts", threadId, { ...options, turnId });
+    return this.backend.executions.page("model_attempts", threadId, {
+      ...options,
+      turnId,
+    });
   }
   async listToolExecutions(
     threadId: string,
@@ -176,7 +252,10 @@ export class StateQueries {
     query: StateQuery = {},
   ) {
     await this.requireThread(threadId, query);
-    return this.backend.executions.page("tool_executions", threadId, { ...options, turnId });
+    return this.backend.executions.page("tool_executions", threadId, {
+      ...options,
+      turnId,
+    });
   }
   async listInterrupts(
     threadId: string,

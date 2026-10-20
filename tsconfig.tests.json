@@ -6,8 +6,12 @@
       "node"
     ],
     "paths": {
-      "@tessar/plugins/logger": ["./packages/plugins/src/logger.ts"],
-      "@tessar/plugins": ["./packages/plugins/src/index.ts"],
+      "@tessar/plugins/logger": [
+        "./packages/plugins/src/logger.ts"
+      ],
+      "@tessar/plugins": [
+        "./packages/plugins/src/index.ts"
+      ],
       "@tessar/core": [
         "./packages/core/src/index.ts"
       ],
@@ -25,6 +29,12 @@
       ],
       "@tessar/core/testing/storage-conformance": [
         "./packages/core/src/testing/storage-conformance.ts"
+      ],
+      "@tessar/postgresql": [
+        "./packages/postgresql/src/index.ts"
+      ],
+      "@tessar/mongodb": [
+        "./packages/mongodb/src/index.ts"
       ]
     }
   },

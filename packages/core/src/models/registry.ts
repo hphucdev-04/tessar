@@ -56,16 +56,27 @@ export class ModelRegistry {
     const provider = this.providers.get(ref.providerId);
     if (!provider) fail("MissingProvider", "Provider is not registered");
     const adapter = provider.create(ref.modelId);
-    if (adapter.ref.providerId !== ref.providerId || adapter.ref.modelId !== ref.modelId ||
-        (ref.connectionId !== undefined && adapter.ref.connectionId !== ref.connectionId))
-      fail("ModelContextIncompatible", "The selected connection is no longer available");
+    if (
+      adapter.ref.providerId !== ref.providerId ||
+      adapter.ref.modelId !== ref.modelId ||
+      (ref.connectionId !== undefined &&
+        adapter.ref.connectionId !== ref.connectionId)
+    )
+      fail(
+        "ModelContextIncompatible",
+        "The selected connection is no longer available",
+      );
     return adapter;
   }
   private obtain(ref: ModelRef, schedule: boolean): Model {
     if (this.shutdown.signal.aborted) fail("Disposed", "Model registry closed");
     const provider = this.providers.get(ref.providerId);
     if (!provider) fail("MissingProvider", "Provider is not registered");
-    const key = JSON.stringify([ref.providerId, ref.modelId, ref.connectionId ?? null]);
+    const key = JSON.stringify([
+      ref.providerId,
+      ref.modelId,
+      ref.connectionId ?? null,
+    ]);
     const existing = this.handles.get(key);
     if (existing) {
       if (schedule && this.resolver.needsRefresh(ref, provider))

@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run --configLoader native --pool threads --exclude tests/integration/**",
     "test:integration": "vitest run --configLoader native --pool threads tests/integration",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "test:storage": "node --env-file-if-exists=.env.storage node_modules/vitest/vitest.mjs run packages/postgresql/test packages/mongodb/test --configLoader native --pool threads"
   },
   "devDependencies": {
     "@tessar/core": "workspace:*",
@@ -21,6 +22,8 @@
     "@types/node": "^24.0.0",
     "typescript": "7.0.2",
     "vitest": "5.0.4",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@tessar/postgresql": "workspace:*",
+    "@tessar/mongodb": "workspace:*"
   }
 }

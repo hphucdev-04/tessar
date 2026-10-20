@@ -118,7 +118,11 @@ async function* auxiliary(
   const position = frame.cp.execution!;
   if (!position.turnId)
     fail("UnsupportedBoundary", "Auxiliary calls require an active turn");
-  const adapter = selectAdapter(frame.registry, options.model, frame.request.adapter),
+  const adapter = selectAdapter(
+      frame.registry,
+      options.model,
+      frame.request.adapter,
+    ),
     request = await execution.hook(
       frame,
       modelHooks.request,
@@ -131,7 +135,13 @@ async function* auxiliary(
   )
     fail("StreamLimit", "Model attempt budget exhausted");
   providerCall(options.model, () => adapter.validate(request));
-  const attempt = createModelAttempt(execution, frame.cp, options.model, "auxiliary", toolExecutionId);
+  const attempt = createModelAttempt(
+    execution,
+    frame.cp,
+    options.model,
+    "auxiliary",
+    toolExecutionId,
+  );
   position.budgets.modelAttempts++;
   execution.put(frame, "model_attempts", attempt);
   await execution.commit(frame, "ExecutionTransition");
@@ -142,7 +152,10 @@ async function* auxiliary(
     })) {
       if (chunk.type === "message-delta" && attempt.firstOutputAt === null) {
         attempt.firstOutputAt = execution.clock.now();
-        attempt.timeToFirstOutputMs = Math.max(0, performance.now() - attemptStartedAt);
+        attempt.timeToFirstOutputMs = Math.max(
+          0,
+          performance.now() - attemptStartedAt,
+        );
       }
       if (chunk.type === "usage") attempt.usage = chunk.usage;
       if (chunk.type === "response") {

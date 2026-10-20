@@ -13,7 +13,8 @@ export class OpenAIPlugin implements Plugin {
   }
 
   setup(tessar: PluginContext): void {
-    const options = this.options, id = this.providerId;
+    const options = this.options,
+      id = this.providerId;
     const client = createClient(options);
     tessar.models.register({
       id,

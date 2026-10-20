@@ -1,5 +1,8 @@
 import OpenAI, { OpenAIError, type ClientOptions } from "openai";
-import type { ResponseUsage, ResponseCreateParamsStreaming } from "openai/resources/responses/responses";
+import type {
+  ResponseUsage,
+  ResponseCreateParamsStreaming,
+} from "openai/resources/responses/responses";
 import {
   errorInfo,
   MessageCodec,
@@ -18,10 +21,26 @@ export interface OpenAIOptions extends ClientOptions {
 }
 // Connection settings must never enter either protocol's request body.
 export const clientKeys = [
-  "apiKey", "adminAPIKey", "organization", "project", "webhookSecret", "baseURL",
-  "dataResidency", "timeout", "fetchOptions", "fetch", "maxRetries", "defaultHeaders",
-  "defaultQuery", "dangerouslyAllowBrowser", "logLevel", "logger", "workloadIdentity",
-  "credential", "provider", "x509Transport",
+  "apiKey",
+  "adminAPIKey",
+  "organization",
+  "project",
+  "webhookSecret",
+  "baseURL",
+  "dataResidency",
+  "timeout",
+  "fetchOptions",
+  "fetch",
+  "maxRetries",
+  "defaultHeaders",
+  "defaultQuery",
+  "dangerouslyAllowBrowser",
+  "logLevel",
+  "logger",
+  "workloadIdentity",
+  "credential",
+  "provider",
+  "x509Transport",
 ] as const satisfies readonly (keyof ClientOptions)[];
 export function createClient(options: OpenAIOptions): OpenAI {
   const { providerId, metadataPartition, ...clientOptions } = options;
@@ -60,19 +79,40 @@ export class OpenAIAdapter implements ModelAdapter {
   }
   validate(request: ModelRequest): void {
     try {
-    if (
-      request.model.providerId !== this.ref.providerId ||
-      request.model.modelId !== this.ref.modelId
-    )
-      fail("UnsupportedContext", "Model identity mismatch");
-    if (request.model.connectionId !== this.ref.connectionId)
-      fail("UnsupportedContext", "Model connection mismatch");
-    for (const key of ["connectionId", "api", "model", "input", "messages", "instructions", "tools", "stream", ...clientKeys])
-      if (request.options && key in request.options)
-        fail("UnsupportedOption", key + " is owned by the model connection or Agent runtime");
-    if (request.options?.background === true || request.options?.conversation != null || request.options?.previous_response_id != null || request.options?.context_management != null)
-      fail("UnsupportedOption", "Background, provider-managed conversations and compaction are not supported by the Agent loop");
-    encodeInput(request, this.connection);
+      if (
+        request.model.providerId !== this.ref.providerId ||
+        request.model.modelId !== this.ref.modelId
+      )
+        fail("UnsupportedContext", "Model identity mismatch");
+      if (request.model.connectionId !== this.ref.connectionId)
+        fail("UnsupportedContext", "Model connection mismatch");
+      for (const key of [
+        "connectionId",
+        "api",
+        "model",
+        "input",
+        "messages",
+        "instructions",
+        "tools",
+        "stream",
+        ...clientKeys,
+      ])
+        if (request.options && key in request.options)
+          fail(
+            "UnsupportedOption",
+            key + " is owned by the model connection or Agent runtime",
+          );
+      if (
+        request.options?.background === true ||
+        request.options?.conversation != null ||
+        request.options?.previous_response_id != null ||
+        request.options?.context_management != null
+      )
+        fail(
+          "UnsupportedOption",
+          "Background, provider-managed conversations and compaction are not supported by the Agent loop",
+        );
+      encodeInput(request, this.connection);
     } catch (error) {
       errorInfo(error, { source: "tessar", ...this.ref });
       throw error;
@@ -94,17 +134,27 @@ export class OpenAIAdapter implements ModelAdapter {
         {
           ...request.options,
           model: this.ref.modelId,
-          ...(request.instructions.sections.some(section => section.content.length > 0) ? { instructions: request.instructions.sections
-            .map((s) => s.content)
-            .join("\n\n") } : {}),
+          ...(request.instructions.sections.some(
+            (section) => section.content.length > 0,
+          )
+            ? {
+                instructions: request.instructions.sections
+                  .map((s) => s.content)
+                  .join("\n\n"),
+              }
+            : {}),
           input: encodeInput(request, this.connection),
-          ...(request.tools.length ? { tools: request.tools.map((t) => ({
-            type: "function" as const,
-            name: t.name,
-            description: t.description,
-            parameters: t.inputSchema,
-            strict: false,
-          })) } : {}),
+          ...(request.tools.length
+            ? {
+                tools: request.tools.map((t) => ({
+                  type: "function" as const,
+                  name: t.name,
+                  description: t.description,
+                  parameters: t.inputSchema,
+                  strict: false,
+                })),
+              }
+            : {}),
           stream: true,
         } as ResponseCreateParamsStreaming,
         { signal: context.signal },
@@ -156,17 +206,26 @@ export class OpenAIAdapter implements ModelAdapter {
           case "response.incomplete":
           case "response.failed":
             yield { type: "usage", usage: usage(event.response.usage) };
-            throw failure(event.response.error?.message ?? "OpenAI response did not complete",
-              event.response.error?.code ?? "ProviderIncomplete");
+            throw failure(
+              event.response.error?.message ??
+                "OpenAI response did not complete",
+              event.response.error?.code ?? "ProviderIncomplete",
+            );
           case "error":
             throw failure(event.message, event.code ?? "ProviderError");
         }
       }
       if (!terminal)
-        throw failure("OpenAI stream ended before completion", "ProviderIncomplete");
+        throw failure(
+          "OpenAI stream ended before completion",
+          "ProviderIncomplete",
+        );
     } catch (error) {
       if (context.signal.aborted) throw context.signal.reason;
-      errorInfo(error, { source: error instanceof OpenAIError ? "provider" : "tessar", ...this.ref });
+      errorInfo(error, {
+        source: error instanceof OpenAIError ? "provider" : "tessar",
+        ...this.ref,
+      });
       throw error;
     }
   }

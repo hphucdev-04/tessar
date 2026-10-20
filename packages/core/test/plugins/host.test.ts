@@ -4,6 +4,22 @@ import {PluginHost} from "../../src/plugins/host.js";
 import type {HookSpec} from "../../src/events/definition.js";
 
 declare module "../../src/events/definition.js"{interface EventMap {"test.value":HookSpec<string,string>;"test.barrier":HookSpec<{}>;}}
+it("reads custom capabilities through the hook context without exposing registry mutation",async()=>{
+ const host=new PluginHost(),memory={search:()=>"remembered"};
+ await host.initialize([
+  {id:"memory",setup(tessar){tessar.registry.register("memory","project",memory);}},
+  {id:"consumer",setup(tessar){tessar.hook("test.value",(_event,context)=>{
+   expect(context.registry.get("missing","project")).toBeUndefined();
+   expect(context.registry.list("missing")).toEqual([]);
+   expect(context.registry.list("memory")).toEqual([memory]);
+   expect(Object.keys(context.registry).sort()).toEqual(["get","list"]);
+   expect(Object.isFrozen(context.registry)).toBe(true);
+   return context.registry.get<typeof memory>("memory","project")!.search();
+  },{kind:"transformation"});}},
+ ]);
+ try{expect(await host.dispatch("test.value","")).toBe("remembered");}
+ finally{await host.dispose();}
+});
 it("rolls back setup and retains captured resources until release",async()=>{
  const order:string[]=[];const host=new PluginHost();
  await host.initialize([{id:"test",setup(tessar){tessar.hook("test.value",e=>e.payload+"A",{kind:"transformation"});return ()=>{order.push("disposeA");};}}]);

@@ -1,4 +1,10 @@
-import { turn as turnHooks, model as modelHooks, tools as toolsHooks, context as contextHooks, message as messageHooks } from "./events/type.js";
+import {
+  turn as turnHooks,
+  model as modelHooks,
+  tools as toolsHooks,
+  context as contextHooks,
+  message as messageHooks,
+} from "./events/type.js";
 import type { ExecutionFrame } from "./engine/frame.js";
 import { TessarError, errorInfo, fail } from "./errors.js";
 import { immutable, type Clock, type IdGenerator } from "./json.js";
@@ -21,7 +27,11 @@ import { aggregateUsage } from "./trace/usage.js";
 import type { Tool } from "./tools/tool.js";
 import { ContextAssembler } from "./engine/context.js";
 import { callTools } from "./engine/tool-executor.js";
-import { providerCall, bindExecutionModel, streamModel } from "./models/stream.js";
+import {
+  providerCall,
+  bindExecutionModel,
+  streamModel,
+} from "./models/stream.js";
 import { snapshotModelOptions } from "./models/options.js";
 import type { TrackedServices } from "./engine/tracked-effects.js";
 
@@ -107,7 +117,10 @@ export async function loop(
         .find((t) => t.id === position.turnId)!;
       turn.status = "completed";
       turn.endedAt = context.clock.now();
-      turn.durationMs = frame.turnStartedAt === undefined ? null : Math.max(0, performance.now() - frame.turnStartedAt);
+      turn.durationMs =
+        frame.turnStartedAt === undefined
+          ? null
+          : Math.max(0, performance.now() - frame.turnStartedAt);
       await context.updateUsage(frame);
       await context.commit(frame, "ExecutionTransition");
       await context.hook(frame, turnHooks.end, {
@@ -153,10 +166,17 @@ async function callModel(
   const selection = await context.hook(frame, modelHooks.select, {
     model: position.modelRef,
   });
-  const adapter = bindExecutionModel(frame.registry, position, frame.request.adapter,
-    selection?.decision === "select" ? selection.model : undefined);
+  const adapter = bindExecutionModel(
+    frame.registry,
+    position,
+    frame.request.adapter,
+    selection?.decision === "select" ? selection.model : undefined,
+  );
   if (adapter.options || position.modelOptions)
-    position.modelOptions = snapshotModelOptions({ ...adapter.options, ...position.modelOptions });
+    position.modelOptions = snapshotModelOptions({
+      ...adapter.options,
+      ...position.modelOptions,
+    });
   const tools = frame.registry.list<Tool>("tool"),
     descriptions: ToolDescription[] = tools.map((t) => ({
       name: t.name,
@@ -176,13 +196,10 @@ async function callModel(
     selected,
     position.modelRef,
   );
-  if (position.modelOptions) request = { ...request, options: position.modelOptions };
+  if (position.modelOptions)
+    request = { ...request, options: position.modelOptions };
   request = await context.hook(frame, contextHooks.prepare, request);
-  request = await context.hook(
-    frame,
-    modelHooks.request,
-    immutable(request),
-  );
+  request = await context.hook(frame, modelHooks.request, immutable(request));
   if (
     request.model.providerId !== position.modelRef.providerId ||
     request.model.modelId !== position.modelRef.modelId ||
@@ -193,7 +210,12 @@ async function callModel(
       "Request transform must not bypass ModelSelect",
     );
   providerCall(position.modelRef, () => adapter.validate(request));
-  const attempt = createModelAttempt(context, frame.cp, position.modelRef, "primary");
+  const attempt = createModelAttempt(
+    context,
+    frame.cp,
+    position.modelRef,
+    "primary",
+  );
   const priorAttempts = context
     .rows<ModelAttemptRecord>(frame, "model_attempts")
     .filter((a) => a.turnId === position.turnId && a.purpose === "primary");
@@ -218,7 +240,10 @@ async function callModel(
       if (chunk.type === "message-delta") {
         if (!attempt.firstOutputAt) {
           attempt.firstOutputAt = context.clock.now();
-          attempt.timeToFirstOutputMs = Math.max(0, performance.now() - attemptStartedAt);
+          attempt.timeToFirstOutputMs = Math.max(
+            0,
+            performance.now() - attemptStartedAt,
+          );
         }
         await context.hook(frame, messageHooks.delta, {
           ...chunk,

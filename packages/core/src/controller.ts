@@ -1,4 +1,9 @@
-import { diagnostic as diagnosticHooks, ready as readyHooks, thread as threadHooks, shutdown as shutdownHooks } from "./events/type.js";
+import {
+  diagnostic as diagnosticHooks,
+  ready as readyHooks,
+  thread as threadHooks,
+  shutdown as shutdownHooks,
+} from "./events/type.js";
 import {
   requireId,
   fail,
@@ -100,24 +105,42 @@ export class Controller {
     this.hooks = new PluginHost({
       diagnostics: this.report,
       values: [
-        { kind: "agent", id: this.agent.id, value: this.agent, version: 1,
-          pluginId: this.agent.id, pluginVersion: 1, configurationId: null },
+        {
+          kind: "agent",
+          id: this.agent.id,
+          value: this.agent,
+          version: 1,
+          pluginId: this.agent.id,
+          pluginVersion: 1,
+          configurationId: null,
+        },
         ...toolRegistrations(this.agent.id, this.agent.tools),
-        ...(isModelAdapter(this.agent.model) ? [{
-          kind: "provider", id: this.agent.model.ref.providerId, version: 1,
-          pluginId: this.agent.id, pluginVersion: 1,
-          configurationId: this.agent.model.ref.connectionId ?? null,
-          value: {
-            id: this.agent.model.ref.providerId,
-            create: (modelId: string) => {
-              const model = this.agent.model;
-              if (!isModelAdapter(model)) fail("MissingProvider", "Executable model is missing");
-              if (model.ref.modelId === modelId) return model;
-              if (model.withModel) return model.withModel(modelId);
-              fail("UnsupportedModelSelection", "This adapter cannot select another model ID");
-            },
-          } satisfies ModelProviderRegistration,
-        }] : []),
+        ...(isModelAdapter(this.agent.model)
+          ? [
+              {
+                kind: "provider",
+                id: this.agent.model.ref.providerId,
+                version: 1,
+                pluginId: this.agent.id,
+                pluginVersion: 1,
+                configurationId: this.agent.model.ref.connectionId ?? null,
+                value: {
+                  id: this.agent.model.ref.providerId,
+                  create: (modelId: string) => {
+                    const model = this.agent.model;
+                    if (!isModelAdapter(model))
+                      fail("MissingProvider", "Executable model is missing");
+                    if (model.ref.modelId === modelId) return model;
+                    if (model.withModel) return model.withModel(modelId);
+                    fail(
+                      "UnsupportedModelSelection",
+                      "This adapter cannot select another model ID",
+                    );
+                  },
+                } satisfies ModelProviderRegistration,
+              },
+            ]
+          : []),
       ],
     });
     this.initialPlugins = Object.freeze([...(options.plugins ?? [])]);
@@ -202,7 +225,11 @@ export class Controller {
     const ref = "ref" in value ? value.ref : value;
     requireId(ref.providerId, "provider id");
     requireId(ref.modelId, "model id");
-    if (isModelAdapter(value) && "profile" in value && "refreshProfile" in value)
+    if (
+      isModelAdapter(value) &&
+      "profile" in value &&
+      "refreshProfile" in value
+    )
       return value as Model;
     return this.models.get(ref);
   }
@@ -211,11 +238,11 @@ export class Controller {
     reservedId?: string,
   ): Promise<ThreadInfo> {
     this.requireReady();
-    const prepared = await this.hooks.dispatch(
-      threadHooks.prepare,
-      options,
-      { controllerId: this.id, agentId: this.agent.id, scope: options.scope },
-    );
+    const prepared = await this.hooks.dispatch(threadHooks.prepare, options, {
+      controllerId: this.id,
+      agentId: this.agent.id,
+      scope: options.scope,
+    });
     if (
       canonicalJson(prepared.scope ?? {}) !== canonicalJson(options.scope ?? {})
     )
@@ -238,35 +265,63 @@ export class Controller {
   async createThread(options: CreateThreadOptions = {}): Promise<Thread> {
     return new Thread(this, await this.prepareThread(options));
   }
-  /** @internal */ sessionModel(value: ModelSelection): { model: Model; stored: StoredModelSelection } {
+  /** @internal */ sessionModel(value: ModelSelection): {
+    model: Model;
+    stored: StoredModelSelection;
+  } {
     const ref = "ref" in value ? value.ref : value;
     const adapter = isModelAdapter(value) ? value : this.models.resolve(ref);
-    const stored = immutable({ ref: adapter.ref,
-      ...(adapter.options ? { options: snapshotModelOptions(adapter.options) } : {}),
+    const stored = immutable({
+      ref: adapter.ref,
+      ...(adapter.options
+        ? { options: snapshotModelOptions(adapter.options) }
+        : {}),
       ...(adapter.connection ? { connection: adapter.connection } : {}),
     });
     return { model: this.resolveModel(adapter), stored };
   }
   async createSession(options: SessionOptions = {}): Promise<Session> {
     this.requireReady();
-    const selected = this.sessionModel(options.model ?? this.agent.model), now = this.agent.clock.now();
-    const record: SessionRecord = immutable({ id: randomIds.next("session"), agentId: this.agent.id, scope: normalizeScope(options.scope), metadata: options.metadata ?? {}, selectedThreadId: null, selectedModel: selected.stored, revision: 1, createdAt: now, updatedAt: now });
+    const selected = this.sessionModel(options.model ?? this.agent.model),
+      now = this.agent.clock.now();
+    const record: SessionRecord = immutable({
+      id: randomIds.next("session"),
+      agentId: this.agent.id,
+      scope: normalizeScope(options.scope),
+      metadata: options.metadata ?? {},
+      selectedThreadId: null,
+      selectedModel: selected.stored,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
     await this.backend.sessions.compareAndSet(record, 0);
     this.requireReady();
     const session = new Session(this, record, selected.model);
     session.created();
     return session;
   }
-  async getSession(id: string, query: StateQuery = {}): Promise<Session | null> {
+  async getSession(
+    id: string,
+    query: StateQuery = {},
+  ): Promise<Session | null> {
     this.requireReady();
     const record = await this.backend.sessions.get(id, query);
     if (!record) return null;
-    if (record.agentId !== this.agent.id) fail("SessionAgentMismatch", "Session belongs to another Agent");
+    if (record.agentId !== this.agent.id)
+      fail("SessionAgentMismatch", "Session belongs to another Agent");
     const selected = this.sessionModel(record.selectedModel.ref);
-    if (record.selectedModel.connection && canonicalJson(record.selectedModel.connection) !== canonicalJson(selected.stored.connection ?? null))
+    if (
+      record.selectedModel.connection &&
+      canonicalJson(record.selectedModel.connection) !==
+        canonicalJson(selected.stored.connection ?? null)
+    )
       fail("ModelContextIncompatible", "Session model connection changed");
-    const thread = record.selectedThreadId ? await this.getThread(record.selectedThreadId, { scope: record.scope }) : null;
-    if (record.selectedThreadId && !thread) fail("ThreadNotFound", "Session selection is unavailable");
+    const thread = record.selectedThreadId
+      ? await this.getThread(record.selectedThreadId, { scope: record.scope })
+      : null;
+    if (record.selectedThreadId && !thread)
+      fail("ThreadNotFound", "Session selection is unavailable");
     this.requireReady();
     return new Session(this, record, selected.model, thread);
   }
@@ -287,7 +342,11 @@ export class Controller {
     this.requireReady();
     query = immutable(query);
     const context = await this.threadContext(id, query);
-    await this.hooks.authorize(threadHooks.beforeDelete, immutable({ threadId: id }), context);
+    await this.hooks.authorize(
+      threadHooks.beforeDelete,
+      immutable({ threadId: id }),
+      context,
+    );
     this.requireReady();
     await new ThreadService(this.backend).delete(id, query);
     await this.hooks.dispatch(threadHooks.deleted, { threadId: id }, context);
@@ -296,8 +355,15 @@ export class Controller {
     this.requireReady();
     query = immutable(query);
     const info = await this.backend.threads.get(id, { includeDeleted: true });
-    if (!info || !matchesScope(info.scope, query.scope)) fail("ThreadNotFound", "Thread does not match query");
-    const context = { controllerId: this.id, agentId: this.agent.id, threadId: id, scope: info.scope, thread: new Thread(this, info) };
+    if (!info || !matchesScope(info.scope, query.scope))
+      fail("ThreadNotFound", "Thread does not match query");
+    const context = {
+      controllerId: this.id,
+      agentId: this.agent.id,
+      threadId: id,
+      scope: info.scope,
+      thread: new Thread(this, info),
+    };
     const payload = immutable({ threadId: id, permanent: true });
     await this.hooks.authorize(threadHooks.beforeDelete, payload, context);
     this.requireReady();
@@ -310,7 +376,8 @@ export class Controller {
     query: StateQuery = {},
   ): Promise<void> {
     this.requireReady();
-    if (typeof title !== "string") fail("InvalidConfiguration", "Title must be text");
+    if (typeof title !== "string")
+      fail("InvalidConfiguration", "Title must be text");
     query = immutable(query);
     const context = await this.threadContext(id, query);
     const payload = immutable({ threadId: id, title });
@@ -327,19 +394,33 @@ export class Controller {
     options = immutable(options);
     const context = await this.threadContext(id, options);
     const { scope: _scope, ...forkOptions } = options;
-    await this.hooks.authorize(threadHooks.beforeFork, immutable({ threadId: id, options: forkOptions }), context);
+    await this.hooks.authorize(
+      threadHooks.beforeFork,
+      immutable({ threadId: id, options: forkOptions }),
+      context,
+    );
     this.requireReady();
     const defs = this.hooks
       .registrations()
       .filter((r) => r.kind === "state")
       .map((r) => r.value as PluginStateDefinition<any>);
     const info = await new ForkService(this.backend, defs).fork(id, options);
-    await this.hooks.dispatch(threadHooks.forked, { threadId: id, forkedThreadId: info.id }, context);
+    await this.hooks.dispatch(
+      threadHooks.forked,
+      { threadId: id, forkedThreadId: info.id },
+      context,
+    );
     return new Thread(this, info);
   }
   private async threadContext(id: string, query: StateQuery) {
     const info = await this.queries.requireThread(id, query);
-    return { controllerId: this.id, agentId: this.agent.id, threadId: id, scope: info.scope, thread: new Thread(this, info) };
+    return {
+      controllerId: this.id,
+      agentId: this.agent.id,
+      threadId: id,
+      scope: info.scope,
+      thread: new Thread(this, info),
+    };
   }
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;

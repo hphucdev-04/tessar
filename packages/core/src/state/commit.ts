@@ -22,12 +22,17 @@ export function buildThreadInfo(
     metadata: cp.state.metadata,
     revision: cp.revision,
     currentCheckpointId: cp.id,
-    activeStreamId: stream && !["completed", "failed", "stopped", "cancelled"].includes(stream.status)
-      ? stream.id : null,
+    activeStreamId:
+      stream &&
+      !["completed", "failed", "stopped", "cancelled"].includes(stream.status)
+        ? stream.id
+        : null,
     createdAt: head?.createdAt ?? cp.createdAt,
     updatedAt: cp.createdAt,
-    parentThreadId: batch.lineage?.parentThreadId ?? head?.parentThreadId ?? null,
-    sourceCheckpointId: batch.lineage?.sourceCheckpointId ?? head?.sourceCheckpointId ?? null,
+    parentThreadId:
+      batch.lineage?.parentThreadId ?? head?.parentThreadId ?? null,
+    sourceCheckpointId:
+      batch.lineage?.sourceCheckpointId ?? head?.sourceCheckpointId ?? null,
     deleted: batch.deleteThread ?? false,
   };
 }
@@ -47,10 +52,16 @@ export function canonicalJson(value: unknown): string {
   return encode(value);
 }
 export async function fingerprint(value: unknown): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalJson(value)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonicalJson(value)),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
-export const commitFingerprint = (batch: CommitBatch): Promise<string> => fingerprint(batch);
+export const commitFingerprint = (batch: CommitBatch): Promise<string> =>
+  fingerprint(batch);
 export function validateBatch(batch: CommitBatch): void {
   assertJson(batch);
   const cp = batch.checkpoint;

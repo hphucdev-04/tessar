@@ -12,6 +12,8 @@ been published to npm, and Cube has not been migrated.
 | `@tessar/openai` | OpenAI Responses/Chat Completions provider and model metadata integration |
 | `@tessar/plugins` | Optional Node host utilities for discovery, loading and npm package management; logger plugin at `/logger` |
 | `@tessar/sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
+| `@tessar/postgresql` | PostgreSQL storage with transactions, versioned history and process fencing |
+| `@tessar/mongodb` | MongoDB storage with transactions, versioned history and process fencing |
 
 ## Public API
 
@@ -80,6 +82,31 @@ Inside `setup(tessar)`, register capabilities with `agent.register()`,
 Migration: rename `tessar.models.registerProvider()` to `tessar.models.register()`
 and `tessar.storage.registerBackend()` to `tessar.storage.register()`.
 The old plugin method names are no longer available.
+
+Plugins can share custom capabilities through the registry:
+
+```ts
+// The providing plugin's setup(tessar):
+tessar.registry.register("memory", "project", memoryService);
+
+// The consuming plugin's setup(tessar):
+tessar.hook(contextHooks.prepare, async (event, context) => {
+  const memory = context.registry.get<MemoryService>("memory", "project");
+  if (!memory) return;
+  return memory.prepare(event.payload);
+});
+```
+
+Here `contextHooks` is `context` imported from `@tessar/core`; `MemoryService`
+and its `prepare` method are application-defined. `get<T>(kind, id)` returns
+`undefined` when absent; `list<T>(kind)` returns a readonly array of values.
+The generic type describes the agreed contract; it does not validate values.
+Registry access is available in hook callbacks, with no registration or release
+methods. Stream hooks read the registry captured for their stream; other hooks
+read the registry captured for that dispatch. Detaching a plugin affects new
+captures; its cleanup waits for existing captures to finish. Use capabilities
+within the hook's awaited work, and register resource cleanup with `tessar.defer()`.
+Registration alone does not execute a capability or persist its data.
 
 Import tool APIs directly when defining tools:
 
@@ -211,6 +238,37 @@ loader supplies the host's SDK without npm installing another copy.
 
 ## Storage, models and recovery
 
+Choose one storage plugin for each Controller:
+
+```ts
+import { PostgresqlStoragePlugin } from "@tessar/postgresql";
+import { MongoDBStoragePlugin } from "@tessar/mongodb";
+
+const storage = new PostgresqlStoragePlugin({
+  connectionString: process.env.POSTGRES_URL!,
+  schema: "tessar",
+});
+
+// Alternatively:
+// const storage = new MongoDBStoragePlugin({
+//   uri: process.env.MONGODB_URL!,
+//   databaseName: "my_agent",
+// });
+
+const controller = new Controller({ id: "application", agent, plugins: [storage] });
+await controller.initialize();
+```
+
+Both packages use native database drivers and implement the existing state,
+checkpoint and ownership contracts. MongoDB requires a replica set or sharded
+deployment supporting transactions. Each backend owns and closes its connections.
+See the [PostgreSQL README](packages/postgresql/README.md) and
+[MongoDB README](packages/mongodb/README.md) for native connection options.
+
+For database tests, set `TESSAR_TEST_POSTGRES_URL` and `TESSAR_TEST_MONGODB_URL`
+in the environment or ignored `.env.storage`, then run `pnpm test:storage`.
+Tests use unique schemas/databases and explicitly skip when URLs are absent.
+
 Core always manages state and checkpoints. Memory storage is the default; pass
 `new SqliteStoragePlugin({ filename })` as a plugin for persistence. SQLite uses
 Node's experimental synchronous SQLite API and is a reference implementation,
@@ -257,7 +315,7 @@ OPENAI_MODEL. No live API is required by the default checks.
 ## Publishing
 
 The four public packages share one release version. Update `version` in
-`packages/{core,openai,plugins,sqlite}/package.json` together; the private workspace
+`packages/{core,openai,plugins,sqlite,postgresql,mongodb}/package.json` together; the private workspace
 root's version is not used for publishing. Commit the version changes before
 creating the matching Git tag, for example:
 
@@ -270,7 +328,7 @@ git push origin v0.1.0
 the tag against all four package versions, builds and packs with pnpm, and checks
 the actual archives before publishing. Stable versions use `latest`; prereleases
 such as `v0.2.0-beta.1` use `next`. Archives are saved as a workflow artifact.
-Packages publish sequentially: core, OpenAI, plugins, SQLite.
+Packages publish sequentially: core, OpenAI, plugins, SQLite, PostgreSQL, MongoDB.
 
 Configure npm Trusted Publishing for **each package** with GitHub owner
 `hphucdev-04`, repository `tessar`, workflow filename `release.yml`, no environment,

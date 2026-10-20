@@ -1,4 +1,10 @@
-import { checkpoint as checkpointHooks, thread as threadHooks, message as messageHooks, stream as streamHooks, turn as turnHooks } from "../events/type.js";
+import {
+  checkpoint as checkpointHooks,
+  thread as threadHooks,
+  message as messageHooks,
+  stream as streamHooks,
+  turn as turnHooks,
+} from "../events/type.js";
 import { errorInfo, fail, type ErrorInfo } from "../errors.js";
 import { immutable } from "../json.js";
 import { type StreamOutcome } from "../events/type.js";
@@ -17,7 +23,11 @@ import type {
 } from "../trace/records.js";
 import { aggregateUsage } from "../trace/usage.js";
 import { summarizeStreamUsage } from "./lineage.js";
-import { sampleActiveTime, type ExecutionContext, type ExecutionFrame } from "./frame.js";
+import {
+  sampleActiveTime,
+  type ExecutionContext,
+  type ExecutionFrame,
+} from "./frame.js";
 
 export function put(
   frame: ExecutionFrame,
@@ -85,9 +95,7 @@ async function commitNow(
     createdAt: execution.clock.now(),
     cause,
     state: { ...frame.cp.state, pluginStates: frame.state.snapshots() },
-    execution: frame.cp.execution
-      ? { ...frame.cp.execution }
-      : null,
+    execution: frame.cp.execution ? { ...frame.cp.execution } : null,
   };
   if (cause === "Suspended" && cp.execution?.pendingInterruptId) {
     const record = frame.records.get(
@@ -219,11 +227,7 @@ export async function finish(
     interrupt: null,
   };
   try {
-    await execution.hook(
-      frame,
-      streamHooks.beforeEnd,
-      immutable(outcome),
-    );
+    await execution.hook(frame, streamHooks.beforeEnd, immutable(outcome));
   } catch (finalizationError) {
     if (!error && status !== "cancelled") {
       status = "failed";
@@ -243,7 +247,10 @@ export async function finish(
     turn.stopReason = reason;
     turn.error = error;
     turn.endedAt = execution.clock.now();
-    turn.durationMs = frame.turnStartedAt === undefined ? null : Math.max(0, performance.now() - frame.turnStartedAt);
+    turn.durationMs =
+      frame.turnStartedAt === undefined
+        ? null
+        : Math.max(0, performance.now() - frame.turnStartedAt);
   }
   sampleActiveTime(frame, true);
   const timing = frame.cp.execution?.timing;

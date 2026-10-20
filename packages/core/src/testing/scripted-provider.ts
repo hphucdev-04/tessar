@@ -24,7 +24,11 @@ export class ScriptedProvider implements ModelAdapter {
   readonly calls: ModelRequest[] = [];
   constructor(private readonly scripts: readonly ModelScript[]) {}
   withModel(modelId: string): ModelAdapter {
-    return { ref: { ...this.ref, modelId }, validate: this.validate.bind(this), stream: this.stream.bind(this) };
+    return {
+      ref: { ...this.ref, modelId },
+      validate: this.validate.bind(this),
+      stream: this.stream.bind(this),
+    };
   }
   validate(request: ModelRequest): void {
     if (request.model.providerId !== this.ref.providerId)
@@ -38,8 +42,7 @@ export class ScriptedProvider implements ModelAdapter {
     const index = this.calls.length;
     this.calls.push(immutable(request));
     const script = this.scripts[index];
-    if (!script)
-      throw new TessarError("ProviderError", "No scripted response");
+    if (!script) throw new TessarError("ProviderError", "No scripted response");
     if (script.gate)
       await Promise.race([
         script.gate,
@@ -54,8 +57,7 @@ export class ScriptedProvider implements ModelAdapter {
             );
         }),
       ]);
-    if (context.signal.aborted)
-      throw new TessarError("Cancelled", "Cancelled");
+    if (context.signal.aborted) throw new TessarError("Cancelled", "Cancelled");
     if (script.chunks) for (const chunk of script.chunks) yield chunk;
     if (script.error) throw script.error;
     const usage = normalizeUsage(script.usage ?? {});

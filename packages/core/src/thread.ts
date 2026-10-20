@@ -126,7 +126,12 @@ export class Thread {
       model = options.model
         ? controller.resolveModel(options.model).ref
         : undefined;
-    const common = { threadId: this.id, signal: options.signal, thread: this, session };
+    const common = {
+      threadId: this.id,
+      signal: options.signal,
+      thread: this,
+      session,
+    };
     const prepare = async () => {
       await controller.queries.requireThread(this.id, this.filter);
     };
@@ -168,7 +173,9 @@ export class Thread {
   async cancelStream(streamId: string, reason?: string): Promise<void> {
     this.check();
     await this.query.requireThread(this.id, this.filter);
-    await this.controller.agent.cancel(this.id, streamId, reason, undefined, { thread: this });
+    await this.controller.agent.cancel(this.id, streamId, reason, undefined, {
+      thread: this,
+    });
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;

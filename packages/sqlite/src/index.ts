@@ -1,10 +1,16 @@
 export * from "./backend.js";
 import type { Plugin, PluginContext } from "@tessar/core";
-import { createSqliteBackend } from "./backend.js";
+import { createSqliteBackend, type SqliteStorageOptions } from "./backend.js";
 export class SqliteStoragePlugin implements Plugin {
   readonly id = "storage.sqlite";
-  constructor(private readonly options: { filename: string }) {}
+  constructor(private readonly options: SqliteStorageOptions) {}
   async setup(tessar: PluginContext): Promise<void> {
-    tessar.storage.register(await createSqliteBackend(this.options));
+    const backend = await createSqliteBackend(this.options);
+    try {
+      tessar.storage.register(backend);
+    } catch (error) {
+      await backend.close().catch(() => {});
+      throw error;
+    }
   }
 }

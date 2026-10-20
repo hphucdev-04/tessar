@@ -1,15 +1,28 @@
 import { fail } from "../errors.js";
 import { immutable, systemClock, type Clock } from "../json.js";
-import { canonicalJson, validateBatch, commitFingerprint, buildThreadInfo } from "./commit.js";
+import {
+  canonicalJson,
+  validateBatch,
+  commitFingerprint,
+  buildThreadInfo,
+} from "./commit.js";
 import type {
   Checkpoint,
   ThreadInfo,
   RecordEntry,
   RecordKind,
   RecordTypes,
-  PluginStateSnapshot, SessionRecord,
+  PluginStateSnapshot,
+  SessionRecord,
 } from "./schema.js";
-import { pageRows, recordBinding, historyCursor, limitOf, encodeCursor, checkpointSafety } from "./queries.js";
+import {
+  pageRows,
+  recordBinding,
+  historyCursor,
+  limitOf,
+  encodeCursor,
+  checkpointSafety,
+} from "./queries.js";
 import { validateSession } from "./sessions.js";
 import { matchesScope } from "./scope.js";
 import type {
@@ -59,18 +72,45 @@ export function createMemoryBackend(
     checkpointId?: string,
   ): readonly RecordEntry[] => {
     const id = checkpointId ?? heads.get(threadId)?.currentCheckpointId ?? "";
-    return snapshots.get(id)?.threadId === threadId ? records.get(id) ?? [] : [];
+    return snapshots.get(id)?.threadId === threadId
+      ? (records.get(id) ?? [])
+      : [];
   };
   const allRecords = (checkpointId?: string) =>
     checkpointId
       ? (records.get(checkpointId) ?? [])
-      : [...heads.values()].filter(h => !h.deleted).flatMap((h) => currentRecords(h.id));
+      : [...heads.values()]
+          .filter((h) => !h.deleted)
+          .flatMap((h) => currentRecords(h.id));
   const backend: StorageBackend = {
     sessions: {
-      get: async (id, query = {}) => { guard(); const row = sessions.get(id); return row && matchesScope(row.scope, query.scope) ? row : null; },
-      page: async query => { guard(); return pageRows([...sessions.values()].filter(row => row.agentId === query.agentId && matchesScope(row.scope, query.scope)), query, canonicalJson({ agentId: query.agentId, scope: query.scope ?? {} })); },
-      compareAndSet: async (value, expected) => { guard();
-        validateSession(value, sessions.get(value.id) ?? null, expected, value.selectedThreadId ? heads.get(value.selectedThreadId) ?? null : null);
+      get: async (id, query = {}) => {
+        guard();
+        const row = sessions.get(id);
+        return row && matchesScope(row.scope, query.scope) ? row : null;
+      },
+      page: async (query) => {
+        guard();
+        return pageRows(
+          [...sessions.values()].filter(
+            (row) =>
+              row.agentId === query.agentId &&
+              matchesScope(row.scope, query.scope),
+          ),
+          query,
+          canonicalJson({ agentId: query.agentId, scope: query.scope ?? {} }),
+        );
+      },
+      compareAndSet: async (value, expected) => {
+        guard();
+        validateSession(
+          value,
+          sessions.get(value.id) ?? null,
+          expected,
+          value.selectedThreadId
+            ? (heads.get(value.selectedThreadId) ?? null)
+            : null,
+        );
         sessions.set(value.id, immutable(value));
       },
     },
@@ -105,17 +145,53 @@ export function createMemoryBackend(
       purge: async (id, query = {}) => {
         guard();
         const head = heads.get(id);
-        if (!head || !matchesScope(head.scope, query.scope)) fail("ThreadNotFound", "Thread does not match query");
-        if (!head.deleted) fail("ThreadNotDeleted", "Soft-delete the thread before purging");
+        if (!head || !matchesScope(head.scope, query.scope))
+          fail("ThreadNotFound", "Thread does not match query");
+        if (!head.deleted)
+          fail("ThreadNotDeleted", "Soft-delete the thread before purging");
         const lease = leases.get(id);
-        if (head.activeStreamId || (lease && Date.parse(lease.expiresAt) > Date.parse(clock.now()))) fail("ThreadBusy", "Thread has active execution or ownership");
-        if ([...heads.values()].some(h => h.parentThreadId === id || (h.sourceCheckpointId && snapshots.get(h.sourceCheckpointId)?.threadId === id))) fail("ThreadReferenced", "Retained fork references this thread");
-        for (const [key, cp] of snapshots) if (cp.threadId === id) { snapshots.delete(key); records.delete(key); }
-        for (const [key, batch] of staged) if (batch.threadId === id) { staged.delete(key); stagedFingerprints.delete(key); }
-        for (const [key, receipt] of receipts) if (receipt.threadId === id) { receipts.delete(key); fingerprints.delete(key); }
-        heads.delete(id); leases.delete(id);
+        if (
+          head.activeStreamId ||
+          (lease && Date.parse(lease.expiresAt) > Date.parse(clock.now()))
+        )
+          fail("ThreadBusy", "Thread has active execution or ownership");
+        if (
+          [...heads.values()].some(
+            (h) =>
+              h.parentThreadId === id ||
+              (h.sourceCheckpointId &&
+                snapshots.get(h.sourceCheckpointId)?.threadId === id),
+          )
+        )
+          fail("ThreadReferenced", "Retained fork references this thread");
+        for (const [key, cp] of snapshots)
+          if (cp.threadId === id) {
+            snapshots.delete(key);
+            records.delete(key);
+          }
+        for (const [key, batch] of staged)
+          if (batch.threadId === id) {
+            staged.delete(key);
+            stagedFingerprints.delete(key);
+          }
+        for (const [key, receipt] of receipts)
+          if (receipt.threadId === id) {
+            receipts.delete(key);
+            fingerprints.delete(key);
+          }
+        heads.delete(id);
+        leases.delete(id);
       },
-      page: async query => { guard(); return pageRows([...heads.values()].filter(h => !h.deleted && matchesScope(h.scope, query.scope)), query, canonicalJson(query.scope ?? {})); },
+      page: async (query) => {
+        guard();
+        return pageRows(
+          [...heads.values()].filter(
+            (h) => !h.deleted && matchesScope(h.scope, query.scope),
+          ),
+          query,
+          canonicalJson(query.scope ?? {}),
+        );
+      },
       get: async (id, options) => {
         guard();
         const head = heads.get(id);
@@ -129,17 +205,49 @@ export function createMemoryBackend(
       },
     },
     checkpoints: {
-      page: async (threadId, options) => { guard(); return pageRows([...snapshots.values()].filter(cp => cp.threadId === threadId).map(cp => ({ id: cp.id, threadId, revision: cp.revision, createdAt: cp.createdAt, cause: cp.cause, ...checkpointSafety(cp) })), options, "checkpoints:" + threadId); },
+      page: async (threadId, options) => {
+        guard();
+        return pageRows(
+          [...snapshots.values()]
+            .filter((cp) => cp.threadId === threadId)
+            .map((cp) => ({
+              id: cp.id,
+              threadId,
+              revision: cp.revision,
+              createdAt: cp.createdAt,
+              cause: cp.cause,
+              ...checkpointSafety(cp),
+            })),
+          options,
+          "checkpoints:" + threadId,
+        );
+      },
       history: async (id, options, query = {}) => {
-        guard(); const head = heads.get(id);
-        if (!head || head.deleted || !matchesScope(head.scope, query.scope)) fail("ThreadNotFound", "Thread does not match query");
-        const { binding, cursor } = historyCursor(id, options, query), limit = limitOf(options.limit);
-        const cp = snapshots.get(cursor?.checkpointId ?? options.atCheckpointId ?? head.currentCheckpointId);
-        if (!cp || cp.threadId !== id) fail("CheckpointNotFound", "No checkpoint for history");
+        guard();
+        const head = heads.get(id);
+        if (!head || head.deleted || !matchesScope(head.scope, query.scope))
+          fail("ThreadNotFound", "Thread does not match query");
+        const { binding, cursor } = historyCursor(id, options, query),
+          limit = limitOf(options.limit);
+        const cp = snapshots.get(
+          cursor?.checkpointId ??
+            options.atCheckpointId ??
+            head.currentCheckpointId,
+        );
+        if (!cp || cp.threadId !== id)
+          fail("CheckpointNotFound", "No checkpoint for history");
         const end = cursor?.end ?? cp.state.messages.length;
-        if (end > cp.state.messages.length) fail("InvalidCursor", "Invalid history position");
+        if (end > cp.state.messages.length)
+          fail("InvalidCursor", "Invalid history position");
         const begin = Math.max(0, end - limit);
-        return { items: cp.state.messages.slice(begin,end), checkpointId: cp.id, revision: cp.revision, nextCursor: begin ? encodeCursor({ v:1, binding, checkpointId:cp.id, end:begin }) : null };
+        return {
+          items: cp.state.messages.slice(begin, end),
+          checkpointId: cp.id,
+          revision: cp.revision,
+          nextCursor: begin
+            ? encodeCursor({ v: 1, binding, checkpointId: cp.id, end: begin })
+            : null,
+        };
       },
       get: async (id) => {
         guard();
@@ -153,9 +261,22 @@ export function createMemoryBackend(
     executions: {
       page: async (kind, threadId, query) => {
         guard();
-        const cp = snapshots.get(query.atCheckpointId ?? heads.get(threadId)?.currentCheckpointId ?? "");
-        if (!cp || cp.threadId !== threadId) fail("CheckpointNotFound", "No checkpoint for records");
-        const rows = currentRecords(threadId, query.atCheckpointId).filter(r => r.kind === kind).map(r => r.data as any).filter(r => (query.streamId === undefined || r.streamId === query.streamId) && (query.turnId === undefined || r.turnId === query.turnId) && (query.status === undefined || r.status === query.status));
+        const cp = snapshots.get(
+          query.atCheckpointId ??
+            heads.get(threadId)?.currentCheckpointId ??
+            "",
+        );
+        if (!cp || cp.threadId !== threadId)
+          fail("CheckpointNotFound", "No checkpoint for records");
+        const rows = currentRecords(threadId, query.atCheckpointId)
+          .filter((r) => r.kind === kind)
+          .map((r) => r.data as any)
+          .filter(
+            (r) =>
+              (query.streamId === undefined || r.streamId === query.streamId) &&
+              (query.turnId === undefined || r.turnId === query.turnId) &&
+              (query.status === undefined || r.status === query.status),
+          );
         return pageRows(rows, query, recordBinding(kind, threadId, query));
       },
       get: async <K extends RecordKind>(
@@ -188,7 +309,8 @@ export function createMemoryBackend(
         const hash = await commitFingerprint(batch);
         guard();
         if (fingerprints.has(batch.commitId)) {
-          if (fingerprints.get(batch.commitId) !== hash) fail("CommitConflict", "commitId reused with different payload");
+          if (fingerprints.get(batch.commitId) !== hash)
+            fail("CommitConflict", "commitId reused with different payload");
           return;
         }
         const prior = staged.get(batch.commitId);
@@ -206,7 +328,14 @@ export function createMemoryBackend(
       publish: async (request) => {
         guard();
         const prior = receipts.get(request.commitId);
-        if (prior) return prior;
+        if (prior) {
+          if (
+            prior.threadId !== request.threadId ||
+            prior.revision !== request.expectedRevision + 1
+          )
+            fail("CommitConflict", "Commit request mismatch");
+          return prior;
+        }
         if (request.lease.threadId !== request.threadId)
           fail("OwnershipLost", "Lease belongs to another thread");
         assertLease(request.lease);
@@ -219,7 +348,12 @@ export function createMemoryBackend(
           fail("CommitConflict", "Missing staged batch");
         if (batch.lineage) {
           const parent = heads.get(batch.lineage.parentThreadId);
-          if (!parent || parent.deleted || snapshots.get(batch.lineage.sourceCheckpointId)?.threadId !== parent.id)
+          if (
+            !parent ||
+            parent.deleted ||
+            snapshots.get(batch.lineage.sourceCheckpointId)?.threadId !==
+              parent.id
+          )
             fail("ThreadNotFound", "Fork source is no longer available");
         }
         const head = heads.get(batch.threadId);
@@ -260,10 +394,23 @@ export function createMemoryBackend(
         snapshots.set(cp.id, cp);
         records.set(cp.id, immutable([...merged.values()]));
         heads.set(batch.threadId, info);
-        if (info.deleted) for (const [id, session] of sessions) if (session.selectedThreadId === info.id)
-          sessions.set(id, immutable({ ...session, selectedThreadId: null, revision: session.revision + 1, updatedAt: cp.createdAt }));
+        if (info.deleted)
+          for (const [id, session] of sessions)
+            if (session.selectedThreadId === info.id)
+              sessions.set(
+                id,
+                immutable({
+                  ...session,
+                  selectedThreadId: null,
+                  revision: session.revision + 1,
+                  updatedAt: cp.createdAt,
+                }),
+              );
         receipts.set(batch.commitId, receipt);
-        fingerprints.set(batch.commitId, stagedFingerprints.get(batch.commitId)!);
+        fingerprints.set(
+          batch.commitId,
+          stagedFingerprints.get(batch.commitId)!,
+        );
         stagedFingerprints.delete(batch.commitId);
         staged.delete(batch.commitId);
         return receipt;
@@ -311,7 +458,9 @@ export function createMemoryBackend(
     },
     close: async () => {
       closed = true;
-      sessions.clear(); fingerprints.clear(); stagedFingerprints.clear();
+      sessions.clear();
+      fingerprints.clear();
+      stagedFingerprints.clear();
       heads.clear();
       snapshots.clear();
       records.clear();
