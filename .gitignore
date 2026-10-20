@@ -9,7 +9,9 @@ docs/**
 !docs/superpowers/specs/
 !docs/superpowers/plans/*-tessar-*.md
 !docs/superpowers/specs/*-tessar-*.md
-examples/
+examples/*
+!examples/cli/
+!examples/headless/
 *.db
 *.db-shm
 *.db-wal
