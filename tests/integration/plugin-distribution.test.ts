@@ -18,6 +18,21 @@ async function command(name:"npm"|"pnpm",args:string[],cwd:string,cache:string){
  if(!cli)throw Error("Missing "+name+" JavaScript CLI");
  return execute(process.execPath,[cli,...args],options).catch(detailed);
 }
+it.skipIf(process.platform!=="win32")("launches pnpm from the action-setup .bin layout on Windows",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"tessar action setup "));
+ const previousPath=process.env.PATH;
+ try{
+  const bin=join(root,"node_modules/.bin"),source=join(root,"node_modules/pnpm/bin");
+  await mkdir(bin,{recursive:true});await mkdir(source,{recursive:true});
+  await writeFile(join(source,"pnpm.mjs"),"console.log(JSON.stringify(process.argv.slice(2)));");
+  process.env.PATH=bin;
+  const result=await command("pnpm",["--version"],root,join(root,"cache"));
+  expect(JSON.parse(result.stdout)).toEqual(["--version"]);
+ }finally{
+  if(previousPath===undefined)delete process.env.PATH;else process.env.PATH=previousPath;
+  await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+ }
+});
 it("runs a packed installed CLI from another project and discovers a plugin added after installation",async()=>{
  const root=await mkdtemp(join(tmpdir(),"tessar installed host "));
  try{
