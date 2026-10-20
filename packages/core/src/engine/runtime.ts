@@ -2,7 +2,6 @@ import { PluginHost } from "../plugins/host.js";
 import type { ValueRegistration } from "../plugins/registry.js";
 import type { ErrorInfo } from "../errors.js";
 import type { EventContext } from "../events/definition.js";
-import { canonicalJson } from "../state/commit.js";
 import { createMemoryBackend } from "../state/memory-backend.js";
 import { StateQueries } from "../state/queries.js";
 import type { StorageBackend } from "../state/storage-ports.js";
@@ -28,7 +27,7 @@ export function toolRegistrations(
     version: 1,
     pluginId: agentId,
     pluginVersion: 1,
-    configurationId: canonicalJson(tool.jsonSchema),
+    configurationId: tool.configurationId,
   }));
 }
 

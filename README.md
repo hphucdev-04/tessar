@@ -1,25 +1,34 @@
 # Tessar
 
-An independent TypeScript framework and SDK for CLI agents and agents embedded
-in applications. The core runs an agent; plugins supply capabilities and policy.
+A TypeScript framework and SDK for building CLI agents and embedding agents in
+applications.
 
-This repository contains workspace packages under development. They have not
-been published to npm, and Cube has not been migrated.
+**Anything can be a plugin.** Start with an Agent, a model and your own tools.
+Add a Controller when you need plugins, and Sessions when you need conversations.
+Core provides the agent loop, messages, hooks, state and checkpoints; you choose
+how to extend them.
 
-| Package | Responsibility |
-| --- | --- |
-| `@tessar/core` | Agent, Controller, Session, Thread, messages, tools, hooks, state, checkpoints and default memory storage |
-| `@tessar/openai` | OpenAI Responses/Chat Completions provider and model metadata integration |
-| `@tessar/plugins` | Optional Node host utilities for discovery, loading and npm package management; logger plugin at `/logger` |
-| `@tessar/sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
-| `@tessar/postgresql` | PostgreSQL storage with transactions, versioned history and process fencing |
-| `@tessar/mongodb` | MongoDB storage with transactions, versioned history and process fencing |
+## Install
 
-## Public API
+Requires Node.js **24.14 or newer**. Examples use TypeScript and ES modules.
+
+```sh
+npm install @tessar/core @tessar/openai zod
+```
+
+## Your first agent
+
+Create `.env` with your credentials and a model available to your account:
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=your-model-id
+```
+
+Save this as `agent.ts` in a project with `"type": "module"` in `package.json`:
 
 ```ts
-import { tool as toolHooks } from "@tessar/core";
-import { Agent, Controller, HumanMessage } from "@tessar/core";
+import { Agent } from "@tessar/core";
 import { OpenAIProvider } from "@tessar/openai";
 
 const agent = new Agent({
@@ -28,334 +37,108 @@ const agent = new Agent({
     apiKey: process.env.OPENAI_API_KEY!,
     model: process.env.OPENAI_MODEL!,
   }),
+  instructions: "Be concise and helpful.",
 });
 
-const result = await agent.generate("Hello");
-console.log(result.status, result.output);
+const result = await agent.generate("What can an agent do with tools?");
+for (const message of result.output) {
+  for (const part of message.content) {
+    if (part.type === "text") console.log(part.text);
+  }
+}
 ```
 
-`generate` aggregates the same execution as `stream`; it may involve tools and
-multiple model requests. It returns on completion or suspension. Alternatively,
-consume `agent.stream(...)` with `for await`.
+```sh
+node --env-file=.env agent.ts
+```
 
-Migration: the deprecated `agent.generate({ input, ...options })` and
-`agent.stream({ input, ...options })` signatures have been removed. Pass
-`input` first and options second. Thread command signatures are unchanged.
-
-Agent requires a default model and runs without a Controller or public
-init/dispose. Direct calls have independent context and automatic cleanup.
-Override request settings with `modelOptions`; a string `model` keeps the
-default connection, while an executable model instance supplies its own.
-Nested option objects are replaced, and omitted settings are left to the SDK.
-
-For a conversation, use a Session on the initialized Controller:
+Agent runs directly, without Controller initialization. `generate()` returns the
+result when execution completes or suspends; it can include multiple model requests
+and tool calls. Use `stream()` to consume events as they arrive:
 
 ```ts
-const controller = new Controller({ id: "application", agent });
-await controller.initialize();
-const session = await controller.createSession({ scope: { userId: "u1" } });
-await session.thread.create();
-session.subscribe(event => console.log(event.type, event.payload));
-await session.followUp(new HumanMessage("Hello"));
-// When the application exits: await controller.dispose().
+import { message, stream } from "@tessar/core";
+
+for await (const event of agent.stream("Explain agent tools briefly.")) {
+  if (event.is(message.delta) && event.payload.partKind === "text") {
+    process.stdout.write(event.payload.delta);
+  }
+  if (event.is(stream.error)) throw Error(event.payload.error.message);
+}
 ```
 
-The receipt acknowledges queued input, not a final answer. Results arrive through
-subscribe. Unadmitted queued input is in memory. Scope is a state filter; the host
-owns authentication and authorization. Session has an automatically generated durable `id`; it has no initialize, send or stream method. Controller and Agent require developer-assigned IDs.
+Separate direct calls have independent context. Use a Session for a continuing
+conversation, or pass the messages you want each call to receive.
 
-Live Agent IDs must be unique within the loaded core runtime; Controller IDs
-have their own namespace. A duplicate constructor throws `RegistrationConflict`.
-`await agent.shutdown()` or `await controller.dispose()` releases the ID for
-reuse. Standalone calls still clean up automatically and leave the Agent reusable.
-Identity checks neither persist IDs to storage nor coordinate separate processes
-or separately loaded copies of core. Unreferenced instances are not kept alive
-by the identity tracker; garbage collection is not an immediate release guarantee.
-
-## Plugins
-
-Inside `setup(tessar)`, register capabilities with `agent.register()`,
-`tools.register()`, `models.register()`, `storage.register()`,
-`effects.register()` and `interruptions.register()`. State definitions use
-`state.define()`; event handlers use `hook()`.
-
-Migration: rename `tessar.models.registerProvider()` to `tessar.models.register()`
-and `tessar.storage.registerBackend()` to `tessar.storage.register()`.
-The old plugin method names are no longer available.
-
-Plugins can share custom capabilities through the registry:
-
-```ts
-// The providing plugin's setup(tessar):
-tessar.registry.register("memory", "project", memoryService);
-
-// The consuming plugin's setup(tessar):
-tessar.hook(contextHooks.prepare, async (event, context) => {
-  const memory = context.registry.get<MemoryService>("memory", "project");
-  if (!memory) return;
-  return memory.prepare(event.payload);
-});
-```
-
-Here `contextHooks` is `context` imported from `@tessar/core`; `MemoryService`
-and its `prepare` method are application-defined. `get<T>(kind, id)` returns
-`undefined` when absent; `list<T>(kind)` returns a readonly array of values.
-The generic type describes the agreed contract; it does not validate values.
-Registry access is available in hook callbacks, with no registration or release
-methods. Stream hooks read the registry captured for their stream; other hooks
-read the registry captured for that dispatch. Detaching a plugin affects new
-captures; its cleanup waits for existing captures to finish. Use capabilities
-within the hook's awaited work, and register resource cleanup with `tessar.defer()`.
-Registration alone does not execute a capability or persist its data.
-
-Import tool APIs directly when defining tools:
+## Add your own tools
 
 ```ts
 import { createTool } from "@tessar/core/tool";
 import { z } from "zod";
 
-const searchTool = createTool({
-  name: "search",
-  description: "Search the application's documents",
-  schema: z.object({ query: z.string() }),
-  execute: ({ query }) => searchDocuments(query),
+const add = createTool({
+  name: "add",
+  description: "Add two numbers.",
+  schema: z.object({ a: z.number(), b: z.number() }),
+  execute: ({ a, b }) => ({ sum: a + b }),
 });
 
-const agent = new Agent({
-  id: "search-assistant",
-  model,
-  tools: { searchTool },
-});
-```
-
-`searchDocuments` and `model` are supplied by the application. Tools can be
-declared directly on Agent or registered by plugins. Text/JSON results become
-correlated `ToolMessage`s automatically. Return `new ToolMessage(content,
-{ metadata })` when you need message options or explicit content parts.
-Tool calls run concurrently by default; set `tools: { concurrency: 4,
-searchTool }` to limit active executions. Retry and availability policy belong
-to tools/plugins, with no extra Agent fields.
-
-```ts
-import { type Plugin, type PluginContext } from "@tessar/core";
-
-class BlockWritePlugin implements Plugin {
-  readonly id = "block-write";
-  setup(tessar: PluginContext): void {
-    tessar.hook(toolHooks.before, event => {
-      if (event.payload.tool.name === "write") {
-        return { decision: "deny", reason: "Write tool disabled" };
-      }
-    });
-  }
-}
-
-const blockWrite = new BlockWritePlugin();
-```
-
-Event constants are strings, such as `toolHooks.before === "tool.before"`.
-Types provide autocomplete and inferred payloads/results. Plugins do not declare
-apiVersion. Built-in and custom plugins use classes instantiated with `new`.
-
-Plugins can also construct and register Agents, including plugins loaded by
-PluginManager after a CLI has been packaged:
-
-```ts
-class ResearchPlugin implements Plugin {
-  readonly id = "research";
-  setup(tessar: PluginContext): void {
-    const researcher = new Agent({ id: "researcher", model });
-    tessar.agent.register(researcher);
-    // Use researcher.stream()/generate() in your own hooks or tools.
-  }
-}
-```
-
-Registration exposes the instance under the `agent` registry kind and transfers
-its shutdown lifecycle to the plugin. Detachment removes it from new registry
-captures; shutdown waits until existing captures release it. Failed setup rolls
-back registered Agents. The Controller's configured Agent is already registered.
-Registration does not attach an Agent to the Controller or execute it. Plugins
-choose delegation, context, tools and process isolation themselves.
-`Plugin` describes the instance's ID and setup contract; no base class is required.
-Add imported plugin instances to Controller options or use
-`controller.plugins.attach(plugin)` / `detach(id)` while ready.
-
-[Plugin authoring](docs/plugin-authoring.md) describes tools, state, cleanup and
-durability boundaries. `@tessar/plugins` provides opt-in discovery/loading and
-npm install/update/remove for Node hosts. Core does not scan root directories or
-install dependencies.
-
-```ts
-import { PluginManager } from "@tessar/plugins";
-import { resolve } from "node:path";
-
-const manager = new PluginManager({
-  directory: resolve(".tessar"),
-  hostUrl: import.meta.url,
-});
-// Pass await manager.load() to Controller's plugins.
-// In finally: await controller.dispose(), then manager.dispose().
-```
-
-Put a default-exported plugin in `.tessar/plugins/example.mjs` (or erasable
-`.ts`). It imports the host's `@tessar/core` without a separate SDK install.
-Additional dependencies use normal Node resolution from the plugin environment.
-
-The host chooses the directory name. The demo uses `.tessar`; a consuming CLI
-can use `.my-cli` instead:
-
-```text
-.my-cli/
-├── plugins/                 # Custom files or folders with an index entry
-│   ├── custom.mjs
-│   └── my-plugin/index.mjs
-├── plugins.json             # { "packages": ["some-plugin"] }
-└── npm/
-    ├── package.json         # npm dependencies
-    ├── package-lock.json
-    └── node_modules/
-```
-
-Custom plugins are discovered automatically. `install()` installs npm packages
-under `npm/` and records their names in `plugins.json`. Loading never installs
-missing packages. Local files can use their own nearby dependencies or dependencies
-from the managed `npm/` environment. `@tessar/core` resolves from the host.
-
-## Logging
-
-Add `new LoggerPlugin()` from `@tessar/plugins/logger` to the Controller's `plugins` for JSON
-logs on stderr. Supply `new LoggerPlugin({ write: entry => yourLogger.write(entry) })`
-to choose another destination. Entries include event type, timestamp and execution
-identity. Error payloads identify their source: `tessar`, `provider`, `plugin`,
-`tool`, `storage` or `application`, with the relevant provider/plugin/tool identity.
-SDK exceptions keep their original object when thrown; trace/state store JSON error
-records. Diagnostic hook failures are isolated to prevent recursive logging.
-The subpath also default-exports the stderr logger plugin for
-`PluginManager.load(["@tessar/plugins/logger"])` when the package is available
-in the configured directory's `npm/` environment. Core is an optional peer dependency; the
-loader supplies the host's SDK without npm installing another copy.
-
-## Storage, models and recovery
-
-Choose one storage plugin for each Controller:
-
-```ts
-import { PostgresqlStoragePlugin } from "@tessar/postgresql";
-import { MongoDBStoragePlugin } from "@tessar/mongodb";
-
-const storage = new PostgresqlStoragePlugin({
-  connectionString: process.env.POSTGRES_URL!,
-  schema: "tessar",
+const calculator = new Agent({
+  id: "calculator",
+  model: agent.model,
+  tools: { add },
 });
 
-// Alternatively:
-// const storage = new MongoDBStoragePlugin({
-//   uri: process.env.MONGODB_URL!,
-//   databaseName: "my_agent",
-// });
-
-const controller = new Controller({ id: "application", agent, plugins: [storage] });
-await controller.initialize();
+await calculator.generate("Use add to calculate 27 + 15.");
 ```
 
-Both packages use native database drivers and implement the existing state,
-checkpoint and ownership contracts. MongoDB requires a replica set or sharded
-deployment supporting transactions. Each backend owns and closes its connections.
-See the [PostgreSQL README](packages/postgresql/README.md) and
-[MongoDB README](packages/mongodb/README.md) for native connection options.
+Return text, JSON or a `ToolMessage`. Tessar binds the result to the model's tool
+call automatically. Tools can also be registered by plugins.
 
-For database tests, set `TESSAR_TEST_POSTGRES_URL` and `TESSAR_TEST_MONGODB_URL`
-in the environment or ignored `.env.storage`, then run `pnpm test:storage`.
-Tests use unique schemas/databases and explicitly skip when URLs are absent.
+## Build up as you need
 
-Core always manages state and checkpoints. Memory storage is the default; pass
-`new SqliteStoragePlugin({ filename })` as a plugin for persistence. SQLite uses
-Node's experimental synchronous SQLite API and is a reference implementation,
-not a server throughput claim. Only the OpenAI adapter is shipped in this phase.
+| API | Use it for |
+| --- | --- |
+| `Agent` | Model configuration, instructions, tools, `generate()` and `stream()` |
+| `Controller` | Plugin registration, shared services and storage lifecycle |
+| `Session` | Queued follow-ups, subscriptions, model selection and thread selection |
+| `Thread` | Conversation history, checkpoints, forks and execution records |
 
-`controller.models.get(ref).profile` returns an automatic immutable snapshot.
-Metadata may be incomplete/stale; unknown fields are null. Reading the getter
-does not issue a network request. Provider metadata and bundled catalog fallbacks
-use exact identities and preserve pricing provenance.
+Plugins can register tools, model providers, storage backends and custom
+capabilities, and participate through typed hooks. Skills, long-term memory,
+commands, compaction and delegation strategies can be implemented with these
+extension APIs to suit your application.
 
-Suspension persists a request and cursor. Resume consumes a valid response once,
-with the same stream ID and a new attachment. Unknown tool/effect outcomes require
-reconciliation; checkpoints do not make arbitrary external I/O exactly-once.
-Skills, long-term memory, commands, compression, subagent strategies and telemetry
-export remain plugin/application concerns. Core supplies generic extension APIs.
+## Guides
 
-## Development
+Start with the [developer guide](examples/guide/README.md). Examples use the
+public SDK and credentials you supply.
 
-Requires Node >=24.14.0 and pnpm 11.5.3.
+| Guide | What it covers |
+| --- | --- |
+| [Agent](examples/guide/agent.md) | Generate, messages, instructions and model overrides |
+| [Streaming](examples/guide/stream.md) | Text/reasoning deltas, tools and token usage |
+| [Tools and messages](examples/guide/tools.md) | Zod schemas, tool context and `ToolMessage` |
+| [Controller and Session](examples/guide/sessions.md) | Conversations, queues, subscriptions and threads |
+| [Plugins](examples/guide/plugins.md) | Custom plugins, hooks, logging and loading plugins after packaging |
+| [Storage](examples/guide/storage.md) | SQLite, PostgreSQL, MongoDB and restoring conversations |
 
-```sh
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build
-pnpm test
-pnpm test:integration
-pnpm check:boundaries
+## Packages
 
-node examples/headless/dist/main.js
-node examples/cli/dist/main.js hello
-node examples/cli/dist/main.js hello --db ./state.db --approval
-node examples/cli/dist/main.js plugins list
-node examples/cli/dist/main.js plugins install example-plugin
-node examples/cli/dist/main.js plugins update example-plugin
-node examples/cli/dist/main.js plugins remove example-plugin
-```
+Install the packages your application uses:
 
-The `hello --db ./state.db --approval` command prints a suspended execution with
-Thread/interrupt IDs. Resume
-in a new process with `--db ./state.db --thread <id> --resume <interrupt-id> --approval`.
-CLI uses a scripted provider by default; `--openai` requires OPENAI_API_KEY and
-OPENAI_MODEL. No live API is required by the default checks.
+| Package | Provides |
+| --- | --- |
+| [`@tessar/core`](packages/core/README.md) | Agent execution, sessions, messages, tools, hooks, state and in-memory storage |
+| [`@tessar/openai`](packages/openai/README.md) | OpenAI Responses and Chat Completions adapters, including compatible endpoints |
+| [`@tessar/plugins`](packages/plugins/README.md) | Plugin discovery/loading, npm plugin management and the `/logger` plugin |
+| [`@tessar/sqlite`](packages/sqlite/README.md) | SQLite persistence using Node's built-in SQLite API |
+| [`@tessar/postgresql`](packages/postgresql/README.md) | PostgreSQL persistence |
+| [`@tessar/mongodb`](packages/mongodb/README.md) | MongoDB persistence |
 
-## Publishing
+Tessar is an early **0.x** SDK; APIs can change between releases. To work on Tessar
+itself, see [Contributing](CONTRIBUTING.md).
 
-The four public packages share one release version. Update `version` in
-`packages/{core,openai,plugins,sqlite,postgresql,mongodb}/package.json` together; the private workspace
-root's version is not used for publishing. Commit the version changes before
-creating the matching Git tag, for example:
+## License
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-`.github/workflows/release.yml` calls the existing Ubuntu/Windows CI, validates
-the tag against all four package versions, builds and packs with pnpm, and checks
-the actual archives before publishing. Stable versions use `latest`; prereleases
-such as `v0.2.0-beta.1` use `next`. Archives are saved as a workflow artifact.
-Packages publish sequentially: core, OpenAI, plugins, SQLite, PostgreSQL, MongoDB.
-
-Configure npm Trusted Publishing for **each package** with GitHub owner
-`hphucdev-04`, repository `tessar`, workflow filename `release.yml`, no environment,
-and **Allow npm publish** enabled. The publish job uses OIDC; no `NPM_TOKEN` secret
-is needed. See [npm's trusted publisher setup](https://docs.npmjs.com/trusted-publishers/).
-If the packages do not exist yet, publish their first versions from a logged-in
-terminal, then configure their trusted publishers. For that first publish, build
-and pack locally with pnpm and use `npm publish <archive.tgz> --access public
---tag next` for a prerelease, or `--tag latest` for a stable version.
-
-To check the current release locally without publishing (PowerShell):
-
-```powershell
-$env:RELEASE_TAG = 'v0.1.0'
-node scripts/release.mjs check
-pnpm build
-pnpm --filter './packages/*' -r pack --pack-destination "$PWD/dist/release"
-node scripts/release.mjs verify
-```
-
-Publishing several npm packages is not atomic. If a publish fails after an earlier
-package succeeds, keep the saved archives, inspect which versions reached npm, and
-publish only the missing packages. A full rerun does not skip published versions.
-
-Current authority: [English spec](docs/superpowers/specs/2026-10-15-tessar-minimal-core-design.md)
-and [English plan](docs/superpowers/plans/2026-10-15-tessar-minimal-core-plan.md).
-Earlier design documents are historical and are superseded by these documents.
-[Plugin distribution spec](docs/superpowers/specs/2026-10-15-plugin-distribution-design.md)
-and [plan](docs/superpowers/plans/2026-10-15-plugin-distribution-plan.md) extend them
-for Node/npm hosts. Standalone executable packaging requires its own runtime proof.
+[Apache-2.0](LICENSE).

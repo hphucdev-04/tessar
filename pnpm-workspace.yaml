@@ -1,6 +1,5 @@
 packages:
   - packages/*
-  - examples/cli
-  - examples/headless
+  - tests/fixtures/apps/*
 minimumReleaseAgeExclude:
   - openai@7.34.0

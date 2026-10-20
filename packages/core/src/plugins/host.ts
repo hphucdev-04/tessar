@@ -103,6 +103,7 @@ export class PluginHost {
         id: string,
         value: unknown,
         version = 1,
+        configurationId: string | null = plugin.configurationId ?? null,
       ) => {
         requireId(id);
         if (kind === "storage" && this.storageSealed)
@@ -125,7 +126,7 @@ export class PluginHost {
           version,
           pluginId: plugin.id,
           pluginVersion: plugin.version ?? 1,
-          configurationId: plugin.configurationId ?? null,
+          configurationId,
         });
       };
       const tessar: PluginContext = {
@@ -181,7 +182,21 @@ export class PluginHost {
             return state;
           },
         },
-        tools: { register: (tool) => register("tool", tool.name, tool) },
+        tools: {
+          register: (tool) =>
+            register(
+              "tool",
+              tool.name,
+              tool,
+              1,
+              tool.resumeSchema || tool.resume
+                ? JSON.stringify([
+                    plugin.configurationId ?? null,
+                    tool.configurationId,
+                  ])
+                : (plugin.configurationId ?? null),
+            ),
+        },
         models: {
           register: (provider) => register("provider", provider.id, provider),
         },

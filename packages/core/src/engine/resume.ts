@@ -13,7 +13,8 @@ import {
 import { RecoveryService } from "./recovery.js";
 import { recoverTools } from "./tool-executor.js";
 import { TessarError, fail } from "../errors.js";
-import { immutable, type JsonValue } from "../json.js";
+import { assertJson, immutable, type JsonValue } from "../json.js";
+import type { Tool } from "../tools/tool.js";
 import { canonicalJson } from "../state/commit.js";
 import type { StorageBackend } from "../state/storage-ports.js";
 import type { RegistryLease } from "../plugins/registry.js";
@@ -79,7 +80,11 @@ export async function validateResume(
   threadId: string,
   interruptId: string,
   value: JsonValue,
-): Promise<{ interrupt: InterruptRecord; decision: ControlDecision }> {
+): Promise<{
+  interrupt: InterruptRecord;
+  decision: ControlDecision | null;
+  value?: JsonValue;
+}> {
   const interrupt = await backend.executions.get("interrupts", interruptId, {
     threadId,
   });
@@ -87,6 +92,34 @@ export async function validateResume(
     fail("InterruptNotFound", "Interrupt does not belong to thread");
   if (interrupt.status !== "pending")
     fail("AlreadyResumed", "Interrupt already consumed");
+  if (interrupt.kind === "tool-result") {
+    const registration = registry.values.find(
+      (r) => r.kind === "tool" && r.id === interrupt.definitionId,
+    );
+    const tool = registration?.value as Tool | undefined;
+    if (
+      !tool ||
+      registration!.pluginId !== interrupt.pluginId ||
+      registration!.version !== interrupt.definitionVersion ||
+      canonicalJson(tool.resumeJsonSchema) !==
+        canonicalJson(interrupt.responseSchema)
+    )
+      fail("ResumeIncompatible", "Waiting tool contract changed");
+    try {
+      const parsed = tool.resumeSchema ? tool.resumeSchema.parse(value) : value;
+      assertJson(parsed);
+      return {
+        interrupt,
+        decision: null,
+        value: immutable(parsed) as JsonValue,
+      };
+    } catch {
+      fail(
+        "InvalidResumeResponse",
+        "Response does not satisfy tool resume schema",
+      );
+    }
+  }
   const binding = registry.find<{
     definition: InterruptionDefinition;
     pluginId: string;
@@ -279,7 +312,7 @@ async function prepareResumeFrame(
     ttlMs: 30000,
   });
   try {
-    const { interrupt, decision } = await validateResume(
+    const { interrupt, decision, value } = await validateResume(
       execution.runtime.backend,
       registry,
       request.threadId,
@@ -291,6 +324,7 @@ async function prepareResumeFrame(
     const stream = (
       records.get("streams:" + interrupt.streamId) as { data: StreamRecord }
     ).data;
+    let waitingTool: ToolExecutionRecord | undefined;
     if (interrupt.actionRef?.toolExecutionId) {
       const tool = execution
         .rows<ToolExecutionRecord>(
@@ -303,6 +337,7 @@ async function prepareResumeFrame(
         canonicalJson(tool.arguments) !== interrupt.actionRef.argumentsDigest
       )
         fail("ResumeIncompatible", "Pending operation payload changed");
+      waitingTool = tool;
     }
     const frame = createFrame(execution, {
       request,
@@ -322,17 +357,27 @@ async function prepareResumeFrame(
       frame.request.adapter,
       request.model,
     );
-    if (!cursor) fail("ResumeIncompatible", "Missing continuation cursor");
-    const previous = cursor.decisions.at(-2) as ControlDecision | undefined;
-    const resolved =
-      previous && ["deny", "stop"].includes(previous.decision)
-        ? previous
-        : decision;
-    cursor.decisions = [
-      ...cursor.decisions.slice(0, -1),
-      resolved as unknown as JsonValue,
-    ];
-    position.phase = phaseForEvent(cursor.eventId);
+    let resolved = decision;
+    if (interrupt.kind === "tool-result") {
+      if (!waitingTool || waitingTool.status !== "suspended")
+        fail("ResumeIncompatible", "Tool is not waiting for a response");
+      waitingTool.resume = { interruptId: interrupt.id, value: value! };
+      waitingTool.status = "resuming";
+      position.handlerCursor = null;
+      position.phase = "BeforeTool";
+    } else {
+      if (!cursor) fail("ResumeIncompatible", "Missing continuation cursor");
+      const previous = cursor.decisions.at(-2) as ControlDecision | undefined;
+      resolved =
+        previous && ["deny", "stop"].includes(previous.decision)
+          ? previous
+          : decision;
+      cursor.decisions = [
+        ...cursor.decisions.slice(0, -1),
+        resolved as unknown as JsonValue,
+      ];
+      position.phase = phaseForEvent(cursor.eventId);
+    }
     position.pendingInterruptId = null;
     if (request.model) {
       position.registryManifest = position.registryManifest.filter(

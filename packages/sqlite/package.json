@@ -1,13 +1,15 @@
 {
   "name": "@tessar/sqlite",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "license": "Apache-2.0",
   "description": "SQLite persistence for Tessar state and checkpoints using Node's built-in SQLite API.",
+  "keywords": ["tessar","ai-agent","sqlite","storage","persistence","checkpoints","typescript"],
   "type": "module",
   "files": ["dist"],
   "engines": { "node": ">=24.14.0" },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hphucdev-04/tessar.git",
+    "url": "git+https://github.com/tessar-ai/tessar.git",
     "directory": "packages/sqlite"
   },
   "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
@@ -22,7 +24,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepack": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json && node ../../scripts/copy-license.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

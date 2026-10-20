@@ -17,6 +17,15 @@ npm install @tessar/core @tessar/openai zod
   `session.subscribe()` and queued `session.followUp()` inputs.
 - Core manages state and checkpoints, using memory storage by default.
 
+Tools can return `context.suspend(payload)` to wait for external input. Optional
+`resumeSchema` validates the response; `resume(response, input, context)` can
+continue the tool without replaying `execute()`. Without that callback, the
+response becomes the tool result. Standalone callers continue through
+`agent.resume({ threadId, interruptId, value })`, which returns a new event stream
+for the same execution. Session callers use `session.resume()` and their existing
+subscription. See the [tool guide](../../examples/guide/tools.md) for user questions,
+conditional approval, UI integration and persistence boundaries.
+
 ```ts
 import { Agent, Controller, HumanMessage, ToolMessage } from "@tessar/core";
 import { createTool } from "@tessar/core/tool";
@@ -135,7 +144,7 @@ before queuing input that should use the new model. See
 [plugin authoring](../../docs/plugin-authoring.md) for decisions and capabilities.
 
 This is an early 0.x release. See the
-[repository](https://github.com/hphucdev-04/tessar) for complete TypeScript
+[repository](https://github.com/tessar-ai/tessar) for complete TypeScript
 examples and the current API contracts. The bundled model catalog includes its
 upstream license at `src/models/catalog.LICENSE`.
 
