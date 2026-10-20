@@ -10,7 +10,7 @@ import {
   type ExecutionFrame,
   type ExecutionRequest,
 } from "./frame.js";
-import { RecoveryService } from "./recovery.js";
+import { planRecovery } from "./recovery.js";
 import { recoverTools } from "./tool-executor.js";
 import { TessarError, fail } from "../errors.js";
 import { assertJson, immutable, type JsonValue } from "../json.js";
@@ -218,7 +218,7 @@ export async function prepareRecovery(
 ): Promise<ExecutionFrame> {
   const frame = await restoreFrame(execution, request, sink, registry);
   try {
-    const plan = new RecoveryService().plan(
+    const plan = planRecovery(
       frame.cp,
       execution.rows(frame, "model_attempts"),
       execution.rows(frame, "tool_executions"),

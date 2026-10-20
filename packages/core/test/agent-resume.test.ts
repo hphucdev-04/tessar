@@ -16,7 +16,7 @@ import { standaloneFor } from "../src/engine/continuation.js";
 async function collect(stream: Stream) {
   const result = [];
   for await (const event of stream) {
-    if (event.is(events.error)) throw errorFromInfo(event.payload.error);
+    if (event.type === events.error) throw errorFromInfo(event.payload.error);
     result.push(event);
   }
   return result;
@@ -68,7 +68,7 @@ it("resumes standalone after an invalid answer without replaying execute", async
     ).rejects.toMatchObject({ code: "InvalidResumeResponse" });
     const next = agent.resume({ ...options, value: "chosen" });
     expect(
-      (await collect(next)).find((e) => e.is(events.end))!.payload.status,
+      (await collect(next)).find((e) => e.type === events.end)!.payload.status,
     ).toBe("completed");
     expect(next.id).toBe(first.streamId);
     expect(calls()).toBe(1);
@@ -86,7 +86,7 @@ it("accepts resume from the suspended event while the old attachment is closing"
     const first = agent.stream("ask");
     let continuation!: Promise<Awaited<ReturnType<typeof collect>>>;
     for await (const event of first)
-      if (event.is(events.suspended)) {
+      if (event.type === events.suspended) {
         continuation = collect(
           agent.resume({
             threadId: first.threadId,
@@ -96,7 +96,7 @@ it("accepts resume from the suspended event while the old attachment is closing"
         );
       }
     expect(
-      (await continuation).find((e) => e.is(events.end))!.payload.status,
+      (await continuation).find((e) => e.type === events.end)!.payload.status,
     ).toBe("completed");
   } finally {
     await agent.shutdown();
@@ -107,7 +107,7 @@ it("cancels a waiting standalone execution through its suspended handle", async 
   const { agent } = fixture();
   try {
     const first = agent.stream("ask");
-    const pending = (await collect(first)).find((e) => e.is(events.suspended))!
+    const pending = (await collect(first)).find((e) => e.type === events.suspended)!
       .payload.interrupt;
     first.abort("no answer");
     await expect(
@@ -156,7 +156,7 @@ it("cancels waiting work when its original external signal is aborted", async ()
   try {
     const control = new AbortController();
     const first = agent.stream("ask", { signal: control.signal });
-    const pending = (await collect(first)).find((e) => e.is(events.suspended))!
+    const pending = (await collect(first)).find((e) => e.type === events.suspended)!
       .payload.interrupt;
     control.abort("leave page");
     await expect(
@@ -179,7 +179,7 @@ it("consumes competing standalone responses once and ignores stale abort handles
   const { agent, calls } = fixture();
   try {
     const first = agent.stream("ask");
-    const pending = (await collect(first)).find((e) => e.is(events.suspended))!
+    const pending = (await collect(first)).find((e) => e.type === events.suspended)!
       .payload.interrupt;
     const options = {
       threadId: first.threadId,
@@ -188,8 +188,8 @@ it("consumes competing standalone responses once and ignores stale abort handles
     };
     const one = (async () => {
       for await (const event of agent.resume(options)) {
-        if (event.is(events.resumed)) first.abort("stale handle");
-        if (event.is(events.error)) throw errorFromInfo(event.payload.error);
+        if (event.type === events.resumed) first.abort("stale handle");
+        if (event.type === events.error) throw errorFromInfo(event.payload.error);
       }
     })();
     const duplicate = collect(agent.resume(options));
@@ -276,7 +276,7 @@ it.each(["handle", "signal"])(
       const control = new AbortController();
       const first = agent.stream("ask", { signal: control.signal });
       const question = (await collect(first)).find((e) =>
-        e.is(events.suspended),
+        e.type === events.suspended,
       )!.payload.interrupt;
       const options = { threadId: first.threadId, interruptId: question.id };
       await expect(

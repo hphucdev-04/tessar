@@ -1,6 +1,6 @@
 import {expect,it} from "vitest";
 import {OpenAIPlugin} from "../src/plugin.js";
-import {PluginHost} from "@tessar/core";
+import {PluginHost} from "../../core/src/plugins/host.js";
 it("registers an explicit provider and retrieves only metadata actually supplied by the API",async()=>{
  const plugin=new OpenAIPlugin({apiKey:"fixture",fetch:async()=>Response.json({id:"x",object:"model",created:1,owned_by:"fixture"})});
  expect(plugin).toBeInstanceOf(OpenAIPlugin);

@@ -90,12 +90,45 @@ These are operations on a Session instance, after initialization:
 | `session.thread.fork()` | Create a fork; explicitly switch to its returned ID to select it |
 | `session.thread.delete()` | Soft-delete the selected thread |
 | `session.abort(reason)` | Abort active work |
-| `session.model.ref` | Read the selected provider/model identity |
-| `session.setModel(model)` | Select a model for future follow-ups |
+| `session.thread.purge({ threadId })` | Permanently remove a previously deleted thread |
+| `session.model.get()` | Read the full `providerId/modelId` ID |
+| `session.model.name()` | Read the native model ID for display |
+| `session.model.list()` | List readonly `{ id, name, profile }` entries |
+| `session.model.switch(id, options?)` | Select a model and options for future input |
 
-Thread selection changes are rejected while work is running. `fork()` also
+Thread creation accepts `title`, `messages` and `metadata`; scope comes from the
+Session. Instructions belong to Agent or context hooks. Creation and selection
+changes are rejected while work is running or input is queued. `fork()` also
 accepts an exact `atCheckpointId` or `atMessageId`; a fork point must not contain
 unresolved tool calls. History pages return `items` and `nextCursor`.
+
+Controller manages lifecycle, plugins and Sessions. Thread CRUD and model
+selection belong to Session; Controller has no `models` or thread CRUD API.
+Returned Thread handles provide history, checkpoint, trace and record reads.
+
+## Switch models
+
+```ts
+console.log(session.model.get());  // e.g. openai/gpt-6.1-sol
+console.log(session.model.name()); // gpt-6.1-sol
+console.log(session.model.list()); // [{ id, name, profile }, ...]
+await session.model.switch("gpt-6-astra", { reasoning: { effort: "high" } });
+// A different provider/connection must first be registered by a plugin:
+await session.model.switch("openrouter/anthropic/claude-sonnet-4-6");
+```
+
+A bare ID without slashes keeps the current provider/connection. Use a full ID
+from `list()` for cross-provider changes or native IDs containing slashes.
+Each switch uses the destination provider's configured defaults plus the supplied
+shallow overrides. Nested objects replace whole objects; previous Session
+overrides are discarded. Omitting options restores destination defaults.
+Keys, base URLs, headers, timeouts and retries belong to provider configuration.
+
+Accepted input retains its model/options snapshot, even while queued. Switches
+affect later accepted input; resume/recover use the saved execution selection.
+Policies use `session.model.beforeChange`; successful persisted changes emit
+`session.modelChanged`. Both include model identities and optional
+`previousOptions`/`options`. Denied or failed writes emit no changed event.
 
 Agent and Controller IDs are application-defined and must be unique among live
 instances of each kind in one loaded core runtime. Session IDs are generated.

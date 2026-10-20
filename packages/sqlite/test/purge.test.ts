@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
-import { createMemoryBackend, ThreadService, ForkService } from "@tessar/core";
+import { createMemoryBackend } from "@tessar/core";
+import { ThreadService } from "../../core/src/state/threads.js";
+import { ForkService } from "../../core/src/state/fork.js";
 import { createSqliteBackend } from "../src/backend.js";
 for (const name of ["memory", "sqlite"]) it(`${name} purges only deleted, unowned, unreferenced threads`, async () => {
   const backend = name === "memory" ? createMemoryBackend() : await createSqliteBackend({ filename: ":memory:" });

@@ -43,7 +43,6 @@ import {
   mongoPage,
   scopeFilter,
   scopeTokens,
-  type Row,
 } from "./queries.js";
 
 const kinds = [

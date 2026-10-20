@@ -33,7 +33,6 @@ export class RegistryLease {
   readonly values: readonly ValueRegistration[];
   private released = false;
   constructor(
-    readonly generation: number,
     private readonly slots: readonly PluginSlot[],
     private readonly releaseSlot: (slot: PluginSlot) => Promise<void>,
     values: readonly ValueRegistration[] = [],

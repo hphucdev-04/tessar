@@ -10,7 +10,7 @@ import {
 } from "@tessar/core";
 import type { CompletionUsage } from "openai/resources/completions";
 import type { ChatCompletionCreateParamsStreaming } from "openai/resources/chat/completions/completions";
-import { OpenAIAdapter, clientKeys } from "./adapter.js";
+import { OpenAIAdapter, validateRequest } from "./adapter.js";
 import {
   chatResponseError,
   decodeChatMessage,
@@ -40,30 +40,7 @@ function usage(value?: CompletionUsage | null) {
 /** Native Chat Completions transport; the Agent consumes the shared ModelChunk contract. */
 export class OpenAIChatAdapter extends OpenAIAdapter {
   override validate(request: ModelRequest): void {
-    if (
-      request.model.providerId !== this.ref.providerId ||
-      request.model.modelId !== this.ref.modelId ||
-      request.model.connectionId !== this.ref.connectionId
-    )
-      fail("UnsupportedContext", "Chat model or connection identity mismatch");
-    for (const key of [
-      "connectionId",
-      "api",
-      "model",
-      "input",
-      "messages",
-      "instructions",
-      "tools",
-      "stream",
-      "functions",
-      "function_call",
-      ...clientKeys,
-    ])
-      if (request.options && key in request.options)
-        fail(
-          "UnsupportedOption",
-          key + " is owned by the connection or Agent runtime",
-        );
+    validateRequest(request, this.ref, "chat-completions");
     if (request.options?.n != null && request.options.n !== 1)
       fail("UnsupportedOption", "An Agent consumes one Chat completion choice");
     encodeChatMessages(request, this.connection);

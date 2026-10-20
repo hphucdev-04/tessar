@@ -158,7 +158,7 @@ type Decision<P> = HookSpec<P, ControlDecision, DecisionHookContext>;
 declare module "./definition.js" {
   interface EventMap {
     "session.model.before-change": HookSpec<
-      { previous: ModelRef; model: ModelRef },
+      { previous: ModelRef; model: ModelRef; previousOptions?: JsonObject; options?: JsonObject },
       OperationDecision,
       SessionHookContext
     >;
@@ -199,7 +199,7 @@ declare module "./definition.js" {
     >;
     "session.created": HookSpec<{ model: ModelRef }, void, SessionHookContext>;
     "session.model-changed": HookSpec<
-      { previous: ModelRef; model: ModelRef },
+      { previous: ModelRef; model: ModelRef; previousOptions?: JsonObject; options?: JsonObject },
       void,
       SessionHookContext
     >;

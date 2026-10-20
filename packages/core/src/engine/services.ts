@@ -1,10 +1,9 @@
 import { model as modelHooks } from "../events/type.js";
-import { TessarError, errorInfo, fail } from "../errors.js";
+import { errorInfo, fail } from "../errors.js";
 import { immutable, type JsonValue } from "../json.js";
 
 import type {
   ModelChunk,
-  ModelProviderRegistration,
   ModelRef,
   ModelRequest,
 } from "../models/contract.js";

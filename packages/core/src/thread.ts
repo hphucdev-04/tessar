@@ -1,7 +1,8 @@
 import { thread as threadHooks } from "./events/type.js";
 import { fail } from "./errors.js";
 import { immutable, type JsonObject, type JsonValue } from "./json.js";
-import { inputMessages, type ExecutionOrigin } from "./agent.js";
+import type { ExecutionOrigin } from "./agent.js";
+import { inputMessages } from "./messages/codec.js";
 import type { Controller } from "./controller.js";
 import type { Model } from "./models/profile.js";
 import type { ModelRef } from "./models/contract.js";
@@ -17,6 +18,7 @@ import type { HistoryOptions } from "./state/queries.js";
 import type { DeliveryTarget, Stream } from "./engine/delivery.js";
 import { aggregateUsage } from "./trace/usage.js";
 import type { SessionHookHandle } from "./plugins/context.js";
+/** @internal */
 export type ThreadStreamOptions = {
   signal?: AbortSignal;
   context?: JsonObject;
@@ -113,7 +115,7 @@ export class Thread {
   ) {
     return this.query.listInterrupts(this.id, options, this.filter);
   }
-  stream(options: ThreadStreamOptions): Stream {
+  /** @internal */ stream(options: ThreadStreamOptions): Stream {
     return this.admit(options, { kind: "iterator" });
   }
   /** @internal */ admit(
@@ -170,7 +172,7 @@ export class Thread {
       );
     return fail("InvalidConfiguration", "Choose input, resume or recover");
   }
-  async cancelStream(streamId: string, reason?: string): Promise<void> {
+  /** @internal */ async cancelStream(streamId: string, reason?: string): Promise<void> {
     this.check();
     await this.query.requireThread(this.id, this.filter);
     await this.controller.agent.cancel(this.id, streamId, reason, undefined, {

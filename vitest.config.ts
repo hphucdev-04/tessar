@@ -7,7 +7,7 @@ export default defineConfig({
     { find: "@tessar/plugins", replacement: path("./packages/plugins/src/index.ts") },
     { find: "@tessar/core/testing/storage-conformance", replacement: path("./packages/core/src/testing/storage-conformance.ts") },
     { find: "@tessar/core/testing", replacement: path("./packages/core/src/testing/index.ts") },
-    { find: "@tessar/core/tool", replacement: path("./packages/core/src/tools/tool.ts") },
+    { find: "@tessar/core/tool", replacement: path("./packages/core/src/tools/index.ts") },
     { find: "@tessar/core", replacement: path("./packages/core/src/index.ts") },
     { find: "@tessar/sqlite", replacement: path("./packages/sqlite/src/index.ts") },
     { find: "@tessar/postgresql", replacement: path("./packages/postgresql/src/index.ts") },

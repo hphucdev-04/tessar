@@ -37,7 +37,6 @@ import {
   type Instruction,
 } from "./instructions/instruction.js";
 
-import { MessageCodec } from "./messages/codec.js";
 import type { MessageData } from "./messages/message.js";
 import { Tool } from "./tools/tool.js";
 import { execute, cancel } from "./engine/execution.js";
@@ -108,14 +107,6 @@ export interface AgentResumeOptions {
   value: JsonValue;
   scope?: Scope;
   signal?: AbortSignal;
-}
-export function inputMessages(
-  input: MessageData | readonly MessageData[],
-): readonly MessageData[] {
-  const values = Array.isArray(input) ? input : [input];
-  return values.map((value) =>
-    MessageCodec.encode(MessageCodec.decode(MessageCodec.encode(value))),
-  );
 }
 function validateLimits(limits: Partial<StreamLimits>): void {
   for (const value of Object.values(limits))
@@ -195,6 +186,18 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     validateLimits(this.limits);
     this.releaseId = reserveId("Agent", this.id, this);
   }
+  /** Tools configured on this Agent, before execution-time plugin selection. */
+  listTool(): readonly Tool[] {
+    return this.tools;
+  }
+  /** Default model; per-execution overrides do not change this selection. */
+  getModel(): M {
+    return this.model;
+  }
+  /** Base instructions, before execution-time hook transformations. */
+  getInstruction(): Instruction {
+    return this.instructions;
+  }
   stream<T extends ModelAdapter = Extract<M, ModelAdapter>>(
     input: AgentInput,
     options: AgentExecutionOptions<T> = {},
@@ -207,7 +210,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
   ): Promise<GenerateOutcome> {
     const stream = this.stream(input, options);
     for await (const event of stream)
-      if (event.is(streamHooks.error)) throw errorFromInfo(event.payload.error);
+      if (event.type === streamHooks.error) throw errorFromInfo(event.payload.error);
     return this.outcomes.get(stream)!;
   }
   resume(options: AgentResumeOptions): Stream {

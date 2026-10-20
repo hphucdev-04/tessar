@@ -2,7 +2,9 @@ import { DatabaseSync } from "node:sqlite";
 import { initializeSchema } from "../src/schema.js";
 import { AgentHarness } from "@tessar/core/testing";
 import { expect, it } from "vitest";
-import { ThreadService, StateQueries, HumanMessage, MessageCodec, createMemoryBackend, randomIds } from "@tessar/core";
+import { HumanMessage, MessageCodec, createMemoryBackend, randomIds } from "@tessar/core";
+import { ThreadService } from "../../core/src/state/threads.js";
+import { StateQueries } from "../../core/src/state/queries.js";
 import { createSqliteBackend } from "../src/backend.js";
 
 for (const name of ["memory", "sqlite"]) {

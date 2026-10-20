@@ -1,7 +1,6 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   normalizeScope,
-  canonicalJson,
   immutable,
   fail,
   pageAfter,
