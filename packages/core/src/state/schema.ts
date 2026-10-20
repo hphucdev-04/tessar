@@ -120,6 +120,7 @@ export interface ThreadInfo {
   deleted: boolean;
 }
 export interface InterruptRecord {
+  kind?: "decision" | "tool-result";
   id: string;
   threadId: string;
   streamId: string;

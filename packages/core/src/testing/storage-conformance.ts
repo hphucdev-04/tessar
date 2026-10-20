@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { StorageBackend, CommitBatch } from "../state/storage-ports.js";
 import { CommitCoordinator } from "../state/commit.js";
 import { ThreadService } from "../state/threads.js";
+import type { RecordEntry } from "../state/schema.js";
 export function initialBatch(threadId = "t1"): CommitBatch {
   return {
     commitId: "commit-" + threadId,
@@ -32,6 +33,85 @@ export function storageConformance(
   factory: () => Promise<StorageBackend>,
 ): void {
   describe(name, () => {
+    it("round-trips tool-result interruptions and suspended/resuming execution records", async () => {
+      const backend = await factory();
+      try {
+        const records: RecordEntry[] = [];
+        const batch = { ...initialBatch(), records };
+        const lease = await backend.ownership.acquire({
+          threadId: batch.threadId,
+          ownerToken: "owner",
+          ttlMs: 60000,
+        });
+        for (const status of ["suspended", "resuming"] as const) {
+          batch.records.push({
+            kind: "tool_executions",
+            id: status,
+            threadId: batch.threadId,
+            data: {
+              id: status,
+              turnId: "turn",
+              streamId: "stream",
+              scope: {},
+              toolCallId: status,
+              parentToolExecutionId: null,
+              toolName: "ask",
+              arguments: {},
+              policyDecision: { decision: "allowed" },
+              status,
+              startedAt: batch.checkpoint.createdAt,
+              endedAt: null,
+              durationMs: null,
+              resultMessageId: null,
+              result: null,
+              error: null,
+              idempotencyKey: null,
+              ...(status === "resuming"
+                ? { resume: { interruptId: "question", value: "answer" } }
+                : {}),
+            },
+          });
+        }
+        batch.records.push({
+          kind: "interrupts",
+          id: "question",
+          threadId: batch.threadId,
+          data: {
+            kind: "tool-result",
+            id: "question",
+            threadId: batch.threadId,
+            streamId: "stream",
+            checkpointId: batch.checkpoint.id,
+            definitionId: "ask",
+            definitionVersion: 1,
+            pluginId: "tools",
+            payload: { question: "Choose" },
+            responseSchema: { type: "string" },
+            actionRef: {
+              toolExecutionId: "suspended",
+              toolName: "ask",
+              argumentsDigest: "{}",
+            },
+            status: "pending",
+            response: null,
+            resolvedDecision: null,
+            createdAt: batch.checkpoint.createdAt,
+            resolvedAt: null,
+            revision: 1,
+          },
+        });
+        await new CommitCoordinator(backend).commit(batch, lease);
+        for (const record of batch.records) {
+          expect(
+            await backend.executions.get(record.kind, record.id, {
+              threadId: batch.threadId,
+            }),
+          ).toEqual(record.data);
+        }
+      } finally {
+        await backend.close();
+      }
+    });
     it("rejects checkpoint identity reuse and leaves the other thread unpublished", async () => {
       const backend = await factory();
       try {

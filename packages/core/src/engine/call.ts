@@ -8,7 +8,7 @@ import type {
 } from "../agent.js";
 import { HumanMessage } from "../messages/message.js";
 import { MessageCodec } from "../messages/codec.js";
-import { fail, requireId } from "../errors.js";
+import { fail, requireId, errorInfo } from "../errors.js";
 import { immutable, type JsonObject } from "../json.js";
 import { isModelAdapter } from "../models/stream.js";
 import { snapshotModelOptions } from "../models/options.js";
@@ -16,6 +16,7 @@ import type { ModelAdapter, ModelRef } from "../models/contract.js";
 import { ThreadService } from "../state/threads.js";
 import { standaloneRuntime, type ExecutionRuntime } from "./runtime.js";
 import type { Stream } from "./delivery.js";
+import { retainStandalone } from "./continuation.js";
 
 export function modelRef(model: ModelSelection): ModelRef {
   return "ref" in model ? model.ref : model;
@@ -64,6 +65,7 @@ export function callAgent(
 ): Stream {
   const selected = chooseModel(agent, options.model ?? agent.model);
   const runtime = controller ?? standaloneRuntime(agent.id, agent.tools);
+  let lifecycle: ReturnType<typeof retainStandalone> | undefined;
   try {
     controller?.requireReady();
     if (!controller && !selected.adapter)
@@ -122,6 +124,9 @@ export function callAgent(
       MessageCodec.encode(MessageCodec.decode(MessageCodec.encode(value))),
     );
     const threadId = agent.ids.next("thread");
+    lifecycle = controller
+      ? undefined
+      : retainStandalone(agent, threadId, runtime);
     const prepare = controller
       ? () =>
           controller
@@ -134,7 +139,7 @@ export function callAgent(
           })
             .create({ scope: options.scope })
             .then(() => {});
-    return agent.admit(
+    const stream = agent.admit(
       {
         kind: "input",
         threadId,
@@ -149,16 +154,17 @@ export function callAgent(
       { kind: "iterator" },
       prepare,
       runtime,
-      controller
-        ? undefined
-        : async () => {
-            await runtime.hooks.dispose();
-            await runtime.backend.close();
-          },
+      lifecycle?.cleanup,
+      lifecycle?.admitted,
     );
+    return lifecycle?.bind(stream, options.signal) ?? stream;
   } catch (error) {
     // No async resources are started before admission. Discard the empty host/backend.
-    if (!controller) {
+    if (lifecycle) {
+      void lifecycle
+        .cleanup()
+        .catch((cause) => runtime.report(errorInfo(cause)));
+    } else if (!controller) {
       void runtime.hooks.dispose();
       void runtime.backend.close();
     }

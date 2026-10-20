@@ -22,7 +22,7 @@ Node's SQLite API is experimental. This backend uses synchronous database
 operations and is a reference implementation, not a server throughput claim.
 
 This is an early 0.x release. See the
-[repository](https://github.com/hphucdev-04/tessar) for usage and contracts.
+[repository](https://github.com/tessar-ai/tessar) for usage and contracts.
 
 ## Schema v2
 
@@ -52,4 +52,5 @@ Lease fencing counters survive purge. A stale lease cannot regain ownership when
 the same thread ID and owner token are reused. Publication checks ownership again
 before committing; an expired lease rolls back the complete publication.
 
-See [the database map](../../SQLITE-STATE.md) for tables and actual fixture rows.
+See the [storage guide](../../examples/guide/storage.md) for persistent conversations
+and restoring a Session after restart.

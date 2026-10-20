@@ -33,4 +33,4 @@ Logger writes JSON lifecycle/error entries to stderr by default. Use
 `new LoggerPlugin({ write: entry => yourLogger.write(entry) })` for another sink.
 
 This is an early 0.x release. See the
-[repository](https://github.com/hphucdev-04/tessar) for usage and contracts.
+[repository](https://github.com/tessar-ai/tessar) for usage and contracts.

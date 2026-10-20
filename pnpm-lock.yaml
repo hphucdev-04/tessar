@@ -35,28 +35,28 @@ importers:
       '@tessar/postgresql':
         specifier: workspace:*
         version: link:packages/postgresql
-  examples/cli:
+  tests/fixtures/apps/cli:
     dependencies:
       '@tessar/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../../../packages/core
       '@tessar/openai':
         specifier: workspace:*
-        version: link:../../packages/openai
+        version: link:../../../../packages/openai
       '@tessar/plugins':
         specifier: workspace:*
-        version: link:../../packages/plugins
+        version: link:../../../../packages/plugins
       '@tessar/sqlite':
         specifier: workspace:*
-        version: link:../../packages/sqlite
+        version: link:../../../../packages/sqlite
       zod:
         specifier: ^4.6.7
         version: 4.6.7
-  examples/headless:
+  tests/fixtures/apps/headless:
     dependencies:
       '@tessar/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../../../packages/core
   packages/core:
     devDependencies:
       zod:

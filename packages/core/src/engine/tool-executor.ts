@@ -14,16 +14,29 @@ import type { ToolExecutionRecord } from "../trace/records.js";
 import { TessarError, errorInfo } from "../errors.js";
 import { abortable } from "./abort.js";
 import { Suspension } from "./interrupt.js";
+import { ToolSuspension } from "../tools/suspension.js";
+import { waitForTool, suspendWaitingTool } from "./tool-suspension.js";
 export async function executeTool(
   tool: Tool,
   input: unknown,
   context: ToolExecutionContext,
-): Promise<ToolMessage> {
+  response?: { value: import("../json.js").JsonValue },
+): Promise<ToolMessage | ToolSuspension> {
   if (context.signal.aborted)
     throw new TessarError("Cancelled", "Tool cancelled before dispatch");
   try {
     return await abortable(
-      tool.execute(input, context),
+      response
+        ? Promise.resolve(
+            tool.resume
+              ? tool.resume(response.value, input, context)
+              : response.value,
+          ).then((value) =>
+            value instanceof ToolSuspension
+              ? value
+              : normalizeToolOutput(value),
+          )
+        : tool.execute(input, context),
       context.signal,
       () =>
         new TessarError(
@@ -152,6 +165,7 @@ export async function callTools(
   context: LoopContext,
 ): Promise<void> {
   await publishResults(frame, context);
+  await suspendWaitingTool(frame, context);
   const position = frame.cp.execution!;
   const prepared: {
     record: ToolExecutionRecord;
@@ -160,9 +174,11 @@ export async function callTools(
   }[] = [];
   const remaining =
     position.budgets.limits.maxToolCalls - position.budgets.toolCalls;
+  let fresh = 0;
   for (const record of pendingTools(frame, context)) {
     if (record.result) continue;
-    if (prepared.length >= remaining) break;
+    if (record.status === "suspended") break;
+    if (!record.resume && fresh >= remaining) break;
     const tool = frame.registry.find<Tool>("tool", record.toolName);
     try {
       if (!tool)
@@ -244,6 +260,7 @@ export async function callTools(
             toolExecutionId: record.id,
           }) ?? null;
         prepared.push({ record, tool, input });
+        if (!record.resume) fresh++;
       }
     } catch (error) {
       saveResult(record, toolFailure(record, error), context);
@@ -257,20 +274,23 @@ export async function callTools(
     await context.commit(frame, "ExecutionTransition");
   }
 
-  let next = 0;
+  let next = 0,
+    waiting = false;
   const failures: { error: unknown }[] = [];
   const worker = async () => {
     while (
       !failures.length &&
+      !waiting &&
       next < prepared.length &&
       !frame.sink.controller.signal.aborted
     ) {
       const { record, tool, input } = prepared[next++]!;
+      const continuing = !!record.resume;
       let dispatched = false;
       try {
         record.status = "running";
-        record.startedAt = context.clock.now();
-        position.budgets.toolCalls++;
+        if (!continuing) record.startedAt = context.clock.now();
+        if (!continuing) position.budgets.toolCalls++;
         position.phase = "ToolPending";
         await context.commit(frame, "ExecutionTransition");
         await context.hook(
@@ -281,25 +301,37 @@ export async function callTools(
         );
         if (frame.sink.controller.signal.aborted)
           throw new TessarError("Cancelled", "Tool cancelled before dispatch");
-        let result: ToolMessage;
+        let result: ToolMessage | ToolSuspension;
         try {
           dispatched = true;
-          result = await executeTool(tool, input, {
-            ...context.services(frame, record.id),
-            signal: frame.sink.controller.signal,
-            threadId: frame.cp.threadId,
-            streamId: frame.stream.id,
-            turnId: record.turnId,
-            toolExecutionId: record.id,
-            emit: (progress) => {
-              void context.hook(
-                frame,
-                toolHooks.update,
-                { toolExecutionId: record.id, progress },
-                record.id,
-              );
+          result = await executeTool(
+            tool,
+            input,
+            {
+              ...context.services(frame, record.id),
+              signal: frame.sink.controller.signal,
+              threadId: frame.cp.threadId,
+              streamId: frame.stream.id,
+              turnId: record.turnId,
+              toolExecutionId: record.id,
+              emit: (progress) => {
+                void context.hook(
+                  frame,
+                  toolHooks.update,
+                  { toolExecutionId: record.id, progress },
+                  record.id,
+                );
+              },
+              suspend: (payload) => new ToolSuspension(payload),
             },
-          });
+            continuing ? record.resume : undefined,
+          );
+          if (result instanceof ToolSuspension) {
+            waitForTool(frame, context, record, tool, result);
+            waiting = true;
+            await context.commit(frame, "ExecutionTransition");
+            continue;
+          }
           // Bind here so an incorrect explicit correlation is reported as a tool failure.
           result = normalizeToolOutput(result, record.toolCallId);
           record.status = "succeeded";
@@ -316,10 +348,14 @@ export async function callTools(
         await context.commit(frame, "ExecutionTransition");
       } catch (error) {
         if (record.status === "running") {
-          record.status = dispatched ? "interrupted" : "pending";
+          record.status = dispatched
+            ? "interrupted"
+            : continuing
+              ? "resuming"
+              : "pending";
           if (!dispatched) {
-            record.startedAt = null;
-            position.budgets.toolCalls--;
+            if (!continuing) record.startedAt = null;
+            if (!continuing) position.budgets.toolCalls--;
           }
         }
         failures.push({ error });
@@ -344,6 +380,7 @@ export async function callTools(
   if (frame.sink.controller.signal.aborted)
     throw new TessarError("Cancelled", "Execution cancelled");
   await publishResults(frame, context);
+  await suspendWaitingTool(frame, context);
   position.phase = position.pendingToolExecutionIds.length
     ? "BeforeTool"
     : "TurnBoundary";
