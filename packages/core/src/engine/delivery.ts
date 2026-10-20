@@ -9,9 +9,11 @@ import {
   EventEnvelope,
   type AnyEvent,
   type EventContext,
+  type PayloadOf,
+  type StreamEvent,
 } from "../events/definition.js";
 
-export interface Stream extends AsyncIterable<EventEnvelope> {
+export interface Stream extends AsyncIterable<StreamEvent> {
   readonly id: string | null;
   readonly threadId: string;
   readonly handleId: string;
@@ -22,7 +24,7 @@ export type DeliveryTarget =
   | { kind: "iterator" }
   | {
       kind: "observer";
-      observe: (event: EventEnvelope) => void;
+      observe: (event: StreamEvent) => void;
       admitted?: (receipt: { streamId: string; threadId: string }) => void;
       rejected?: (error: ErrorInfo) => void;
       closed?: () => void;
@@ -31,7 +33,11 @@ export interface Attachment {
   stream: Stream;
   controller: AbortController;
   setId(id: string): void;
-  emit(definition: AnyEvent, payload: any, context: EventContext): void;
+  emit<N extends AnyEvent>(
+    definition: N,
+    payload: PayloadOf<N>,
+    context: EventContext,
+  ): void;
   close(): void;
   admitted(): void;
   rejected(error: ErrorInfo): void;
@@ -52,8 +58,8 @@ export function createDelivery(
     iterated = false,
     bytes = 0,
     lastCheckpoint: string | null = null;
-  const queue: { event: EventEnvelope; bytes: number }[] = [],
-    waiting: ((value: IteratorResult<EventEnvelope>) => void)[] = [];
+  const queue: { event: StreamEvent; bytes: number }[] = [],
+    waiting: ((value: IteratorResult<StreamEvent>) => void)[] = [];
   const report = (error: ErrorInfo, context?: EventContext) => {
     try {
       diagnostics(error, context);
@@ -117,14 +123,14 @@ export function createDelivery(
     },
     emit(definition, payload, context) {
       if (closed) return;
-      if (definition === checkpointHooks.committed)
-        lastCheckpoint = payload.checkpointId;
       const event = new EventEnvelope(definition, payload, {
         ...context,
         streamId: id,
         threadId,
         handleId,
-      });
+      }) as StreamEvent;
+      if (event.type === checkpointHooks.committed)
+        lastCheckpoint = event.payload.checkpointId;
       if (target.kind === "observer") {
         notifyObserver((event) => target.observe(event), event, report);
         return;

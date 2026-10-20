@@ -11,6 +11,7 @@ import {
   type Instruction,
 } from "../instructions/instruction.js";
 import type { MessageData } from "../messages/message.js";
+import { inputMessages } from "../messages/codec.js";
 import type {
   Checkpoint,
   Scope,
@@ -67,7 +68,7 @@ export class ThreadService {
             options.instructions !== undefined
               ? normalizeInstruction(options.instructions)
               : null,
-          messages: options.messages ?? [],
+          messages: inputMessages(options.messages ?? []),
           pluginStates: (internal?.pluginStates ?? []).map((state) => ({
             ...state,
             ownerId: id,

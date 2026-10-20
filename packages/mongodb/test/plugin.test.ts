@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { PluginHost, type StorageBackend } from "@tessar/core";
+import type { StorageBackend } from "@tessar/core";
+import { PluginHost } from "../../core/src/plugins/host.js";
 const { open } = vi.hoisted(() => ({ open: vi.fn() }));
 vi.mock("../src/backend.js", () => ({ createMongoDBBackend: open }));
 import { MongoDBStoragePlugin } from "../src/index.js";

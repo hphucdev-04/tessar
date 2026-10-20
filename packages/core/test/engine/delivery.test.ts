@@ -14,7 +14,7 @@ it("detaches overflowing consumers at 512 events without cancelling execution",a
  const delivery=createDelivery("t",randomIds,{kind:"iterator"});delivery.setId("s");
  for(let i=0;i<513;i++)delivery.emit(messageHooks.delta,{messageId:"m",partId:"p",partKind:"text",delta:"x",attemptId:"a"},{});
  const events=[];for await(const event of delivery.stream)events.push(event);
- expect(events).toHaveLength(1);expect(events[0]!.payload.error.code).toBe("ConsumerTooSlow");
+ expect(events).toHaveLength(1);expect(events.find(event=>event.type===streamHooks.error)!.payload.error.code).toBe("ConsumerTooSlow");
  expect(delivery.controller.signal.aborted).toBe(false);
 });
 it("cancels a suspended execution and its pending interrupt durably",async()=>{
@@ -22,7 +22,7 @@ it("cancels a suspended execution and its pending interrupt durably",async()=>{
  const harness=await AgentHarness.create({plugins:[{id:"pause",setup(tessar){tessar.interruptions.register(Question);tessar.hook(streamHooks.before,(_event,ctx)=>ctx.suspend(Question,{}));}}]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
-  const events=await harness.collect(stream),interrupt=events.find(e=>e.is(streamHooks.suspended))!.payload.interrupt;
+  const events=await harness.collect(stream),interrupt=events.find(e=>e.type === streamHooks.suspended)!.payload.interrupt;
   await harness.agent.cancel(thread.id,stream.id!);
   expect((await harness.records(stream.id!)).stream.status).toBe("cancelled");
   expect((await harness.queries.getInterrupt(thread.id,interrupt.id))!.status).toBe("cancelled");
@@ -33,7 +33,7 @@ it("keeps an abort-ignoring in-flight tool interrupted instead of unlocking the 
  const start=new Promise<void>(resolve=>started=resolve),done=new Promise<void>(resolve=>errored=resolve),gate=new Promise<void>(resolve=>release=resolve);
  const harness=await AgentHarness.create({plugins:[{id:"tools",setup(tessar){tessar.tools.register(createTool({name:"write",description:"write",schema: z.object({}),execute:async()=>{started();await gate;return "late";}}));}}],modelScripts:[{response:{message:MessageCodec.encode(new AssistantMessage([{type:"tool-call",toolCallId:"c",name:"write",arguments:{}}]))}}]});
  try{
-  const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}},{kind:"observer",observe:event=>{if(event.is(streamHooks.error))errored();}});
+  const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}},{kind:"observer",observe:event=>{if(event.type === streamHooks.error)errored();}});
   await start;await harness.agent.cancel(thread.id,stream.id!);
   let timer:ReturnType<typeof setTimeout>|undefined;
   try{await Promise.race([done,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("Tool cancellation did not detach")),1000);})]);}finally{if(timer)clearTimeout(timer);}
@@ -58,6 +58,7 @@ it("does not allocate iterator queues for observers and ignores late emissions a
 it("reports sync and async observer failures without blocking later delivery",async()=>{
  const errors:unknown[]=[],seen:number[]=[];
  const delivery=createDelivery("t",randomIds,{kind:"observer",observe(event){
+  if(event.type!==turnHooks.start)return;
   seen.push(event.payload.index);
   if(event.payload.index===0)throw Error("sync observer");
   if(event.payload.index===1)return Promise.reject(Error("async observer"));

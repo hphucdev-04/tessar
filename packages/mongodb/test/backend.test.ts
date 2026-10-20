@@ -6,15 +6,15 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Collection, MongoClient } from "mongodb";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  CommitCoordinator,
-  ForkService,
   HumanMessage,
   MessageCodec,
-  ThreadService,
   type CommitBatch,
   type SessionRecord,
   type StorageBackend,
 } from "@tessar/core";
+import { CommitCoordinator } from "../../core/src/state/commit.js";
+import { ForkService } from "../../core/src/state/fork.js";
+import { ThreadService } from "../../core/src/state/threads.js";
 import {
   initialBatch,
   storageConformance,

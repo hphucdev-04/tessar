@@ -1,3 +1,4 @@
+import { createThread, getThread } from "../../packages/core/src/state/thread-operations.js";
 import { z } from "zod";
 import { expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
@@ -17,8 +18,8 @@ function completion(api: string, id: number) {
 async function send(session: Session, text: string) {
   const done = new Promise<any>((resolve, reject) => {
     const off = session.subscribe(event => {
-      if (event.is(stream.end)) { off(); resolve(event.payload); }
-      if (event.is(stream.error)) { off(); reject(event.payload); }
+      if (event.type === stream.end) { off(); resolve(event.payload); }
+      if (event.type === stream.error) { off(); reject(event.payload); }
     });
   });
   await session.followUp(new HumanMessage(text));
@@ -126,11 +127,11 @@ it.each(["endpoint", "protocol"])("rejects changed %s before resuming a Thread w
   }
   let controller=await open();
   try {
-    const thread=await controller.createThread(); let pending:any;
-    for await(const event of thread.stream({input:new HumanMessage("pause"),model:"ref" in controller.agent.model ? controller.agent.model.ref : controller.agent.model})) if(event.is(stream.suspended)) pending=event.payload.interrupt;
+    const thread=await createThread(controller); let pending:any;
+    for await(const event of thread.stream({input:new HumanMessage("pause"),model:"ref" in controller.agent.model ? controller.agent.model.ref : controller.agent.model})) if(event.type === stream.suspended) pending=event.payload.interrupt;
     await controller.dispose(); controller=await open(true);
-    const restored=(await controller.getThread(thread.id))!; let error:string|undefined;
-    for await(const event of restored.stream({resume:{interruptId:pending.id,value:{}}})) if(event.is(stream.error)) error=event.payload.error.code;
+    const restored=(await getThread(controller, thread.id))!; let error:string|undefined;
+    for await(const event of restored.stream({resume:{interruptId:pending.id,value:{}}})) if(event.type === stream.error) error=event.payload.error.code;
     expect(error).toBe("ModelContextIncompatible"); expect(calls).toBe(0);
     expect((await controller.queries.getInterrupt(thread.id,pending.id))?.status).toBe("pending");
   } finally {await controller.dispose();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:100});}

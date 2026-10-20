@@ -14,7 +14,6 @@ import {
   type CommitReceipt,
   type StorageBackend,
   type ThreadInfo,
-  type Checkpoint,
   type RecordKind,
   type RecordTypes,
   type RecordEntry,

@@ -33,7 +33,7 @@ it.each(["closed", "legacy", "open"] as const)("excludes suspension wait; incomp
   h.provider.stream = async function* (request, context) { now += 30; yield* original(request, context); };
   try {
     const thread = await h.createThread(), stream = h.admit({ kind: "input", threadId: thread.id, input: [MessageCodec.encode(new HumanMessage("hello"))], model });
-    const result = await h.collect(stream), pending = result.find(e => e.is(events.suspended))!;
+    const result = await h.collect(stream), pending = result.find(e => e.type === events.suspended)!;
     if (mode !== "closed") {
       const get = h.backend.checkpoints.get;
       h.backend.checkpoints.get = async id => { const value = structuredClone(await get(id)); if (value?.execution) { if (mode === "legacy") delete value.execution.timing; else value.execution.timing!.segmentOpen = true; } return value; };

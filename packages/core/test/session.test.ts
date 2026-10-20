@@ -1,7 +1,8 @@
+import { createThread } from "../src/state/thread-operations.js";
 import { session as sessionHooks, stream as streamHooks, model as modelHooks } from "../src/index.js";
 import {expect,it} from "vitest";
 import { HumanMessage, defineInterruption, ToolDecision, createMemoryBackend } from "../src/index.js";
-import {fixture,fixtureRef} from "./test-fixture.js";
+import {fixture} from "./test-fixture.js";
 
 function boundary(session:import("../src/session.js").Session,type:string){return new Promise<any>(resolve=>{const off=session.subscribe(event=>{if(event.type===type){off();resolve(event);}});});}
 it("isolates sync and async subscribers while delivering the same session event",async()=>{
@@ -40,7 +41,7 @@ it("routes events per Session and drains accepted input FIFO after closing the p
   const a=await controller.createSession({scope:{user:"u"}}),b=await controller.createSession({scope:{user:"u"}});
   expect(created).toEqual([a.id,b.id]);
   await a.thread.create();expect(b.thread.getId()).toBeNull();let otherEvents=0;b.subscribe(()=>{otherEvents++;});
-  const first=a.followUp(new HumanMessage("first"));await first;await a.setModel({...fixtureRef,modelId:"second"});
+  const first=a.followUp(new HumanMessage("first"));await first;await a.model.switch("scripted/second");
   const second=await a.followUp(new HumanMessage("second"));expect(second.threadId).toBe(a.thread.getId());
   await expect(a.thread.create()).rejects.toMatchObject({code:"SessionBusy"});await expect(a.dispose()).rejects.toMatchObject({code:"SessionBusy"});
   const done=new Promise<void>(resolve=>{let count=0;const off=a.subscribe(streamHooks.end,()=>{if(++count===2){off();resolve();}});});release();await done;
@@ -74,7 +75,7 @@ it("accepts a follow-up from a terminal observer after releasing the prior lease
 });
 it("discards queued input on cancellation and preserves selection when switching fails",async()=>{
  let release!:()=>void;const gate=new Promise<void>(r=>release=r);const {controller,provider}=await fixture([{gate,text:"never"}]);
- try{const session=await controller.createSession({scope:{user:"a"}});const thread=await session.thread.create();const foreign=await controller.createThread({scope:{user:"b"}});
+ try{const session=await controller.createSession({scope:{user:"a"}});const thread=await session.thread.create();const foreign=await createThread(controller, {scope:{user:"b"}});
  await expect(session.thread.switch(foreign.id)).rejects.toMatchObject({code:"ThreadNotFound"});expect(session.thread.getId()).toBe(thread.id);
  const started=boundary(session,modelHooks.start);await session.followUp(new HumanMessage("first"));await started;await session.followUp(new HumanMessage("queued"));const discarded=boundary(session,sessionHooks.inputDiscarded);await session.abort();expect((await discarded).payload.cause).toBe("cancelled");expect(provider.calls).toHaveLength(1);
  }finally{release();await controller.dispose();}

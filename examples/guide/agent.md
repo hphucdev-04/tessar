@@ -48,6 +48,21 @@ ties. Put stable sections before changing sections to keep their prompt prefix
 stable. Sections are composed into one instruction string by the OpenAI adapter,
 rather than becoming one system message each. Caching depends on the endpoint.
 
+## Read the Agent configuration
+
+These synchronous methods work without a Controller or initialization:
+
+```ts
+const configuredTools = agent.listTool(); // readonly Tool[]
+const defaultModel = agent.getModel(); // Preserves the configured model's type.
+const baseInstruction = agent.getInstruction(); // Instruction with ordered sections.
+```
+
+They return the Agent's constructor configuration. Per-execution model overrides,
+plugin tool registrations and instruction hook transformations do not change
+these defaults. Read `baseInstruction.sections` for the structured instruction;
+it is not a provider-formatted prompt string.
+
 ## Supply conversation messages yourself
 
 Direct calls do not automatically share history. This snippet explicitly passes

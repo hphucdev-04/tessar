@@ -12,7 +12,6 @@ import {
 import type { Lease } from "../state/storage-ports.js";
 import type {
   Checkpoint,
-  CheckpointCause,
   RecordEntry,
   StreamLimits,
 } from "../state/schema.js";

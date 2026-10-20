@@ -24,7 +24,6 @@ import {
 import { definePluginState } from "../state/plugin-state.js";
 export class PluginHost {
   private slots: PluginSlot[] = [];
-  private generation = 0;
   private definitions = new Map<string, { kind: EventKind; version: number }>(
     Object.entries(hookKinds).map(([name, kind]) => [
       name,
@@ -243,7 +242,6 @@ export class PluginHost {
         if (disposer) slot.disposers.push(disposer);
         this.slots.push(slot);
         this.definitions = definitions;
-        this.generation++;
       } catch (error) {
         this.diagnostics(
           errorInfo(
@@ -264,7 +262,6 @@ export class PluginHost {
       const slot = this.slots.find((s) => s.plugin.id === id && !s.detached);
       if (!slot) return;
       slot.detached = true;
-      this.generation++;
       await this.releaseSlot(slot);
     });
   }
@@ -283,7 +280,6 @@ export class PluginHost {
   }
   capture(): RegistryLease {
     return new RegistryLease(
-      this.generation,
       this.slots.filter((s) => !s.detached),
       (slot) => this.releaseSlot(slot),
       this.values,

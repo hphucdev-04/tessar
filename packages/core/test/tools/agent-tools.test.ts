@@ -92,7 +92,7 @@ it("suspends preparation before dispatch and resumes the right tool without repe
     const { thread, stream, collected } = await start(harness);
     const events = await collected;
     expect(ran).toEqual([]);
-    const interrupt = events.find(event => event.is(streamHooks.suspended))!;
+    const interrupt = events.find(event => event.type === streamHooks.suspended)!;
     expect(interrupt).toBeDefined();
     await harness.collect(harness.admit({ kind: "resume", threadId: thread.id, interruptId: interrupt.payload.interrupt.id, value: true }));
     expect(seen).toEqual(["call-0", "call-1", "call-2"]);

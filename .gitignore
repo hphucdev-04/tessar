@@ -16,4 +16,4 @@ examples/plugins
 .env
 .env.storage
 /packages/*/LICENSE
-
+.pnpm-store

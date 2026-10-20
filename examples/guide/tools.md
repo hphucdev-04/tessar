@@ -143,16 +143,16 @@ const pending = new Map<string, { threadId: string; payload: JsonValue }>();
 
 async function consumeExecution(execution: Stream): Promise<void> {
   for await (const event of execution) {
-    if (event.is(streamEvents.suspended)) {
+    if (event.type === streamEvents.suspended) {
       const request = event.payload.interrupt;
       pending.set(request.id, { threadId: execution.threadId, payload: request.payload });
       // Render request.payload with your application's UI.
       console.log("Question:", request.id, request.payload);
     }
-    if (event.is(messageEvents.delta) && event.payload.partKind === "text") {
+    if (event.type === messageEvents.delta && event.payload.partKind === "text") {
       process.stdout.write(event.payload.delta);
     }
-    if (event.is(streamEvents.error)) throw errorFromInfo(event.payload.error);
+    if (event.type === streamEvents.error) throw errorFromInfo(event.payload.error);
   }
 }
 

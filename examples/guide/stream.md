@@ -149,7 +149,7 @@ The `Agent` does not require a `Controller` to run. Calling `agent.stream()` or 
 
 ## Consuming the stream
 
-`agent.stream(prompt)` accepts a string, a single `MessageData`, or an array of `MessageData`. It returns a `Stream`, an `AsyncIterable<EventEnvelope>` that yields events as the execution progresses.
+`agent.stream(prompt)` accepts a string, a single `MessageData`, or an array of `MessageData`. It returns a `Stream`, an `AsyncIterable<StreamEvent>` that yields events as the execution progresses. Check `event.type` to narrow its payload, using the same event constants and syntax as `session.subscribe()`.
 
 ### Event lifecycle
 
@@ -200,12 +200,12 @@ async function runStream(prompt: string) {
   let currentMode: "reasoning" | "text" | null = null;
 
   for await (const event of stream) {
-    if (event.is(toolEvents.start)) {
+    if (event.type === toolEvents.start) {
       currentMode = null;
       console.log(`\n\n[Tool Call] Fetching data...`);
-    } else if (event.is(toolEvents.end)) {
+    } else if (event.type === toolEvents.end) {
       console.log(`[Tool Result]`, event.payload.result.content);
-    } else if (event.is(messageEvents.delta)) {
+    } else if (event.type === messageEvents.delta) {
       const { partKind, delta } = event.payload;
 
       if (partKind === "reasoning") {
@@ -223,9 +223,9 @@ async function runStream(prompt: string) {
         }
         process.stdout.write(delta);
       }
-    } else if (event.is(streamEvents.error)) {
+    } else if (event.type === streamEvents.error) {
       throw Error(event.payload.error.message);
-    } else if (event.is(streamEvents.end)) {
+    } else if (event.type === streamEvents.end) {
       const { inputTokens, outputTokens, reasoningOutputTokens, totalTokens } =
         event.payload.usage.metrics;
       console.log("\n\n[Done]");

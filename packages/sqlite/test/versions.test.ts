@@ -3,7 +3,9 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ThreadService, HumanMessage, MessageCodec, CommitCoordinator } from "@tessar/core";
+import { HumanMessage, MessageCodec } from "@tessar/core";
+import { ThreadService } from "../../core/src/state/threads.js";
+import { CommitCoordinator } from "../../core/src/state/commit.js";
 import { createSqliteBackend } from "../src/backend.js";
 
 it("stores changed message versions once and cleans published staging without losing retry checks", async () => {

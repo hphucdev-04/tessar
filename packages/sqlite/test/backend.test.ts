@@ -1,3 +1,4 @@
+import { createThread, deleteThread } from "../../core/src/state/thread-operations.js";
 import { expect,it,vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtemp,rm } from "node:fs/promises";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { storageConformance,initialBatch } from "@tessar/core/testing/storage-conformance";
 import { AgentHarness } from "@tessar/core/testing";
-import { CommitCoordinator } from "@tessar/core";
+import { CommitCoordinator } from "../../core/src/state/commit.js";
 import { createSqliteBackend } from "../src/backend.js";
 storageConformance("sqlite",async()=>createSqliteBackend({filename:":memory:"}));
 it("rolls back publication when a lease expires during SQLite writes",async()=>{
@@ -49,14 +50,14 @@ it("persists Session CAS, validates scope/Agent identity, and clears all deleted
   const a=await h.controller.createSession({scope:{user:"a"}}), b=await h.controller.createSession({scope:{user:"a"}});
   const thread=await a.thread.create();await b.thread.switch(thread.id);
   const stale=(await h.controller.getSession(a.id))!;
-  const other=await h.controller.createThread({scope:{user:"a"}});await a.thread.switch(other.id);
+  const other=await createThread(h.controller, {scope:{user:"a"}});await a.thread.switch(other.id);
   expect(await stale.thread.switch(thread.id).then(()=>null,e=>e.code)).toBe("CommitConflict");
   expect(await h.controller.getSession(a.id,{scope:{user:"b"}})).toBeNull();
   const row=(await backend.sessions.get(a.id))!;
   await backend.sessions.compareAndSet({...row,id:"other-agent",agentId:"other",revision:1,selectedThreadId:null},0);
   expect(await h.controller.getSession("other-agent").then(()=>null,e=>e.code)).toBe("SessionAgentMismatch");
   await a.thread.switch(thread.id);
-  await h.controller.deleteThread(thread.id);
+  await deleteThread(h.controller, thread.id);
   expect((await backend.sessions.get(a.id))?.selectedThreadId).toBeNull();
   expect((await backend.sessions.get(b.id))?.selectedThreadId).toBeNull();
  } finally {await h.dispose();}

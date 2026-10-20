@@ -8,7 +8,8 @@ permissions:
   contents: read
 jobs:
   server-storage:
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 rejects newer runner kernels (SERVER-121912).
+    runs-on: ubuntu-22.04
     services:
       postgres:
         image: postgres:17
@@ -34,23 +35,31 @@ jobs:
           cache: pnpm
       - name: Start MongoDB replica set
         run: |
+          wait_for_mongo() {
+            for attempt in $(seq 1 60); do
+              if [ "$(docker inspect --format '{{.State.Running}}' tessar-mongo)" != true ]; then
+                echo "::error::MongoDB container exited before it became ready"
+                return 1
+              fi
+              if docker exec tessar-mongo mongosh --quiet --eval "$1"; then return 0; fi
+              sleep 2
+            done
+            echo "::error::Timed out waiting for MongoDB: $1"
+            return 1
+          }
           docker run -d --name tessar-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
-          for attempt in $(seq 1 60); do
-            if docker exec tessar-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})'; then break; fi
-            sleep 2
-          done
-          docker exec tessar-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
-          for attempt in $(seq 1 60); do
-            if docker exec tessar-mongo mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then exit 0; fi
-            sleep 2
-          done
-          exit 1
+          wait_for_mongo 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'
+          docker exec tessar-mongo mongosh --quiet --eval 'quit(rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]}).ok === 1 ? 0 : 1)'
+          wait_for_mongo 'quit(db.hello().isWritablePrimary ? 0 : 1)'
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test:storage --maxWorkers 4
       - name: Database logs on failure
         if: failure()
-        run: docker logs tessar-mongo
+        run: |
+          uname -r
+          docker inspect --format '{{json .State}}' tessar-mongo || true
+          docker logs tessar-mongo || true
   verify:
     strategy:
       matrix:

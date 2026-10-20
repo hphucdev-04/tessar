@@ -22,8 +22,8 @@
       "import": "./dist/index.js"
     },
     "./tool": {
-      "types": "./dist/tools/tool.d.ts",
-      "import": "./dist/tools/tool.js"
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
     },
     "./testing/storage-conformance": {
       "types": "./dist/testing/storage-conformance.d.ts",

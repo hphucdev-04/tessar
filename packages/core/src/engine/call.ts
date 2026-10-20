@@ -9,11 +9,12 @@ import type {
 import { HumanMessage } from "../messages/message.js";
 import { MessageCodec } from "../messages/codec.js";
 import { fail, requireId, errorInfo } from "../errors.js";
-import { immutable, type JsonObject } from "../json.js";
+import { immutable } from "../json.js";
 import { isModelAdapter } from "../models/stream.js";
 import { snapshotModelOptions } from "../models/options.js";
 import type { ModelAdapter, ModelRef } from "../models/contract.js";
 import { ThreadService } from "../state/threads.js";
+import { prepareThread } from "../state/thread-operations.js";
 import { standaloneRuntime, type ExecutionRuntime } from "./runtime.js";
 import type { Stream } from "./delivery.js";
 import { retainStandalone } from "./continuation.js";
@@ -129,8 +130,7 @@ export function callAgent(
       : retainStandalone(agent, threadId, runtime);
     const prepare = controller
       ? () =>
-          controller
-            .prepareThread({ scope: options.scope }, threadId)
+          prepareThread(controller, { scope: options.scope }, threadId)
             .then(() => {})
       : () =>
           new ThreadService(runtime.backend, {
