@@ -9,10 +9,11 @@ docs/**
 !docs/superpowers/specs/
 !docs/superpowers/plans/*-tessar-*.md
 !docs/superpowers/specs/*-tessar-*.md
-examples/
+examples/plugins
 *.db
 *.db-shm
 *.db-wal
 .env
 .env.storage
+/packages/*/LICENSE
 

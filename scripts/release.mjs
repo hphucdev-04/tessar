@@ -22,7 +22,7 @@ for (const name of ["core", "openai", "plugins", "sqlite", "postgresql", "mongod
   assert.ok(!source.private, `${expected} must be publishable`);
   assert.equal(source.publishConfig?.access, "public");
   assert.equal(source.publishConfig?.registry, "https://registry.npmjs.org/");
-  assert.equal(source.repository?.url, "git+https://github.com/hphucdev-04/tessar.git");
+  assert.equal(source.repository?.url, "git+https://github.com/tessar-ai/tessar.git");
   if (source.publishConfig.tag !== undefined)
     assert.equal(source.publishConfig.tag, tag, `${expected} has a conflicting publish tag`);
 

@@ -8,7 +8,13 @@ import {
 } from "../json.js";
 import { ToolMessage } from "../messages/message.js";
 import type { TrackedServices } from "../engine/tracked-effects.js";
+import { ToolSuspension } from "./suspension.js";
+import { canonicalJson } from "../state/commit.js";
+export { ToolSuspension } from "./suspension.js";
 export type ToolOutput = JsonValue | ToolMessage;
+export type ToolResult = ToolOutput | ToolSuspension;
+type ToolReturn = ToolResult | Promise<ToolResult>;
+type Normalized<T> = T extends ToolSuspension ? ToolSuspension : ToolMessage;
 export interface ToolExecutionContext extends TrackedServices {
   readonly signal: AbortSignal;
   readonly threadId: string;
@@ -16,6 +22,7 @@ export interface ToolExecutionContext extends TrackedServices {
   readonly turnId: string;
   readonly toolExecutionId: string;
   emit(progress: JsonValue): void;
+  suspend(payload: JsonValue): ToolSuspension;
 }
 export type ReconcileResult =
   | { status: "completed"; result: ToolOutput }
@@ -29,17 +36,24 @@ export interface ToolRecovery<I> {
     key: string;
   }): Promise<ReconcileResult>;
 }
-export interface ToolDefinition<I> {
+export interface ToolDefinition<
+  I,
+  R = JsonValue,
+  O extends ToolReturn = ToolReturn,
+> {
   name: string;
   description: string;
   schema: z.ZodType<I>;
-  execute(
+  execute(input: I, context: ToolExecutionContext): O;
+  resumeSchema?: z.ZodType<R>;
+  resume?(
+    response: R,
     input: I,
     context: ToolExecutionContext,
-  ): ToolOutput | Promise<ToolOutput>;
+  ): ToolResult | Promise<ToolResult>;
   recovery?: ToolRecovery<I>;
 }
-export class Tool<I = any> {
+export class Tool<I = any, R = any, O extends ToolReturn = ToolReturn> {
   readonly name: string;
   readonly description: string;
   readonly schema: z.ZodType<I>;
@@ -47,9 +61,17 @@ export class Tool<I = any> {
   readonly execute: (
     input: I,
     context: ToolExecutionContext,
-  ) => Promise<ToolMessage>;
+  ) => Promise<Normalized<Awaited<O>>>;
+  readonly resumeSchema?: z.ZodType<R>;
+  readonly resumeJsonSchema: JsonObject;
+  readonly resume?: (
+    response: R,
+    input: I,
+    context: ToolExecutionContext,
+  ) => ToolResult | Promise<ToolResult>;
+  readonly configurationId: string;
   readonly recovery?: ToolRecovery<I>;
-  constructor(definition: ToolDefinition<I>) {
+  constructor(definition: ToolDefinition<I, R, O>) {
     this.name = requireId(definition.name, "tool name");
     this.description = definition.description;
     this.schema = definition.schema;
@@ -59,12 +81,38 @@ export class Tool<I = any> {
         JSON.stringify(z.toJSONSchema(definition.schema, { io: "input" })),
       ),
     ) as JsonObject;
-    this.execute = async (input, context) =>
-      normalizeToolOutput(await definition.execute(input, context));
+    this.resumeSchema = definition.resumeSchema;
+    this.resumeJsonSchema = definition.resumeSchema
+      ? (immutable(
+          JSON.parse(
+            JSON.stringify(
+              z.toJSONSchema(definition.resumeSchema, { io: "input" }),
+            ),
+          ),
+        ) as JsonObject)
+      : {};
+    this.resume = definition.resume;
+    this.configurationId = canonicalJson(
+      definition.resumeSchema || definition.resume
+        ? {
+            input: this.jsonSchema,
+            response: this.resumeJsonSchema,
+            resume: !!definition.resume,
+          }
+        : this.jsonSchema,
+    );
+    this.execute = async (input, context) => {
+      const result = await definition.execute(input, context);
+      return (
+        result instanceof ToolSuspension ? result : normalizeToolOutput(result)
+      ) as Normalized<Awaited<O>>;
+    };
     this.recovery = definition.recovery;
   }
 }
-export function createTool<I>(definition: ToolDefinition<I>): Tool<I> {
+export function createTool<I, R = JsonValue, O extends ToolReturn = ToolReturn>(
+  definition: ToolDefinition<I, R, O>,
+): Tool<I, R, O> {
   return new Tool(definition);
 }
 /** @internal Normalize developer results and bind runtime correlation. */

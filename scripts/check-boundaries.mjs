@@ -12,7 +12,7 @@ for(const file of core){
 const visiting=new Set(),visited=new Set();
 function visit(file){if(visiting.has(file)){errors.push("Runtime import cycle at "+relative(root,file));return;}if(visited.has(file))return;visiting.add(file);for(const next of graph.get(file)??[])visit(next);visiting.delete(file);visited.add(file);}
 for(const file of core)visit(file);
-for(const file of files(resolve(root,"examples")).filter(path=>path.endsWith(".ts"))){
+for(const file of ["examples","tests/fixtures/apps"].flatMap(directory=>files(resolve(root,directory))).filter(path=>path.endsWith(".ts"))){
  if(/(?:@tessar\/[^"']+\/src\/|(?:\.\.\/)+packages\/[^"']+\/src\/)/.test(readFileSync(file,"utf8")))errors.push(relative(root,file)+": private package import");
 }
 if(errors.length){console.error(errors.join("\n"));process.exitCode=1;}else console.log("Package boundaries verified");

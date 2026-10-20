@@ -106,7 +106,7 @@ connection until the execution ends. Rebinding these connections after process
 restart is not yet supported by the Controller compatibility bridge.
 
 This is an early 0.x release. See the
-[repository](https://github.com/hphucdev-04/tessar) for complete contracts.
+[repository](https://github.com/tessar-ai/tessar) for complete contracts.
 
 ## Restoring native conversation state
 

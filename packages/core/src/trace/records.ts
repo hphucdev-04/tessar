@@ -1,5 +1,5 @@
 import type { ErrorInfo } from "../errors.js";
-import type { JsonObject, Clock, IdGenerator } from "../json.js";
+import type { JsonObject, JsonValue, Clock, IdGenerator } from "../json.js";
 import type { MessageData } from "../messages/message.js";
 import { normalizeUsage, type ModelUsage, type UsageSummary } from "./usage.js";
 import type { Checkpoint } from "../state/schema.js";
@@ -104,6 +104,7 @@ export interface ModelAttemptRecord {
   usage: ModelUsage;
 }
 export interface ToolExecutionRecord {
+  resume?: { interruptId: string; value: JsonValue };
   id: string;
   turnId: string;
   streamId: string;
@@ -115,6 +116,8 @@ export interface ToolExecutionRecord {
   policyDecision: { decision: "allowed" | "denied"; reason?: string } | null;
   status:
     | "pending"
+    | "suspended"
+    | "resuming"
     | "running"
     | "succeeded"
     | "failed"

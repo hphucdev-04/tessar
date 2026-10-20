@@ -30,6 +30,7 @@ import {
   type Clock,
   type IdGenerator,
   type JsonObject,
+  type JsonValue,
 } from "./json.js";
 import {
   normalizeInstruction,
@@ -65,6 +66,11 @@ import { callAgent, modelRef, readOutcome } from "./engine/call.js";
 import type { ExecutionRuntime } from "./engine/runtime.js";
 import { isModelAdapter } from "./models/stream.js";
 import { reserveId } from "./identity.js";
+import {
+  resumeAgent,
+  cancelRetained,
+  closeStandalone,
+} from "./engine/continuation.js";
 
 export type ModelSelection = ModelAdapter | Model | ModelRef;
 export type AgentInput = string | MessageData | readonly MessageData[];
@@ -95,6 +101,13 @@ export interface GenerateOutcome {
   usage: import("./trace/usage.js").UsageSummary;
   interrupt: InterruptRecord | null;
   error: ErrorInfo | null;
+}
+export interface AgentResumeOptions {
+  threadId: string;
+  interruptId: string;
+  value: JsonValue;
+  scope?: Scope;
+  signal?: AbortSignal;
 }
 export function inputMessages(
   input: MessageData | readonly MessageData[],
@@ -197,13 +210,18 @@ export class Agent<M extends ModelSelection = ModelSelection> {
       if (event.is(streamHooks.error)) throw errorFromInfo(event.payload.error);
     return this.outcomes.get(stream)!;
   }
+  resume(options: AgentResumeOptions): Stream {
+    if (this.closed) fail("Disposed", "Agent closed");
+    return resumeAgent(this, options, this.controller);
+  }
   /** @internal Shared admission for Thread, Session and testing. */
   admit(
     request: ExecutionRequest,
     target: DeliveryTarget = { kind: "iterator" },
     prepare?: () => Promise<void>,
     runtime?: ExecutionRuntime,
-    cleanup?: () => Promise<void>,
+    cleanup?: (outcome?: GenerateOutcome) => Promise<void>,
+    admitted?: () => void,
   ): Stream {
     const environment = runtime ?? this.runtime();
     if (environment === this.controller) this.controller!.requireReady();
@@ -232,8 +250,16 @@ export class Agent<M extends ModelSelection = ModelSelection> {
       environment.report,
     );
     const registry = environment.hooks.capture();
+    if (admitted) {
+      const notify = sink.admitted;
+      sink.admitted = () => {
+        admitted();
+        notify();
+      };
+    }
     const outcome = (async () => {
       let entered = false;
+      let result: GenerateOutcome | undefined;
       try {
         await prepare?.();
         if (this.closed) fail("Disposed", "Agent closed");
@@ -246,7 +272,8 @@ export class Agent<M extends ModelSelection = ModelSelection> {
         );
         if (failure !== undefined && errorInfo(failure).source === "provider")
           throw failure;
-        return await readOutcome(environment, sink.stream);
+        result = await readOutcome(environment, sink.stream);
+        return result;
       } catch (error) {
         if (!entered) await registry.release();
         environment.report(errorInfo(error));
@@ -263,7 +290,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
         sink.close();
         throw error;
       } finally {
-        await cleanup?.();
+        await cleanup?.(result);
       }
     })();
     this.outcomes.set(sink.stream, outcome);
@@ -311,13 +338,15 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     target: DeliveryTarget = { kind: "observer", observe: () => {} },
     context: Pick<ExecutionRequest, "session" | "thread"> = {},
   ): Promise<void> {
-    return cancel(
-      this.executionContext(),
-      threadId,
-      streamId,
-      reason,
-      target,
-      context,
+    return cancelRetained(this, threadId, reason, (runtime) =>
+      cancel(
+        this.executionContext(runtime ?? this.runtime()),
+        threadId,
+        streamId,
+        reason,
+        target,
+        context,
+      ),
     );
   }
   async shutdown(): Promise<void> {
@@ -325,6 +354,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     for (const frame of this.active.values())
       frame.sink.controller.abort("Controller disposed");
     await Promise.allSettled([...this.jobs]);
+    await closeStandalone(this);
     this.pendingModels.clear();
     this.releaseId();
   }

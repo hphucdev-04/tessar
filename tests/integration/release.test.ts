@@ -16,7 +16,7 @@ function fixture(version: string, exercise: (root: string) => void) {
       writeFileSync(join(directory, "package.json"), JSON.stringify({
         name: "@tessar/" + name, version, type: "module",
         publishConfig: { access: "public", registry: "https://registry.npmjs.org/" },
-        repository: { url: "git+https://github.com/hphucdev-04/tessar.git" },
+        repository: { url: "git+https://github.com/tessar-ai/tessar.git" },
         exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
       }));
     }

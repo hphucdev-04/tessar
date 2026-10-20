@@ -13,11 +13,27 @@ async function command(name:"npm"|"pnpm",args:string[],cwd:string,cache:string){
  const options={cwd,timeout:30000,windowsHide:true,env:{...process.env,CI:"true",npm_config_offline:"true",npm_config_cache:cache}};
  const detailed=(error:any):never=>{throw Error(error.message+"\n"+error.stdout+"\n"+error.stderr);};
  if(process.platform!=="win32")return execute(name,args,options).catch(detailed);
- const suffix=name==="npm"?"node_modules/npm/bin/npm-cli.js":"node_modules/pnpm/bin/pnpm.mjs";
- const cli=[dirname(process.execPath),...(process.env.PATH??"").split(delimiter)].map(path=>join(path,suffix)).find(existsSync);
+ const entry=name==="npm"?"npm/bin/npm-cli.js":"pnpm/bin/pnpm.mjs";
+ const cli=[dirname(process.execPath),...(process.env.PATH??"").split(delimiter)]
+  .flatMap(path=>[join(path,"node_modules",entry),join(path,"..",entry)]).find(existsSync);
  if(!cli)throw Error("Missing "+name+" JavaScript CLI");
  return execute(process.execPath,[cli,...args],options).catch(detailed);
 }
+it.skipIf(process.platform!=="win32")("launches pnpm from the action-setup .bin layout on Windows",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"tessar action setup "));
+ const previousPath=process.env.PATH;
+ try{
+  const bin=join(root,"node_modules/.bin"),source=join(root,"node_modules/pnpm/bin");
+  await mkdir(bin,{recursive:true});await mkdir(source,{recursive:true});
+  await writeFile(join(source,"pnpm.mjs"),"console.log(JSON.stringify(process.argv.slice(2)));");
+  process.env.PATH=bin;
+  const result=await command("pnpm",["--version"],root,join(root,"cache"));
+  expect(JSON.parse(result.stdout)).toEqual(["--version"]);
+ }finally{
+  if(previousPath===undefined)delete process.env.PATH;else process.env.PATH=previousPath;
+  await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+ }
+});
 it("runs a packed installed CLI from another project and discovers a plugin added after installation",async()=>{
  const root=await mkdtemp(join(tmpdir(),"tessar installed host "));
  try{
@@ -66,12 +82,12 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
   expect(JSON.parse(result.stdout)).toMatchObject({status:"completed",output:"external plugin answer"});
   const listed=await execute(process.execPath,[cli,"plugins","list","--plugin-dir",join(root,"project/.tessar")],{cwd:join(root,"project")});
   expect(JSON.parse(listed.stdout)).toHaveLength(1);
-  const demo=await execute(process.execPath,[resolve("examples/cli/dist/main.js"),"hello"],{cwd:join(root,"project")});
+  const demo=await execute(process.execPath,[resolve("tests/fixtures/apps/cli/dist/main.js"),"hello"],{cwd:join(root,"project")});
   expect(JSON.parse(demo.stdout).output).toBe("external plugin answer");
   const localPackage=join(root,"project/local-package");await mkdir(localPackage);
   await writeFile(join(localPackage,"package.json"),JSON.stringify({name:"cli-local-plugin",version:"1.0.0",type:"module",exports:"./index.mjs"}));
   await writeFile(join(localPackage,"index.mjs"),"class CliLocalPlugin {id='cli-local-plugin';setup(){}} export default new CliLocalPlugin();");
-  const installed=await execute(process.execPath,[resolve("examples/cli/dist/main.js"),"plugins","install","./local-package"],{cwd:join(root,"project"),env:{...process.env,npm_config_offline:"true",npm_config_cache:cache}});
+  const installed=await execute(process.execPath,[resolve("tests/fixtures/apps/cli/dist/main.js"),"plugins","install","./local-package"],{cwd:join(root,"project"),env:{...process.env,npm_config_offline:"true",npm_config_cache:cache}});
   expect(JSON.parse(installed.stdout)).toEqual({installed:"cli-local-plugin"});
  }finally{await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 },60000);
