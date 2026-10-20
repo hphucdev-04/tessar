@@ -13,7 +13,11 @@ function release({ entries, id, reference }: Reservation): void {
 // Track identity without keeping otherwise-unused SDK instances alive.
 const collected = new FinalizationRegistry<Reservation>(release);
 
-export function reserveId(kind: "Agent" | "Controller", id: string, instance: object): () => void {
+export function reserveId(
+  kind: "Agent" | "Controller",
+  id: string,
+  instance: object,
+): () => void {
   const entries = kind === "Agent" ? agents : controllers;
   if (entries.get(id)?.deref())
     fail("RegistrationConflict", `${kind} ID already in use: ${id}`);

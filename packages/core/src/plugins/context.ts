@@ -17,10 +17,27 @@ import type { Session } from "../session.js";
 import type { Thread } from "../thread.js";
 import type { Agent } from "../agent.js";
 export type Disposer = () => void | Promise<void>;
+/** Read access to capabilities captured for the current hook execution. */
+export interface CapabilityRegistry {
+  get<T = unknown>(kind: string, id: string): T | undefined;
+  list<T = unknown>(kind: string): readonly T[];
+}
 /** Controls that do not wait for completion of the active execution. */
-export type SessionHookHandle = Pick<Session, "id" | "scope" | "model" | "thread" | "setModel" | "followUp">;
-export type ThreadHookHandle = Pick<Thread, "id" | "scope" | "snapshot" | "getHistory" | "getCheckpoint" | "listCheckpoints">;
+export type SessionHookHandle = Pick<
+  Session,
+  "id" | "scope" | "model" | "thread" | "setModel" | "followUp"
+>;
+export type ThreadHookHandle = Pick<
+  Thread,
+  | "id"
+  | "scope"
+  | "snapshot"
+  | "getHistory"
+  | "getCheckpoint"
+  | "listCheckpoints"
+>;
 export interface HookContext {
+  readonly registry: CapabilityRegistry;
   readonly sessionId?: string;
   readonly signal?: AbortSignal;
   readonly session?: SessionHookHandle;

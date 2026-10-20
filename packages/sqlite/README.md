@@ -48,4 +48,8 @@ lineage, and never removes plugin-owned tables. Plugins needing independent job
 claims or scheduling indexes own their database/schema and migrations; the core
 state API exposes JSON state, not raw SQL access.
 
+Lease fencing counters survive purge. A stale lease cannot regain ownership when
+the same thread ID and owner token are reused. Publication checks ownership again
+before committing; an expired lease rolls back the complete publication.
+
 See [the database map](../../SQLITE-STATE.md) for tables and actual fixture rows.

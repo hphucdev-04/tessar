@@ -7,7 +7,10 @@ export function notifyObserver<E extends EventEnvelope>(
   report: (error: ErrorInfo, context?: EventContext) => void,
 ): void {
   const failed = (error: unknown) =>
-    report(errorInfo(error, { source: "application", eventId: event.type }), event);
+    report(
+      errorInfo(error, { source: "application", eventId: event.type }),
+      event,
+    );
   try {
     const result = observer(event);
     if (result && typeof (result as PromiseLike<unknown>).then === "function")

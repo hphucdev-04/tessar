@@ -1,4 +1,8 @@
-import { stream as streamHooks, model as modelHooks, input as inputHooks } from "../events/type.js";
+import {
+  stream as streamHooks,
+  model as modelHooks,
+  input as inputHooks,
+} from "../events/type.js";
 import { TessarError, errorInfo, errorFromInfo, fail } from "../errors.js";
 
 import type { RegistryLease } from "../plugins/registry.js";
@@ -102,9 +106,7 @@ export async function execute(
       await loop(frame, execution);
       return;
     }
-    const head = await execution.runtime.backend.threads.get(
-      request.threadId,
-    );
+    const head = await execution.runtime.backend.threads.get(request.threadId);
     if (!head) fail("ThreadNotFound", "Thread not found");
     if (head.activeStreamId)
       fail("ThreadBusy", "Thread already has unfinished execution");
@@ -281,7 +283,12 @@ export async function execute(
     return error;
   } finally {
     if (frame) {
-      if (["completed", "failed", "stopped", "cancelled"].includes(frame.stream.status) || !frame.admitted)
+      if (
+        ["completed", "failed", "stopped", "cancelled"].includes(
+          frame.stream.status,
+        ) ||
+        !frame.admitted
+      )
         execution.pendingModels.delete(frame.request.threadId);
       if (frame.heartbeat) clearInterval(frame.heartbeat);
       execution.active.delete(frame.stream.id);

@@ -8,6 +8,17 @@ import { canonicalJson, HumanMessage, MessageCodec } from "@tessar/core";
 import { initializeSchema } from "../src/schema.js";
 import { hydrateCheckpoint, readVersions } from "../src/versions.js";
 
+it("rejects future schema versions without resetting application data", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec("CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES('retained'); PRAGMA user_version=99;");
+    await expect(initializeSchema(db)).rejects.toMatchObject({ code: "InvalidConfiguration" });
+    expect(db.prepare("PRAGMA user_version").get()!.user_version).toBe(99);
+    expect(db.prepare("SELECT value FROM application_data").get()!.value).toBe("retained");
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name='threads'").get()).toBeUndefined();
+  } finally { db.close(); }
+});
+
 function legacy(customState = false, filename = ":memory:") {
   const db = new DatabaseSync(filename);
   db.exec(`CREATE TABLE threads(id TEXT PRIMARY KEY,body TEXT NOT NULL);

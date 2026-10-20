@@ -44,6 +44,6 @@ jobs:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           NPM_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          for package in core openai plugins sqlite; do
+          for package in core openai plugins sqlite postgresql mongodb; do
             npm publish "dist/release/tessar-${package}-${RELEASE_VERSION}.tgz" --access public --tag "$NPM_TAG"
           done

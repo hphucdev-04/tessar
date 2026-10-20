@@ -10,20 +10,30 @@ import {
 import type { HookContext } from "../plugins/context.js";
 import type { RegistryLease } from "../plugins/registry.js";
 const operationEvents = new Set<string>([
-  "session.model.before-change", "session.thread.before-switch",
-  "thread.before-fork", "thread.before-rename", "thread.before-delete",
+  "session.model.before-change",
+  "session.thread.before-switch",
+  "thread.before-fork",
+  "thread.before-rename",
+  "thread.before-delete",
 ]);
 export async function dispatch<D extends AnyEvent>(
   lease: RegistryLease,
   definition: D,
   payload: PayloadOf<D>,
-  context: HookContext & EventContext,
+  context: Partial<HookContext> & EventContext,
   diagnostics: (
     error: ReturnType<typeof errorInfo>,
     context?: EventContext,
   ) => void,
   kind: EventKind = "notification",
 ): Promise<ResultOf<D>> {
+  const hookContext: HookContext & EventContext = {
+    ...context,
+    registry: Object.freeze({
+      get: <T = unknown>(kind: string, id: string) => lease.find<T>(kind, id),
+      list: <T = unknown>(kind: string) => Object.freeze(lease.list<T>(kind)),
+    }),
+  };
   let current: unknown =
     kind === "transformation" ? payload : context.initialDecision;
   let handlerIndex = -1;
@@ -49,12 +59,22 @@ export async function dispatch<D extends AnyEvent>(
         kind === "transformation" ? current : payload,
         context,
       );
-      const result = await registration.handler(event, context);
+      const result = await registration.handler(event, hookContext);
       if (operationEvents.has(definition) && result !== undefined) {
-        if (!result || typeof result !== "object" || Array.isArray(result) ||
-            !["allow", "deny"].includes((result as { decision: string }).decision) ||
-            ((result as { reason?: unknown }).reason !== undefined && typeof (result as { reason: unknown }).reason !== "string"))
-          fail("InvalidHookResult", "Operation hooks must return allow, deny or undefined");
+        if (
+          !result ||
+          typeof result !== "object" ||
+          Array.isArray(result) ||
+          !["allow", "deny"].includes(
+            (result as { decision: string }).decision,
+          ) ||
+          ((result as { reason?: unknown }).reason !== undefined &&
+            typeof (result as { reason: unknown }).reason !== "string")
+        )
+          fail(
+            "InvalidHookResult",
+            "Operation hooks must return allow, deny or undefined",
+          );
       }
       if (kind === "transformation" && result !== undefined) current = result;
       if (kind === "decision" && result !== undefined) {

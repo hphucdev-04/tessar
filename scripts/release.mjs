@@ -14,7 +14,7 @@ assert.ok(match && match[0] === ref, "Expected a release tag such as v0.1.0 or v
 const version = match[1];
 const tag = version.includes("-") ? "next" : "latest";
 
-for (const name of ["core", "openai", "plugins", "sqlite"]) {
+for (const name of ["core", "openai", "plugins", "sqlite", "postgresql", "mongodb"]) {
   const expected = "@tessar/" + name;
   const source = JSON.parse(readFileSync(resolve("packages", name, "package.json"), "utf8"));
   assert.equal(source.name, expected, "Unexpected package name");
@@ -40,7 +40,7 @@ for (const name of ["core", "openai", "plugins", "sqlite"]) {
   assert.ok(!files.some(file => /\/(?:test|tests|node_modules)\/|\.test\.|\/(?:\.env|\.npmrc)$/.test(file)), "Unexpected private/test files in " + expected);
   for (const target of Object.values(packed.exports).flatMap(value => Object.values(value)))
     assert.ok(files.includes("package/" + target.replace(/^\.\//, "")), "Missing export " + target);
-  if (name === "openai" || name === "sqlite")
+  if (["openai", "sqlite", "postgresql", "mongodb"].includes(name))
     assert.equal(packed.dependencies?.["@tessar/core"], version, "Incorrect core dependency in " + expected);
   if (name === "plugins")
     assert.equal(packed.peerDependencies?.["@tessar/core"], "^" + version, "Incorrect core peer dependency");

@@ -8,6 +8,28 @@ import { HumanMessage } from "../../src/messages/message.js";
 import { MessageCodec } from "../../src/messages/codec.js";
 import { AssistantMessage } from "../../src/messages/message.js";
 import { createTool } from "../../src/tools/tool.js";
+it("keeps custom capabilities for the entire stream and cleans up after the final reader",async()=>{
+ let release!:()=>void,started!:()=>void,disposed=0;
+ const gate=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>started=resolve);
+ const old={name:"old"},replacement={name:"new"},seen:string[]=[];
+ const harness=await AgentHarness.create({modelScripts:[{text:"one"},{text:"two"}],plugins:[
+  {id:"memory",setup(tessar){tessar.registry.register("memory","project",old);tessar.defer(()=>{disposed++;});}},
+  {id:"consumer",setup(tessar){
+   tessar.hook(streamHooks.before,async(_event,context)=>{started();await gate;seen.push(context.registry.get<typeof old>("memory","project")!.name);});
+   tessar.hook(streamHooks.end,(_event,context)=>{seen.push(context.registry.get<typeof old>("memory","project")!.name);});
+  }},
+ ]});
+ try{
+  const pending=harness.agent.generate("first");
+  await entered;
+  await harness.registry.detach("memory");expect(disposed).toBe(0);
+  await harness.registry.attach({id:"replacement",setup(tessar){tessar.registry.register("memory","project",replacement);}});
+  release();expect((await pending).status).toBe("completed");
+  expect(seen).toEqual(["old","old"]);expect(disposed).toBe(1);
+  expect((await harness.agent.generate("second")).status).toBe("completed");
+  expect(seen).toEqual(["old","old","new","new"]);
+ }finally{release();await harness.dispose();}
+});
 it("keeps suspended state when its required policy plugin is removed",async()=>{
  const Question=defineInterruption({id:"policy.question",version:1,response:{jsonSchema:{},parse:()=>({})},resolve:()=>ToolDecision.allow()});
  const harness=await AgentHarness.create({plugins:[{id:"policy",setup(tessar){tessar.interruptions.register(Question);tessar.hook(streamHooks.before,(_event,context)=>context.suspend(Question,{}));}}]});

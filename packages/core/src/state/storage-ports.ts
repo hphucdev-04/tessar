@@ -1,5 +1,12 @@
 import type {
-  Checkpoint, Page, PageOptions, CheckpointInfo, HistoryOptions, HistoryDataPage, RecordQuery, SessionRecord,
+  Checkpoint,
+  Page,
+  PageOptions,
+  CheckpointInfo,
+  HistoryOptions,
+  HistoryDataPage,
+  RecordQuery,
+  SessionRecord,
   ThreadInfo,
   RecordEntry,
   RecordKind,
@@ -36,12 +43,19 @@ export interface PublishRequest {
 }
 export interface ThreadStore {
   purge(id: string, query?: StateQuery): Promise<void>;
-  get(id: string, options?: { includeDeleted?: boolean }): Promise<ThreadInfo | null>;
+  get(
+    id: string,
+    options?: { includeDeleted?: boolean },
+  ): Promise<ThreadInfo | null>;
   page(query: StateQuery & PageOptions): Promise<Page<ThreadInfo>>;
   list(query?: StateQuery): Promise<readonly ThreadInfo[]>;
 }
 export interface ExecutionStore {
-  page<K extends RecordKind>(kind: K, threadId: string, query: RecordQuery): Promise<Page<RecordTypes[K]>>;
+  page<K extends RecordKind>(
+    kind: K,
+    threadId: string,
+    query: RecordQuery,
+  ): Promise<Page<RecordTypes[K]>>;
   get<K extends RecordKind>(
     kind: K,
     id: string,
@@ -55,7 +69,11 @@ export interface ExecutionStore {
 }
 export interface CheckpointStore {
   page(threadId: string, options: PageOptions): Promise<Page<CheckpointInfo>>;
-  history(threadId: string, options: HistoryOptions, query?: StateQuery): Promise<HistoryDataPage>;
+  history(
+    threadId: string,
+    options: HistoryOptions,
+    query?: StateQuery,
+  ): Promise<HistoryDataPage>;
   get(id: string): Promise<Checkpoint | null>;
   list(threadId: string): Promise<readonly Checkpoint[]>;
 }
@@ -76,8 +94,13 @@ export interface OwnershipPort {
 export interface StorageBackend {
   readonly sessions: {
     get(id: string, query?: StateQuery): Promise<SessionRecord | null>;
-    page(query: StateQuery & PageOptions & { agentId: string }): Promise<Page<SessionRecord>>;
-    compareAndSet(value: SessionRecord, expectedRevision: number): Promise<void>;
+    page(
+      query: StateQuery & PageOptions & { agentId: string },
+    ): Promise<Page<SessionRecord>>;
+    compareAndSet(
+      value: SessionRecord,
+      expectedRevision: number,
+    ): Promise<void>;
   };
   readonly ownedState: {
     get(

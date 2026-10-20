@@ -35,7 +35,10 @@ function continuity(value: unknown): Continuity | null {
     fail("UnsupportedContext", "Unknown OpenAI continuity version");
   return data;
 }
-export function encodeInput(request: ModelRequest, connection?: ModelConnectionDescriptor): ResponseInput {
+export function encodeInput(
+  request: ModelRequest,
+  connection?: ModelConnectionDescriptor,
+): ResponseInput {
   const input: ResponseInput = [];
   for (const message of request.messages) {
     const state = continuity(message.providerState);
@@ -44,7 +47,9 @@ export function encodeInput(request: ModelRequest, connection?: ModelConnectionD
         state.providerId !== request.model.providerId ||
         state.modelId !== request.model.modelId ||
         state.connectionId !== request.model.connectionId ||
-        (state.connection !== undefined && (state.connection.endpoint !== connection?.endpoint || state.connection.protocol !== connection?.protocol))
+        (state.connection !== undefined &&
+          (state.connection.endpoint !== connection?.endpoint ||
+            state.connection.protocol !== connection?.protocol))
       )
         fail(
           "UnsupportedContext",
@@ -68,7 +73,13 @@ export function encodeInput(request: ModelRequest, connection?: ModelConnectionD
         type: "function_call_output",
         call_id: message.toolCallId!,
         output: message.content
-          .map((p) => p.type === "text" ? p.text : p.type === "data" ? JSON.stringify(p.data) : "")
+          .map((p) =>
+            p.type === "text"
+              ? p.text
+              : p.type === "data"
+                ? JSON.stringify(p.data)
+                : "",
+          )
           .join(""),
       });
       continue;

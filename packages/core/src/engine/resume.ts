@@ -162,7 +162,13 @@ export async function restoreFrame(
       records,
       admitted: true,
     });
-    if (checkManifest) bindExecutionModel(registry, cp.execution!, frame.request.adapter, request.model);
+    if (checkManifest)
+      bindExecutionModel(
+        registry,
+        cp.execution!,
+        frame.request.adapter,
+        request.model,
+      );
     sink.setId(stream.id);
     return frame;
   } catch (error) {
@@ -310,7 +316,12 @@ async function prepareResumeFrame(
     });
     const position = cp.execution!,
       cursor = position.handlerCursor;
-    bindExecutionModel(registry, position, frame.request.adapter, request.model);
+    bindExecutionModel(
+      registry,
+      position,
+      frame.request.adapter,
+      request.model,
+    );
     if (!cursor) fail("ResumeIncompatible", "Missing continuation cursor");
     const previous = cursor.decisions.at(-2) as ControlDecision | undefined;
     const resolved =

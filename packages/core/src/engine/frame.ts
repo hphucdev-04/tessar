@@ -20,7 +20,10 @@ import type { StreamRecord } from "../trace/records.js";
 import type { LoopContext } from "../loop.js";
 import type { Attachment } from "./delivery.js";
 import { childStateDefinition } from "./tracked-effects.js";
-import type { SessionHookHandle, ThreadHookHandle } from "../plugins/context.js";
+import type {
+  SessionHookHandle,
+  ThreadHookHandle,
+} from "../plugins/context.js";
 
 export interface ExecutionOrigin {
   parentStreamId: string;
@@ -45,7 +48,13 @@ export type ExecutionRequest = (
       model?: ModelRef;
     }
   | { kind: "recover"; threadId: string; streamId: string; model?: ModelRef }
-) & { signal?: AbortSignal; adapter?: ModelAdapter; modelOptions?: JsonObject; session?: SessionHookHandle; thread?: ThreadHookHandle };
+) & {
+  signal?: AbortSignal;
+  adapter?: ModelAdapter;
+  modelOptions?: JsonObject;
+  session?: SessionHookHandle;
+  thread?: ThreadHookHandle;
+};
 
 export interface ExecutionFrame {
   activeSegmentStartedAt?: number;
@@ -127,9 +136,18 @@ export function createFrame(
   >,
 ): ExecutionFrame {
   if (options.request.adapter)
-    execution.pendingModels.set(options.request.threadId, options.request.adapter);
+    execution.pendingModels.set(
+      options.request.threadId,
+      options.request.adapter,
+    );
   else if (options.request.kind !== "input")
-    options = { ...options, request: { ...options.request, adapter: execution.pendingModels.get(options.request.threadId) } };
+    options = {
+      ...options,
+      request: {
+        ...options.request,
+        adapter: execution.pendingModels.get(options.request.threadId),
+      },
+    };
   let frame!: ExecutionFrame;
   const state = new PluginStateAccess(
     [
@@ -146,12 +164,18 @@ export function createFrame(
     execution.runtime.backend.ownedState,
   );
   const timing = options.cp.execution?.timing;
-  if (options.cp.execution) options.cp.execution.timing = {
-    completedActiveMs: timing?.completedActiveMs ?? 0,
-    complete: timing !== undefined && timing.complete && !timing.segmentOpen,
-    segmentOpen: true,
+  if (options.cp.execution)
+    options.cp.execution.timing = {
+      completedActiveMs: timing?.completedActiveMs ?? 0,
+      complete: timing !== undefined && timing.complete && !timing.segmentOpen,
+      segmentOpen: true,
+    };
+  frame = {
+    ...options,
+    state,
+    sequence: 0,
+    activeSegmentStartedAt: performance.now(),
   };
-  frame = { ...options, state, sequence: 0, activeSegmentStartedAt: performance.now() };
   return frame;
 }
 

@@ -7,6 +7,50 @@ on:
 permissions:
   contents: read
 jobs:
+  server-storage:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: tessar
+          POSTGRES_PASSWORD: tessar
+          POSTGRES_DB: tessar_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tessar -d tessar_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TESSAR_TEST_POSTGRES_URL: postgres://tessar:tessar@localhost:5432/tessar_test
+      TESSAR_TEST_MONGODB_URL: mongodb://localhost:27017/?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name tessar-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 60); do
+            if docker exec tessar-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})'; then break; fi
+            sleep 2
+          done
+          docker exec tessar-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 60); do
+            if docker exec tessar-mongo mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:storage --maxWorkers 4
+      - name: Database logs on failure
+        if: failure()
+        run: docker logs tessar-mongo
   verify:
     strategy:
       matrix:

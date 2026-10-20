@@ -1,0 +1,13 @@
+{
+  "name": "@tessar/mongodb",
+  "version": "0.1.0",
+  "description": "Transactional MongoDB persistence for Tessar state and checkpoints.",
+  "type": "module",
+  "files": ["dist"],
+  "engines": { "node": ">=24.14.0" },
+  "repository": { "type": "git", "url": "git+https://github.com/hphucdev-04/tessar.git", "directory": "packages/mongodb" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "dependencies": { "@tessar/core": "workspace:*", "mongodb": "^6.21.0" },
+  "scripts": { "build": "tsc -p tsconfig.json", "prepack": "tsc -p tsconfig.json", "typecheck": "tsc --noEmit -p tsconfig.json" }
+}

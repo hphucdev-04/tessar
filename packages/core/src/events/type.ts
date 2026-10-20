@@ -13,10 +13,18 @@ import type { InterruptRecord, ThreadInfo } from "../state/schema.js";
 import type { CreateThreadOptions } from "../state/threads.js";
 import type { DecisionHookContext } from "../engine/interrupt.js";
 import type { ExecutionHookContext } from "../engine/tracked-effects.js";
-import type { SessionHookContext, ThreadHookContext } from "../plugins/context.js";
+import type {
+  SessionHookContext,
+  ThreadHookContext,
+} from "../plugins/context.js";
 import type { ForkOptions } from "../state/fork.js";
 export type OperationDecision = { decision: "allow" | "deny"; reason?: string };
-export type OperationEvent = "session.model.before-change" | "session.thread.before-switch" | "thread.before-fork" | "thread.before-rename" | "thread.before-delete";
+export type OperationEvent =
+  | "session.model.before-change"
+  | "session.thread.before-switch"
+  | "thread.before-fork"
+  | "thread.before-rename"
+  | "thread.before-delete";
 export interface QueuedInputReceipt {
   id: string;
   threadId: string;
@@ -149,32 +157,96 @@ type Transform<P> = HookSpec<P, P, ExecutionHookContext>;
 type Decision<P> = HookSpec<P, ControlDecision, DecisionHookContext>;
 declare module "./definition.js" {
   interface EventMap {
-    "session.model.before-change": HookSpec<{ previous: ModelRef; model: ModelRef }, OperationDecision, SessionHookContext>;
-    "session.thread.before-switch": HookSpec<{ previousThreadId: string | null; threadId: string }, OperationDecision, SessionHookContext>;
-    "thread.before-fork": HookSpec<{ threadId: string; options: ForkOptions }, OperationDecision, ThreadHookContext>;
-    "thread.before-rename": HookSpec<{ threadId: string; title: string }, OperationDecision, ThreadHookContext>;
-    "thread.before-delete": HookSpec<{ threadId: string; permanent?: boolean }, OperationDecision, ThreadHookContext>;
-    "thread.forked": HookSpec<{ threadId: string; forkedThreadId: string }, void, ThreadHookContext>;
-    "thread.renamed": HookSpec<{ threadId: string; title: string }, void, ThreadHookContext>;
-    "thread.deleted": HookSpec<{ threadId: string; permanent?: boolean }, void, ThreadHookContext>;
+    "session.model.before-change": HookSpec<
+      { previous: ModelRef; model: ModelRef },
+      OperationDecision,
+      SessionHookContext
+    >;
+    "session.thread.before-switch": HookSpec<
+      { previousThreadId: string | null; threadId: string },
+      OperationDecision,
+      SessionHookContext
+    >;
+    "thread.before-fork": HookSpec<
+      { threadId: string; options: ForkOptions },
+      OperationDecision,
+      ThreadHookContext
+    >;
+    "thread.before-rename": HookSpec<
+      { threadId: string; title: string },
+      OperationDecision,
+      ThreadHookContext
+    >;
+    "thread.before-delete": HookSpec<
+      { threadId: string; permanent?: boolean },
+      OperationDecision,
+      ThreadHookContext
+    >;
+    "thread.forked": HookSpec<
+      { threadId: string; forkedThreadId: string },
+      void,
+      ThreadHookContext
+    >;
+    "thread.renamed": HookSpec<
+      { threadId: string; title: string },
+      void,
+      ThreadHookContext
+    >;
+    "thread.deleted": HookSpec<
+      { threadId: string; permanent?: boolean },
+      void,
+      ThreadHookContext
+    >;
     "session.created": HookSpec<{ model: ModelRef }, void, SessionHookContext>;
-    "session.model-changed": HookSpec<{ previous: ModelRef; model: ModelRef }, void, SessionHookContext>;
-    "session.thread-created": HookSpec<{ threadId: string }, void, SessionHookContext>;
-    "session.thread-switched": HookSpec<{
-      previousThreadId: string | null;
-      threadId: string;
-    }, void, SessionHookContext>;
-    "session.thread-renamed": HookSpec<{ threadId: string; title: string }, void, SessionHookContext>;
-    "session.thread-forked": HookSpec<{
-      sourceThreadId: string;
-      threadId: string;
-    }, void, SessionHookContext>;
-    "session.thread-deleted": HookSpec<{ threadId: string }, void, SessionHookContext>;
-    "session.input-queued": HookSpec<{ receipt: QueuedInputReceipt }, void, SessionHookContext>;
-    "session.input-discarded": HookSpec<{
-      receipt: QueuedInputReceipt;
-      cause: string;
-    }, void, SessionHookContext>;
+    "session.model-changed": HookSpec<
+      { previous: ModelRef; model: ModelRef },
+      void,
+      SessionHookContext
+    >;
+    "session.thread-created": HookSpec<
+      { threadId: string },
+      void,
+      SessionHookContext
+    >;
+    "session.thread-switched": HookSpec<
+      {
+        previousThreadId: string | null;
+        threadId: string;
+      },
+      void,
+      SessionHookContext
+    >;
+    "session.thread-renamed": HookSpec<
+      { threadId: string; title: string },
+      void,
+      SessionHookContext
+    >;
+    "session.thread-forked": HookSpec<
+      {
+        sourceThreadId: string;
+        threadId: string;
+      },
+      void,
+      SessionHookContext
+    >;
+    "session.thread-deleted": HookSpec<
+      { threadId: string },
+      void,
+      SessionHookContext
+    >;
+    "session.input-queued": HookSpec<
+      { receipt: QueuedInputReceipt },
+      void,
+      SessionHookContext
+    >;
+    "session.input-discarded": HookSpec<
+      {
+        receipt: QueuedInputReceipt;
+        cause: string;
+      },
+      void,
+      SessionHookContext
+    >;
     "session.before-close": HookSpec<{}, void, SessionHookContext>;
     "session.closed": HookSpec<{}, void, SessionHookContext>;
     diagnostic: HookSpec<{ error: ErrorInfo }>;
@@ -252,9 +324,9 @@ declare module "./definition.js" {
 }
 /** Dispatch behavior is internal metadata; public event identifiers are strings. */
 export const hookKinds: Readonly<Record<string, EventKind>> = Object.freeze({
-  "ready": "notification",
-  "shutdown": "barrier",
-  "diagnostic": "notification",
+  ready: "notification",
+  shutdown: "barrier",
+  diagnostic: "notification",
   "thread.prepare": "transformation",
   "thread.started": "notification",
   "thread.before-shutdown": "barrier",

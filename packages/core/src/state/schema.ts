@@ -1,7 +1,10 @@
 import type { Instruction } from "../instructions/instruction.js";
 import type { JsonObject, JsonValue } from "../json.js";
 import type { MessageData } from "../messages/message.js";
-import type { ModelRef, ModelConnectionDescriptor } from "../models/contract.js";
+import type {
+  ModelRef,
+  ModelConnectionDescriptor,
+} from "../models/contract.js";
 import type {
   StreamRecord,
   TurnRecord,
@@ -64,7 +67,11 @@ export interface HandlerCursor {
   decisions: readonly JsonValue[];
 }
 export interface ExecutionPosition {
-  timing?: { completedActiveMs: number; segmentOpen: boolean; complete: boolean };
+  timing?: {
+    completedActiveMs: number;
+    segmentOpen: boolean;
+    complete: boolean;
+  };
   streamId: string;
   turnId: string | null;
   phase: ExecutionPhase;
@@ -158,12 +165,41 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
-export interface HistoryOptions extends PageOptions { atCheckpointId?: string; }
-export interface HistoryDataPage extends Page<MessageData> { checkpointId: string; revision: number; }
-export interface CheckpointInfo { id: string; threadId: string; revision: number; createdAt: string; cause: string; forkable: boolean; unsafeReason: string | null; }
-export interface RecordQuery extends PageOptions { streamId?: string; turnId?: string; status?: string; atCheckpointId?: string; }
-export interface StoredModelSelection { ref: ModelRef; options?: JsonObject; connection?: ModelConnectionDescriptor; }
+export interface HistoryOptions extends PageOptions {
+  atCheckpointId?: string;
+}
+export interface HistoryDataPage extends Page<MessageData> {
+  checkpointId: string;
+  revision: number;
+}
+export interface CheckpointInfo {
+  id: string;
+  threadId: string;
+  revision: number;
+  createdAt: string;
+  cause: string;
+  forkable: boolean;
+  unsafeReason: string | null;
+}
+export interface RecordQuery extends PageOptions {
+  streamId?: string;
+  turnId?: string;
+  status?: string;
+  atCheckpointId?: string;
+}
+export interface StoredModelSelection {
+  ref: ModelRef;
+  options?: JsonObject;
+  connection?: ModelConnectionDescriptor;
+}
 export interface SessionRecord {
-  id: string; agentId: string; scope: Scope; metadata: JsonObject; selectedThreadId: string | null;
-  selectedModel: StoredModelSelection; revision: number; createdAt: string; updatedAt: string;
+  id: string;
+  agentId: string;
+  scope: Scope;
+  metadata: JsonObject;
+  selectedThreadId: string | null;
+  selectedModel: StoredModelSelection;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
 }

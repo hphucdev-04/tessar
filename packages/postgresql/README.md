@@ -1,0 +1,48 @@
+# @tessar/postgresql
+
+PostgreSQL storage for Tessar checkpoints, execution records, sessions, and
+plugin-owned state. Uses the native `pg` driver and database transactions.
+
+```ts
+import { PostgresqlStoragePlugin } from "@tessar/postgresql";
+
+const storage = new PostgresqlStoragePlugin({
+  connectionString: process.env.DATABASE_URL!,
+  schema: "tessar", // default
+  driverOptions: { max: 10 },
+});
+// Add storage to your Tessar plugins alongside model and application plugins.
+```
+
+`createPostgresqlBackend(options)` creates the same backend directly. Each
+backend owns its connection pool; call `close()` when done. Plugin setup registers
+the backend with Tessar, which owns its disposal. `driverOptions` accepts native
+`pg` pool options, including TLS configuration. `connectionString` is always the
+top-level option. Initialization failure closes the pool.
+
+The configured role needs permission to create the schema, tables, and indexes,
+and to read and write them. Schema names must match `[a-zA-Z_][a-zA-Z0-9_]{0,62}`.
+Use a separate schema per application or environment. Existing application tables
+outside that schema are untouched. All backend instances for the same store must
+use the same database and schema.
+
+Publication is transactional and uses resource-scoped PostgreSQL advisory locks
+to coordinate processes. Lease expiry uses PostgreSQL time; fencing tokens survive
+release and thread purge. Message and execution changes use indexed revision
+intervals, so unchanged history is not copied into each checkpoint. Reads that
+hydrate multiple rows share a repeatable-read snapshot.
+
+Run the repository's `pnpm test:storage` with `TESSAR_TEST_POSTGRES_URL` in the
+environment or ignored `.env.storage`. Tests create unique `tessar_test_*` schemas
+and remove only those schemas. Database tests explicitly skip without the URL;
+they require a real PostgreSQL server and schema creation privileges.
+
+The physical schema is versioned in `schema_metadata` (version 1). Initialization
+is serialized by an advisory lock. Existing unversioned tables from the initial
+adapter are adopted without resetting data; unsupported versions fail before
+application-table DDL. SQLite's version 2 and this version 1 refer to different
+physical layouts, not different Tessar state contracts.
+
+Source responsibilities match the SQLite adapter: `schema.ts` initializes the
+layout, `ownership.ts` manages leases, `versions.ts` stores historical records,
+`queries.ts` implements paging, and `backend.ts` wires the storage contract.

@@ -1,5 +1,8 @@
 import { notifyObserver } from "../events/observer.js";
-import { checkpoint as checkpointHooks, stream as streamHooks } from "../events/type.js";
+import {
+  checkpoint as checkpointHooks,
+  stream as streamHooks,
+} from "../events/type.js";
 import { fail, type ErrorInfo } from "../errors.js";
 import type { IdGenerator } from "../json.js";
 import {

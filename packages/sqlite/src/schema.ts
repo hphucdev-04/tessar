@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { setTimeout } from "node:timers/promises";
 import { migrateV1 } from "./migration.js";
 import { recordTables } from "./versions.js";
+import { fail } from "@tessar/core";
 export { recordTables };
 export async function initializeSchema(db: DatabaseSync): Promise<void> {
   db.exec("PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
@@ -22,13 +23,18 @@ export async function initializeSchema(db: DatabaseSync): Promise<void> {
   }
   db.exec("BEGIN IMMEDIATE");
   try {
-    const version = Number(db.prepare("PRAGMA user_version").get()!.user_version);
-    if (![0, 1, 2].includes(version)) throw Error("Unsupported SQLite schema version");
+    const version = Number(
+      db.prepare("PRAGMA user_version").get()!.user_version,
+    );
+    if (![0, 1, 2].includes(version))
+      fail("InvalidConfiguration", "Unsupported SQLite schema version");
     if (version === 1) migrateV1(db, createSchema);
     else createSchema(db);
     db.exec("PRAGMA user_version=2; COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
-  catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 
 export function createSchema(db: DatabaseSync): void {
@@ -57,5 +63,7 @@ export function createSchema(db: DatabaseSync): void {
       CREATE INDEX IF NOT EXISTS ${table}_turn ON ${table}(thread_id,turn_id,sort_date,id);
     `);
   }
-  db.exec("CREATE INDEX IF NOT EXISTS messages_history ON messages(thread_id,position,from_revision)");
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS messages_history ON messages(thread_id,position,from_revision)",
+  );
 }

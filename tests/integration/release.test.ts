@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const script = resolve("scripts/release.mjs");
-const names = ["core", "openai", "plugins", "sqlite"];
+const names = ["core", "openai", "plugins", "sqlite", "postgresql", "mongodb"];
 
 function fixture(version: string, exercise: (root: string) => void) {
   const root = mkdtempSync(join(tmpdir(), "tessar-release-test-"));
@@ -48,14 +48,14 @@ it.each([
   });
 });
 
-it("rejects a tag that differs from even one package before releasing anything", () => {
+it.each(["sqlite", "postgresql", "mongodb"])("rejects a tag that differs from %s before releasing anything", name => {
   fixture("1.2.3", root => {
-    const path = join(root, "packages/sqlite/package.json");
+    const path = join(root, "packages", name, "package.json");
     const manifest = JSON.parse(readFileSync(path, "utf8"));
     writeFileSync(path, JSON.stringify({ ...manifest, version: "1.2.2" }));
     const result = run(root, "v1.2.3");
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("@tessar/sqlite version must match v1.2.3");
+    expect(result.stderr).toContain(`@tessar/${name} version must match v1.2.3`);
   });
 });
 
@@ -77,7 +77,7 @@ it("checks actual tarballs and rejects unresolved workspace dependencies", () =>
     writeFileSync(join(packed, "README.md"), "Fixture\n");
     for (const name of names) {
       const manifest = JSON.parse(readFileSync(join(root, "packages", name, "package.json"), "utf8"));
-      if (name === "openai" || name === "sqlite") manifest.dependencies = { "@tessar/core": "1.2.3" };
+      if (["openai", "sqlite", "postgresql", "mongodb"].includes(name)) manifest.dependencies = { "@tessar/core": "1.2.3" };
       if (name === "plugins") manifest.peerDependencies = { "@tessar/core": "^1.2.3" };
       writeFileSync(join(packed, "package.json"), JSON.stringify(manifest));
       execFileSync("tar", ["-czf", join(archives, `tessar-${name}-1.2.3.tgz`), "package"], { cwd: root });
@@ -87,7 +87,7 @@ it("checks actual tarballs and rejects unresolved workspace dependencies", () =>
     const manifest = JSON.parse(readFileSync(join(packed, "package.json"), "utf8"));
     manifest.dependencies = { "@tessar/core": "workspace:*" };
     writeFileSync(join(packed, "package.json"), JSON.stringify(manifest));
-    execFileSync("tar", ["-czf", join(archives, "tessar-sqlite-1.2.3.tgz"), "package"], { cwd: root });
+    execFileSync("tar", ["-czf", join(archives, "tessar-mongodb-1.2.3.tgz"), "package"], { cwd: root });
     const invalid = run(root, "v1.2.3", "verify");
     expect(invalid.status).not.toBe(0);
     expect(invalid.stderr).toContain("Unresolved workspace dependency");

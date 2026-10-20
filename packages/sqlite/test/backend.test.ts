@@ -1,4 +1,5 @@
-import { expect,it } from "vitest";
+import { expect,it,vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtemp,rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,24 @@ import { AgentHarness } from "@tessar/core/testing";
 import { CommitCoordinator } from "@tessar/core";
 import { createSqliteBackend } from "../src/backend.js";
 storageConformance("sqlite",async()=>createSqliteBackend({filename:":memory:"}));
+it("rolls back publication when a lease expires during SQLite writes",async()=>{
+ const backend=await createSqliteBackend({filename:":memory:"}),batch=initialBatch();
+ await backend.commits.stage(batch);
+ const lease=await backend.ownership.acquire({threadId:batch.threadId,ownerToken:"slow",ttlMs:500});
+ const prepare=DatabaseSync.prototype.prepare;
+ let reachedHeadWrite=false;
+ const slow=vi.spyOn(DatabaseSync.prototype,"prepare").mockImplementation(function(this:DatabaseSync,sql){
+  if(sql.startsWith("INSERT INTO threads")){reachedHeadWrite=true;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,700);}
+  return prepare.call(this,sql);
+ });
+ try{
+  await expect(backend.commits.publish({commitId:batch.commitId,threadId:batch.threadId,expectedRevision:0,lease})).rejects.toMatchObject({code:"OwnershipLost"});
+  expect(reachedHeadWrite).toBe(true);
+  expect(await backend.threads.get(batch.threadId)).toBeNull();
+  expect(await backend.checkpoints.get(batch.checkpoint.id)).toBeNull();
+  expect(await backend.commits.lookupCommit(batch.commitId)).toBeNull();
+ }finally{slow.mockRestore();await backend.close();}
+});
 it("reopens committed state and fences independently connected owners",async()=>{
  const path=await mkdtemp(join(tmpdir(),"tessar-"));
  const filename=join(path,"state.db"),a=await createSqliteBackend({filename}),b=await createSqliteBackend({filename});
