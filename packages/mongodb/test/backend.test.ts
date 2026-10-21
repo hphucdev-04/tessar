@@ -420,13 +420,11 @@ suite("MongoDB (TESSAR_TEST_MONGODB_URL required)", () => {
       });
     try {
       // A real MongoDB validator fails after versions/checkpoint writes, exercising rollback.
-      await client
-        .db(databaseName)
-        .command({
-          collMod: "tessar_threads",
-          validator: { forbidden: { $exists: true } },
-          validationLevel: "strict",
-        });
+      await client.db(databaseName).command({
+        collMod: "tessar_threads",
+        validator: { forbidden: { $exists: true } },
+        validationLevel: "strict",
+      });
       await expect(
         new CommitCoordinator(backend).commit(batch, lease),
       ).rejects.toMatchObject({ code: 121 });

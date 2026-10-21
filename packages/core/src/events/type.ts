@@ -18,6 +18,7 @@ import type {
   ThreadHookContext,
 } from "../plugins/context.js";
 import type { ForkOptions } from "../state/fork.js";
+import type { RuntimeState } from "../runtime-state.js";
 export type OperationDecision = { decision: "allow" | "deny"; reason?: string };
 export type OperationEvent =
   | "session.model.before-change"
@@ -68,6 +69,7 @@ export interface StreamOutcome {
 export const ready = "ready";
 export const shutdown = "shutdown";
 export const diagnostic = "diagnostic";
+export const stateChanged = "state_changed";
 export const thread = {
   prepare: "thread.prepare",
   started: "thread.started",
@@ -157,6 +159,7 @@ type Transform<P> = HookSpec<P, P, ExecutionHookContext>;
 type Decision<P> = HookSpec<P, ControlDecision, DecisionHookContext>;
 declare module "./definition.js" {
   interface EventMap {
+    state_changed: HookSpec<{ state: RuntimeState }>;
     "session.model.before-change": HookSpec<
       {
         previous: ModelRef;
@@ -334,6 +337,7 @@ declare module "./definition.js" {
 }
 /** Dispatch behavior is internal metadata; public event identifiers are strings. */
 export const hookKinds: Readonly<Record<string, EventKind>> = Object.freeze({
+  state_changed: "notification",
   ready: "notification",
   shutdown: "barrier",
   diagnostic: "notification",

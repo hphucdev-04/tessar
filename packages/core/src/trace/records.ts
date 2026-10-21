@@ -52,8 +52,6 @@ export interface StreamRecord {
   id: string;
   threadId: string;
   scope: JsonObject;
-  parentStreamId: string | null;
-  parentToolExecutionId: string | null;
   triggerMessageId: string | null;
   status: StreamStatus;
   stopReason: string | null;
@@ -62,7 +60,6 @@ export interface StreamRecord {
   durationMs: number | null;
   error: ErrorInfo | null;
   directUsage: UsageSummary;
-  inclusiveUsage: UsageSummary;
 }
 export interface TurnRecord {
   id: string;

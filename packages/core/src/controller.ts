@@ -34,11 +34,37 @@ import { toolRegistrations } from "./engine/runtime.js";
 import { reserveId } from "./identity.js";
 
 export class Controller {
+  private readonly liveSessions = new Set<Session>();
+  /** @internal */ forgetSession(session: Session): void {
+    this.liveSessions.delete(session);
+  }
+  /** @internal */ signalSession(
+    threadId: string,
+    owner?: { id: string },
+  ): Session {
+    this.requireReady();
+    const sessions = [...this.liveSessions].filter((session) =>
+      session.selectsSignalThread(threadId),
+    );
+    const owned = sessions.find((session) => session === owner);
+    if (owned) return owned;
+    if (sessions.length > 1)
+      fail("SessionBusy", "Multiple live Sessions select signal Thread");
+    if (!sessions[0])
+      fail(
+        "ThreadNotSelected",
+        "Select the signal Thread in a live Session first",
+      );
+    return sessions[0];
+  }
   readonly id: string;
   readonly agent: Agent;
   private readonly modelRegistry = new ModelRegistry();
   /** @internal */ readonly diagnostics: ErrorInfo[] = [];
-  /** @internal */ readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
+  /** @internal */ readonly report = (
+    error: ErrorInfo,
+    context: EventContext = {},
+  ): void => {
     this.diagnostics.push(error);
     // Copy only event identity, never execution services from the failing hook.
     const event = new EventEnvelope(
@@ -227,8 +253,10 @@ export class Controller {
     requireId(ref.modelId, "model id");
     if (
       isModelAdapter(value) &&
-      "profile" in value && typeof value.profile === "function" &&
-      "refreshProfile" in value && typeof value.refreshProfile === "function"
+      "profile" in value &&
+      typeof value.profile === "function" &&
+      "refreshProfile" in value &&
+      typeof value.refreshProfile === "function"
     )
       return value as Model;
     return this.modelRegistry.get(ref);
@@ -252,10 +280,21 @@ export class Controller {
   }
   async createSession(options: SessionOptions = {}): Promise<Session> {
     this.requireReady();
+    if (options.threadId !== undefined) {
+      requireId(options.threadId, "thread id");
+      if (await this.backend.threads.get(options.threadId))
+        fail(
+          "RegistrationConflict",
+          "Thread ID already exists: " + options.threadId,
+        );
+    }
+    const id = requireId(options.id ?? randomIds.next("session"), "session id");
+    if (await this.backend.sessions.get(id))
+      fail("RegistrationConflict", "Session ID already exists: " + id);
     const selected = this.sessionModel(options.model ?? this.agent.getModel()),
       now = this.agent.clock.now();
     const record: SessionRecord = immutable({
-      id: randomIds.next("session"),
+      id,
       agentId: this.agent.id,
       scope: normalizeScope(options.scope),
       metadata: options.metadata ?? {},
@@ -273,7 +312,10 @@ export class Controller {
       selected.model,
       this.modelRegistry,
     );
+    this.liveSessions.add(session);
     session.created();
+    if (options.threadId !== undefined)
+      await session.thread.create({ id: options.threadId });
     return session;
   }
   async getSession(
@@ -298,13 +340,19 @@ export class Controller {
     if (record.selectedThreadId && !thread)
       fail("ThreadNotFound", "Session selection is unavailable");
     this.requireReady();
-    return Session.create(
+    const session = Session.create(
       this,
       record,
       selected.model,
       this.modelRegistry,
       thread,
     );
+    await session.restoreState();
+    this.liveSessions.add(session);
+    return session;
+  }
+  isReady(): boolean {
+    return this.phase === "ready";
   }
   listSessions(query: StateQuery & PageOptions = {}) {
     this.requireReady();
@@ -331,6 +379,7 @@ export class Controller {
           if (this.defaultBackend) await this.backend?.close();
         } finally {
           this.phase = "closed";
+          this.liveSessions.clear();
           this.releaseId();
         }
       }

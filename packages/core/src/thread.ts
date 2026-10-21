@@ -1,7 +1,6 @@
 import { thread as threadHooks } from "./events/type.js";
 import { fail } from "./errors.js";
 import { immutable, type JsonObject, type JsonValue } from "./json.js";
-import type { ExecutionOrigin } from "./agent.js";
 import { inputMessages } from "./messages/codec.js";
 import type { Controller } from "./controller.js";
 import type { Model } from "./models/profile.js";
@@ -28,7 +27,7 @@ export type ThreadStreamOptions = {
   | {
       input: MessageData | readonly MessageData[];
       model: Model | ModelRef;
-      origin?: ExecutionOrigin;
+      initialSignal?: { persist: boolean };
       resume?: never;
       recover?: never;
     }
@@ -98,29 +97,44 @@ export class Thread {
     return this.query.listCheckpoints(this.id, options, this.filter);
   }
   getStream(id: string) {
-    return this.query.getStream(this.id, id, this.filter);
+    return this.query.getRecord("streams", this.id, id, this.filter);
   }
   listStreams(options: PageOptions = {}) {
-    return this.query.listStreams(this.id, options, this.filter);
+    return this.query.listRecords("streams", this.id, options, this.filter);
   }
   listTurns(streamId: string, options: PageOptions = {}) {
-    return this.query.listTurns(this.id, streamId, options, this.filter);
+    return this.query.listRecords(
+      "turns",
+      this.id,
+      { ...options, streamId },
+      this.filter,
+    );
   }
   listModelAttempts(turnId: string, options: PageOptions = {}) {
-    return this.query.listModelAttempts(this.id, turnId, options, this.filter);
+    return this.query.listRecords(
+      "model_attempts",
+      this.id,
+      { ...options, turnId },
+      this.filter,
+    );
   }
   listToolExecutions(turnId: string, options: PageOptions = {}) {
-    return this.query.listToolExecutions(this.id, turnId, options, this.filter);
+    return this.query.listRecords(
+      "tool_executions",
+      this.id,
+      { ...options, turnId },
+      this.filter,
+    );
   }
   getInterrupt(id: string) {
-    return this.query.getInterrupt(this.id, id, this.filter);
+    return this.query.getRecord("interrupts", this.id, id, this.filter);
   }
   listInterrupts(
     options: PageOptions & {
       status?: "pending" | "resolved" | "cancelled";
     } = {},
   ) {
-    return this.query.listInterrupts(this.id, options, this.filter);
+    return this.query.listRecords("interrupts", this.id, options, this.filter);
   }
   /** @internal */ stream(options: ThreadStreamOptions): Stream {
     return this.admit(options, { kind: "iterator" });
@@ -156,7 +170,7 @@ export class Thread {
           context: options.context,
           modelOptions: options.modelOptions,
           limits: options.limits,
-          origin: options.origin,
+          initialSignal: options.initialSignal,
         },
         target,
         prepare,

@@ -2,7 +2,9 @@ import { notifyObserver } from "./events/observer.js";
 import {
   session as sessionHooks,
   stream as streamHooks,
+  stateChanged,
 } from "./events/type.js";
+import { StateView, stateTool, type RuntimeState } from "./runtime-state.js";
 import type { Controller } from "./controller.js";
 import { Thread, type ThreadStreamOptions } from "./thread.js";
 
@@ -34,7 +36,7 @@ import type { Model, ModelProfile } from "./models/profile.js";
 import type { ModelRegistry } from "./models/registry.js";
 import { snapshotModelOptions } from "./models/options.js";
 import type { ModelRef } from "./models/contract.js";
-import type { MessageData } from "./messages/message.js";
+import { HumanMessage, type MessageData } from "./messages/message.js";
 import type { Scope, PageOptions, SessionRecord } from "./state/schema.js";
 import { canonicalJson } from "./state/commit.js";
 import type { CreateThreadOptions } from "./state/threads.js";
@@ -51,13 +53,15 @@ import {
   purgeThread,
 } from "./state/thread-operations.js";
 export interface SessionOptions {
+  id?: string;
   scope?: Scope;
   model?: Model | ModelRef;
   metadata?: JsonObject;
+  threadId?: string;
 }
 export type SessionThreadOptions = Pick<
   CreateThreadOptions,
-  "title" | "messages" | "metadata"
+  "id" | "title" | "messages" | "metadata"
 >;
 export interface SessionModelInfo {
   readonly id: string;
@@ -87,6 +91,50 @@ interface Foreground {
 }
 
 export class Session {
+  private readonly view = new StateView();
+  readonly state = Object.freeze({ get: (): RuntimeState => this.view.get() });
+  isIdle(): boolean {
+    return !this.busy;
+  }
+  isDisposed(): boolean {
+    return this.disposed;
+  }
+  /** @internal Hydrate once on selection/restoration; state.get() never reads storage. */
+  async restoreState(): Promise<void> {
+    const empty = new StateView().get();
+    if (!this.selection) {
+      this.view.update(empty);
+      return;
+    }
+    const snapshot = await this.selection.snapshot();
+    const stream = snapshot.activeStreamId
+      ? await this.selection.getStream(snapshot.activeStreamId)
+      : null;
+    const interruptId = snapshot.execution?.pendingInterruptId;
+    const tools = stream
+      ? await this.controller.backend.executions.listRecords(
+          "tool_executions",
+          this.selection.id,
+        )
+      : [];
+    this.view.update({
+      ...empty,
+      messages: snapshot.state.messages,
+      status: stream?.status ?? "idle",
+      interrupt: interruptId
+        ? await this.selection.getInterrupt(interruptId)
+        : null,
+      tools: tools
+        .filter((tool) => tool.streamId === stream?.id)
+        .map(stateTool),
+      queuedInputs: this.queue.length,
+    });
+  }
+  private publishState(patch: Partial<RuntimeState> = {}): void {
+    this.notify(stateChanged, {
+      state: this.view.update({ ...patch, queuedInputs: this.queue.length }),
+    });
+  }
   readonly agent;
   private readonly sessionScope: Scope;
   readonly id: string;
@@ -107,6 +155,51 @@ export class Session {
   private disposal?: Promise<void>;
   private sequence = 0;
   private controlPending = false;
+  private signalAdmission?: Promise<void>;
+  /** @internal */ selectsSignalThread(threadId: string): boolean {
+    return !this.disposed && !this.closing && this.selection?.id === threadId;
+  }
+  /** @internal */ async receiveSignal(
+    threadId: string,
+    message: MessageData,
+    persist: boolean,
+    deliver: () => Promise<boolean>,
+  ): Promise<void> {
+    this.check();
+    await this.assertCurrent();
+    if (!this.selectsSignalThread(threadId))
+      fail("ThreadNotSelected", "Signal Thread is no longer selected");
+    if (await deliver()) return;
+    const admission = (this.signalAdmission ?? Promise.resolve()).then(
+      async () => {
+        if (await deliver()) return;
+        await this.foreground?.done;
+        await this.control(async () => {
+          if (!this.selectsSignalThread(threadId))
+            fail("ThreadNotSelected", "Signal Thread is no longer selected");
+          const thread = await this.target(threadId);
+          this.checkSelectionChange();
+          await this.attach(
+            thread,
+            {
+              input: [message],
+              model: this.record.selectedModel.ref,
+              modelOptions: this.record.selectedModel.options,
+              initialSignal: { persist },
+            },
+            true,
+          );
+        });
+      },
+    );
+    this.signalAdmission = admission;
+    void admission
+      .catch((error) => this.controller.report(errorInfo(error)))
+      .finally(() => {
+        if (this.signalAdmission === admission)
+          this.signalAdmission = undefined;
+      });
+  }
 
   private async control<T>(action: () => Promise<T>): Promise<T> {
     this.check();
@@ -319,6 +412,16 @@ export class Session {
     };
   }
   private emit(event: EventEnvelope): void {
+    if (event.type === stateChanged) {
+      const snapshot = event.payload.state as RuntimeState;
+      if (snapshot !== this.view.get())
+        this.view.update({ ...snapshot, queuedInputs: this.queue.length });
+      event = new EventEnvelope(
+        stateChanged,
+        { state: this.view.get() },
+        event,
+      );
+    }
     for (const observer of [...this.observers])
       notifyObserver(observer, event as StreamEvent, this.controller.report);
   }
@@ -347,12 +450,12 @@ export class Session {
         this.checkThreadSelectionChange();
         if (
           Object.keys(options).some(
-            (key) => !["title", "messages", "metadata"].includes(key),
+            (key) => !["id", "title", "messages", "metadata"].includes(key),
           )
         )
           fail(
             "InvalidConfiguration",
-            "Thread creation accepts title, messages and metadata only",
+            "Thread creation accepts id, title, messages and metadata only",
           );
         const thread = await createThread(
           this.controller,
@@ -365,7 +468,9 @@ export class Session {
         this.checkThreadSelectionChange();
         await this.persist({ selectedThreadId: thread.id });
         this.selection = thread;
+        await this.restoreState();
         this.notify(sessionHooks.threadCreated, { threadId: thread.id });
+        this.publishState();
         return thread;
       }),
     switch: (id: string): Promise<Thread> =>
@@ -386,10 +491,12 @@ export class Session {
         this.selection = thread;
         if (snapshot.activeStreamId) this.blocked.add(id);
         else this.blocked.delete(id);
+        await this.restoreState();
         this.notify(sessionHooks.threadSwitched, {
           previousThreadId,
           threadId: id,
         });
+        this.publishState();
         return thread;
       }),
     get: (id: string): Promise<Thread | null> => {
@@ -476,36 +583,50 @@ export class Session {
       this.record = stored;
       if (this.selection?.id === id) this.selection = null;
       this.notify(sessionHooks.threadDeleted, { threadId: id });
+      if (!this.selection) {
+        await this.restoreState();
+        this.publishState();
+      }
     });
   }
-  async followUp(
-    input: MessageData | readonly MessageData[],
-  ): Promise<QueuedInputReceipt> {
-    this.check();
-    if (!this.selection)
-      fail("ThreadNotSelected", "Select or create a Thread first");
-    await this.assertCurrent();
-    const receipt = immutable({
-      id: randomIds.next("input"),
-      threadId: this.selection.id,
-    });
-    this.queue.push({
-      receipt,
-      thread: this.selection,
-      model: immutable(this.record.selectedModel.ref),
-      modelOptions: this.record.selectedModel.options,
-      messages: inputMessages(input),
-    });
-    this.notify(sessionHooks.inputQueued, { receipt });
-    queueMicrotask(() => this.pump());
-    return receipt;
-  }
+  readonly followUp = Object.assign(
+    async (
+      input: string | MessageData | readonly MessageData[],
+    ): Promise<QueuedInputReceipt> => {
+      this.check();
+      if (!this.selection)
+        fail("ThreadNotSelected", "Select or create a Thread first");
+      await this.assertCurrent();
+      const receipt = immutable({
+        id: randomIds.next("input"),
+        threadId: this.selection.id,
+      });
+      this.queue.push({
+        receipt,
+        thread: this.selection,
+        model: immutable(this.record.selectedModel.ref),
+        modelOptions: this.record.selectedModel.options,
+        messages: inputMessages(
+          typeof input === "string" ? new HumanMessage(input) : input,
+        ),
+      });
+      this.notify(sessionHooks.inputQueued, { receipt });
+      this.publishState();
+      queueMicrotask(() => this.pump());
+      return receipt;
+    },
+    {
+      count: (): number => this.queue.length,
+      isEmpty: (): boolean => this.queue.length === 0,
+    },
+  );
   private discard(cause: string): void {
     for (const entry of this.queue.splice(0))
       this.notify(sessionHooks.inputDiscarded, {
         receipt: entry.receipt,
         cause,
       });
+    this.publishState();
   }
   private pump(): void {
     if (
@@ -544,6 +665,7 @@ export class Session {
       closed: false,
     };
     this.foreground = foreground;
+    this.publishState({ status: "running", interrupt: null, error: null });
     return new Promise((resolve, reject) => {
       const rejected = (error: ErrorInfo) => {
         reject(errorFromInfo(error));
@@ -596,6 +718,7 @@ export class Session {
         );
       } catch (error) {
         foreground.status = "failed";
+        this.publishState({ status: "failed", error: errorInfo(error) });
         rejected(errorInfo(error));
         closed();
       }
@@ -676,6 +799,8 @@ export class Session {
         await this.foreground?.done;
         this.discard("Closed");
         this.disposed = true;
+        this.publishState({ status: "closed" });
+        this.controller.forgetSession(this);
         this.notify(sessionHooks.closed, {});
         this.observers.clear();
       } catch (error) {

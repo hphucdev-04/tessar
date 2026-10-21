@@ -22,12 +22,12 @@ import type {
   TurnRecord,
 } from "../trace/records.js";
 import { aggregateUsage } from "../trace/usage.js";
-import { summarizeStreamUsage } from "./lineage.js";
 import {
   sampleActiveTime,
   type ExecutionContext,
   type ExecutionFrame,
 } from "./frame.js";
+import { closeSignals } from "./signal-delivery.js";
 
 export function put(
   frame: ExecutionFrame,
@@ -53,17 +53,9 @@ export async function updateUsage(
   frame: ExecutionFrame,
 ): Promise<void> {
   const attempts = execution.rows<ModelAttemptRecord>(frame, "model_attempts");
-  const summary = await summarizeStreamUsage(
-    execution.runtime.backend,
-    frame.stream.id,
-    {
-      threadId: frame.cp.threadId,
-      attempts,
-      states: frame.state.snapshots(),
-    },
+  frame.stream.directUsage = aggregateUsage(
+    attempts.filter((attempt) => attempt.streamId === frame.stream.id),
   );
-  frame.stream.directUsage = summary.direct;
-  frame.stream.inclusiveUsage = summary.inclusive;
   for (const turn of execution.rows<TurnRecord>(frame, "turns"))
     turn.usage = aggregateUsage(attempts.filter((a) => a.turnId === turn.id));
 }
@@ -72,9 +64,10 @@ export async function commit(
   execution: ExecutionContext,
   frame: ExecutionFrame,
   cause: CheckpointCause,
+  change?: () => void,
 ): Promise<void> {
   const queued = (frame.commitQueue ?? Promise.resolve()).then(() =>
-    commitNow(execution, frame, cause),
+    commitNow(execution, frame, cause, change),
   );
   frame.commitQueue = queued.catch(() => {});
   return queued;
@@ -84,7 +77,9 @@ async function commitNow(
   execution: ExecutionContext,
   frame: ExecutionFrame,
   cause: CheckpointCause,
+  change?: () => void,
 ): Promise<void> {
+  change?.();
   await execution.updateUsage(frame);
   sampleActiveTime(frame, cause === "Suspended");
   const cp: Checkpoint = {
@@ -131,6 +126,7 @@ export async function prepareMessage(
   execution: ExecutionContext,
   frame: ExecutionFrame,
   message: MessageData,
+  persisted = true,
 ): Promise<MessageData> {
   const value = await execution.hook(
     frame,
@@ -147,9 +143,10 @@ export async function prepareMessage(
       "Message transform changed identity/role/correlation",
     );
   const validated = MessageCodec.encode(MessageCodec.decode(value));
-  await execution.hook(frame, messageHooks.beforeCommit, {
-    message: validated,
-  });
+  if (persisted)
+    await execution.hook(frame, messageHooks.beforeCommit, {
+      message: validated,
+    });
   return validated;
 }
 
@@ -182,6 +179,10 @@ export async function finish(
   reason: string | null,
   error: ErrorInfo | null = null,
 ): Promise<void> {
+  if (!(await closeSignals(frame, status === "completed"))) {
+    frame.cp.execution!.phase = "BeforeTurn";
+    return;
+  }
   const pending = new Set<string>();
   for (const message of frame.cp.state.messages) {
     for (const part of message.content)

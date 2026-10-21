@@ -25,7 +25,14 @@ export interface CapabilityRegistry {
 /** Controls that do not wait for completion of the active execution. */
 export type SessionHookHandle = Pick<
   Session,
-  "id" | "scope" | "model" | "thread" | "followUp"
+  | "id"
+  | "scope"
+  | "model"
+  | "thread"
+  | "followUp"
+  | "state"
+  | "isIdle"
+  | "isDisposed"
 >;
 export type ThreadHookHandle = Pick<
   Thread,

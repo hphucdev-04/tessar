@@ -16,7 +16,7 @@ Save as `storage.ts`. The same database, Agent ID and model connection identity
 are used each time the application starts.
 
 ```ts
-import { Agent, Controller, HumanMessage, message, stream } from "@tessar/core";
+import { Agent, Controller, message, stream } from "@tessar/core";
 import { OpenAIProvider } from "@tessar/openai";
 import { SqliteStoragePlugin } from "@tessar/sqlite";
 
@@ -58,7 +58,7 @@ try {
     });
   });
   try {
-    await session.followUp(new HumanMessage(process.argv[3] ?? "Hello again."));
+    await session.followUp(process.argv[3] ?? "Hello again.");
     await completed;
     console.log();
   } finally {

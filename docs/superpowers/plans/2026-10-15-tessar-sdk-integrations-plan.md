@@ -1,5 +1,9 @@
 # Tessar Public API and Integrations Implementation Plan
 
+> The child reservation/origin flow in this plan is obsolete as of 2026-10-21.
+> Thread.stream is internal; plugins compose Agents through their public APIs.
+> See [API-REVIEW.md](../../../API-REVIEW.md) for the current contract.
+
 > Historical document — superseded by [Minimal Core Plan](2026-10-15-tessar-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

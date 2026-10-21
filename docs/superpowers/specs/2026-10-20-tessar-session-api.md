@@ -36,13 +36,15 @@ Preserve existing storage transactions, checkpoint/fork rules and policy hooks.
 Returned Thread handles expose state/history/record reads. Execution methods
 remain internal and are excluded from published declarations.
 
-## Deferred content-part metadata note
+## Content-part metadata (implemented after Session API work)
 
-A single HumanMessage can contain visible mention text and another text part
-containing SKILL.md. Future part-level metadata should let applications mark
-only the injected part as hidden in UI while retaining/sending both parts.
-Current metadata exists only on the whole message. Record this limitation;
-do not implement a new part schema, visibility policy or provider behavior now.
+A single HumanMessage can contain mention text and another text part containing
+SKILL.md. Every content part accepts optional `metadata: JsonObject`, independently
+of message metadata. Core validates and preserves this JSON through codecs,
+events, history and checkpoints. Applications/plugins own all keys and policies,
+including whether and how their UI renders a part. Core does not interpret the
+metadata or filter content based on it; provider encoders omit this metadata.
+This additive change does not require a storage schema migration.
 
 ## Validation
 

@@ -4,6 +4,7 @@ dist/
 .worktrees/
 .agents/
 docs/**
+!docs/technical-debt.md
 !docs/superpowers/
 !docs/superpowers/plans/
 !docs/superpowers/specs/

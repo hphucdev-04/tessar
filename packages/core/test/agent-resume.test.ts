@@ -107,8 +107,9 @@ it("cancels a waiting standalone execution through its suspended handle", async 
   const { agent } = fixture();
   try {
     const first = agent.stream("ask");
-    const pending = (await collect(first)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const pending = (await collect(first)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     first.abort("no answer");
     await expect(
       collect(
@@ -156,8 +157,9 @@ it("cancels waiting work when its original external signal is aborted", async ()
   try {
     const control = new AbortController();
     const first = agent.stream("ask", { signal: control.signal });
-    const pending = (await collect(first)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const pending = (await collect(first)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     control.abort("leave page");
     await expect(
       Promise.resolve().then(() =>
@@ -179,8 +181,9 @@ it("consumes competing standalone responses once and ignores stale abort handles
   const { agent, calls } = fixture();
   try {
     const first = agent.stream("ask");
-    const pending = (await collect(first)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const pending = (await collect(first)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     const options = {
       threadId: first.threadId,
       interruptId: pending.id,
@@ -189,7 +192,8 @@ it("consumes competing standalone responses once and ignores stale abort handles
     const one = (async () => {
       for await (const event of agent.resume(options)) {
         if (event.type === events.resumed) first.abort("stale handle");
-        if (event.type === events.error) throw errorFromInfo(event.payload.error);
+        if (event.type === events.error)
+          throw errorFromInfo(event.payload.error);
       }
     })();
     const duplicate = collect(agent.resume(options));
@@ -275,8 +279,8 @@ it.each(["handle", "signal"])(
     try {
       const control = new AbortController();
       const first = agent.stream("ask", { signal: control.signal });
-      const question = (await collect(first)).find((e) =>
-        e.type === events.suspended,
+      const question = (await collect(first)).find(
+        (e) => e.type === events.suspended,
       )!.payload.interrupt;
       const options = { threadId: first.threadId, interruptId: question.id };
       await expect(

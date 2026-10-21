@@ -1,4 +1,4 @@
-import { fail } from "../errors.js";
+import { fail, requireId } from "../errors.js";
 import {
   randomIds,
   systemClock,
@@ -23,6 +23,7 @@ import type { StorageBackend } from "./storage-ports.js";
 import { CommitCoordinator } from "./commit.js";
 import { matchesScope, normalizeScope } from "./scope.js";
 export interface CreateThreadOptions {
+  id?: string;
   title?: string;
   scope?: Scope;
   instructions?: string | Instruction;
@@ -42,12 +43,14 @@ export class ThreadService {
       lineage?: { parentThreadId: string; sourceCheckpointId: string };
     },
   ): Promise<ThreadInfo> {
-    const id = this.ids.next("thread"),
-      lease = await this.backend.ownership.acquire({
-        threadId: id,
-        ownerToken: this.ids.next("owner"),
-        ttlMs: 30000,
-      });
+    const id = requireId(options.id ?? this.ids.next("thread"), "thread id");
+    if (await this.backend.threads.get(id, { includeDeleted: true }))
+      fail("RegistrationConflict", "Thread ID already exists: " + id);
+    const lease = await this.backend.ownership.acquire({
+      threadId: id,
+      ownerToken: this.ids.next("owner"),
+      ttlMs: 30000,
+    });
     try {
       const cp: Checkpoint = {
         id: this.ids.next("checkpoint"),

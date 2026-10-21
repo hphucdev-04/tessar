@@ -12,28 +12,24 @@ import {
 import type { Lease } from "../state/storage-ports.js";
 import type { Checkpoint, RecordEntry, StreamLimits } from "../state/schema.js";
 import type { StreamRecord } from "../trace/records.js";
+import { stateTool } from "../runtime-state.js";
 import type { LoopContext } from "../loop.js";
 import type { Attachment } from "./delivery.js";
-import { childStateDefinition } from "./tracked-effects.js";
 import type {
   SessionHookHandle,
   ThreadHookHandle,
 } from "../plugins/context.js";
 
-export interface ExecutionOrigin {
-  parentStreamId: string;
-  parentToolExecutionId?: string;
-  dispatchId: string;
-}
 export type ExecutionRequest = (
   | {
       kind: "input";
+      id?: string;
       threadId: string;
       input: readonly MessageData[];
       model: ModelRef;
-      origin?: ExecutionOrigin;
       context?: JsonObject;
       limits?: Partial<StreamLimits>;
+      initialSignal?: { persist: boolean };
     }
   | {
       kind: "resume";
@@ -52,6 +48,7 @@ export type ExecutionRequest = (
 };
 
 export interface ExecutionFrame {
+  signals?: ReturnType<typeof import("./signal-delivery.js").findSignalTarget>;
   activeSegmentStartedAt?: number;
   turnStartedAt?: number;
   effectLocks?: Map<string, Promise<unknown>>;
@@ -80,6 +77,7 @@ export type ExecutionContext = Omit<LoopContext, "finish"> & {
   prepareMessage(
     frame: ExecutionFrame,
     message: MessageData,
+    persisted?: boolean,
   ): Promise<MessageData>;
   finish(
     frame: ExecutionFrame,
@@ -145,10 +143,7 @@ export function createFrame(
     };
   let frame!: ExecutionFrame;
   const state = new PluginStateAccess(
-    [
-      childStateDefinition,
-      ...options.registry.list<PluginStateDefinition<any>>("state"),
-    ],
+    options.registry.list<PluginStateDefinition<any>>("state"),
     { type: "thread", id: options.request.threadId },
     options.cp.state.pluginStates,
     async () => {
@@ -171,6 +166,21 @@ export function createFrame(
     sequence: 0,
     activeSegmentStartedAt: performance.now(),
   };
+  const interruptId = options.cp.execution?.pendingInterruptId;
+  options.sink.seedState({
+    messages: options.cp.state.messages,
+    status: options.stream.status,
+    tools: [...options.records.values()].flatMap((record) =>
+      record.kind === "tool_executions" &&
+      record.data.streamId === options.stream.id
+        ? [stateTool(record.data)]
+        : [],
+    ),
+    interrupt: interruptId
+      ? ((options.records.get("interrupts:" + interruptId)
+          ?.data as import("../state/schema.js").InterruptRecord) ?? null)
+      : null,
+  });
   return frame;
 }
 

@@ -1,5 +1,9 @@
 # Tessar Durable Agent Loop Implementation Plan
 
+> The child reservation/admission protocol in Task B5 was removed on 2026-10-21.
+> Do not reimplement it from this plan. The current contract is
+> [API-REVIEW.md](../../../API-REVIEW.md); plugins own Agent orchestration.
+
 > Historical document — superseded by [Minimal Core Plan](2026-10-15-tessar-minimal-core-plan.md) and its English spec.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

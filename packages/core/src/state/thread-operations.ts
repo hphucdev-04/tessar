@@ -2,7 +2,7 @@ import type { Controller } from "../controller.js";
 import { Thread } from "../thread.js";
 import { thread as threadHooks } from "../events/type.js";
 import { fail } from "../errors.js";
-import { immutable, randomIds } from "../json.js";
+import { immutable } from "../json.js";
 import { matchesScope } from "./scope.js";
 import { canonicalJson } from "./commit.js";
 import { ThreadService, type CreateThreadOptions } from "./threads.js";
@@ -33,15 +33,16 @@ export async function prepareThread(
     canonicalJson(prepared.scope ?? {}) !== canonicalJson(options.scope ?? {})
   )
     fail("ThreadScopeMismatch", "Thread preparation cannot change scope");
-  const ids = reservedId
-    ? {
-        next: (kind: string) =>
-          kind === "thread" ? reservedId : randomIds.next(kind),
-      }
-    : randomIds;
-  const info = await new ThreadService(controller.backend, ids).create(
-    prepared,
-  );
+  const id = reservedId ?? options.id;
+  if (id !== undefined && prepared.id !== undefined && prepared.id !== id)
+    fail(
+      "InvalidConfiguration",
+      "Thread preparation cannot change a supplied id",
+    );
+  const info = await new ThreadService(controller.backend).create({
+    ...prepared,
+    ...(id !== undefined ? { id } : {}),
+  });
   await controller.hooks.dispatch(threadHooks.started, info, {
     session,
     sessionId: session?.id,

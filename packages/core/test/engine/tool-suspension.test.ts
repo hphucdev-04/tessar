@@ -53,16 +53,18 @@ it("does not count continuation as another tool call and can suspend again from 
       input: [MessageCodec.encode(new HumanMessage("ask"))],
       model: h.provider.ref,
     });
-    const one = (await h.collect(first)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const one = (await h.collect(first)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     const second = h.admit({
       kind: "resume",
       threadId: thread.id,
       interruptId: one.id,
       value: "again",
     });
-    const two = (await h.collect(second)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const two = (await h.collect(second)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     const end = await h.collect(
       h.admit({
         kind: "resume",
@@ -71,7 +73,9 @@ it("does not count continuation as another tool call and can suspend again from 
         value: "done",
       }),
     );
-    expect(end.find((e) => e.type === events.end)!.payload.status).toBe("completed");
+    expect(end.find((e) => e.type === events.end)!.payload.status).toBe(
+      "completed",
+    );
     expect({ executions, resumes }).toEqual({ executions: 1, resumes: 2 });
   } finally {
     await h.dispose();
@@ -102,8 +106,8 @@ it("suspends a tool, rejects invalid answers without consuming, and resumes its 
       input: [MessageCodec.encode(new HumanMessage("ask"))],
       model: h.provider.ref,
     });
-    const pending = (await h.collect(first)).find((e) =>
-      e.type === events.suspended,
+    const pending = (await h.collect(first)).find(
+      (e) => e.type === events.suspended,
     )!.payload.interrupt;
     expect(pending).toMatchObject({
       kind: "tool-result",
@@ -119,9 +123,9 @@ it("suspends a tool, rejects invalid answers without consuming, and resumes its 
         }),
       ),
     ).rejects.toMatchObject({ code: "InvalidResumeResponse" });
-    expect((await h.queries.getInterrupt(thread.id, pending.id))!.status).toBe(
-      "pending",
-    );
+    expect(
+      (await h.queries.getRecord("interrupts", thread.id, pending.id))!.status,
+    ).toBe("pending");
     const next = h.admit({
       kind: "resume",
       threadId: thread.id,
@@ -182,8 +186,8 @@ it("continues approval through the tool resume callback without re-executing its
       input: [MessageCodec.encode(new HumanMessage("write"))],
       model: h.provider.ref,
     });
-    const pending = (await h.collect(first)).find((e) =>
-      e.type === events.suspended,
+    const pending = (await h.collect(first)).find(
+      (e) => e.type === events.suspended,
     )!.payload.interrupt;
     await h.collect(
       h.admit({
@@ -236,16 +240,18 @@ it("preserves completed siblings and two independently waiting tool requests in 
       input: [MessageCodec.encode(new HumanMessage("ask twice"))],
       model: h.provider.ref,
     });
-    const one = (await h.collect(first)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const one = (await h.collect(first)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     const next = h.admit({
       kind: "resume",
       threadId: thread.id,
       interruptId: one.id,
       value: "one",
     });
-    const two = (await h.collect(next)).find((e) => e.type === events.suspended)!
-      .payload.interrupt;
+    const two = (await h.collect(next)).find(
+      (e) => e.type === events.suspended,
+    )!.payload.interrupt;
     expect(two.id).not.toBe(one.id);
     await h.collect(
       h.admit({
@@ -299,8 +305,8 @@ it("keeps queued siblings undispatched until the waiting call is answered", asyn
       input: [MessageCodec.encode(new HumanMessage("ask"))],
       model: h.provider.ref,
     });
-    const question = (await h.collect(first)).find((e) =>
-      e.type === events.suspended,
+    const question = (await h.collect(first)).find(
+      (e) => e.type === events.suspended,
     )!.payload.interrupt;
     expect(work).toBe(0);
     await h.collect(
@@ -349,8 +355,8 @@ it("rejects changed plugin resume contracts without consuming the waiting reques
       input: [MessageCodec.encode(new HumanMessage("ask"))],
       model: h.provider.ref,
     });
-    const question = (await h.collect(first)).find((e) =>
-      e.type === events.suspended,
+    const question = (await h.collect(first)).find(
+      (e) => e.type === events.suspended,
     )!.payload.interrupt;
     await h.registry.detach("questions");
     await h.registry.attach(plugin(true));
@@ -364,9 +370,9 @@ it("rejects changed plugin resume contracts without consuming the waiting reques
         }),
       ),
     ).rejects.toMatchObject({ code: "ResumeIncompatible" });
-    expect((await h.queries.getInterrupt(thread.id, question.id))!.status).toBe(
-      "pending",
-    );
+    expect(
+      (await h.queries.getRecord("interrupts", thread.id, question.id))!.status,
+    ).toBe("pending");
     await h.registry.detach("questions");
     await h.registry.attach(plugin(false));
     await h.collect(
@@ -432,8 +438,8 @@ it("reconciles an uncertain sibling before revealing a saved tool question", asy
       threadId: thread.id,
       streamId: first.id!,
     });
-    const question = (await h.collect(recovered)).find((e) =>
-      e.type === events.suspended,
+    const question = (await h.collect(recovered)).find(
+      (e) => e.type === events.suspended,
     )!.payload.interrupt;
     await h.collect(
       h.admit({

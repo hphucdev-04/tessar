@@ -84,26 +84,23 @@ export class ModelRegistry {
       return existing;
     }
     const identity = immutable(ref);
-    let profile = this.resolver.current(identity, provider);
     const refresh = async (options: { signal?: AbortSignal } = {}) => {
       const signals = [
         this.shutdown.signal,
         AbortSignal.timeout(3000),
         ...(options.signal ? [options.signal] : []),
       ];
-      profile = await this.resolver.resolve(
+      return this.resolver.resolve(
         identity,
         provider,
         AbortSignal.any(signals),
       );
-      return profile;
     };
     const resolver = this.resolver;
     const model: Model = Object.freeze({
       ref: identity,
       profile() {
-        profile = resolver.current(identity, provider);
-        return profile;
+        return resolver.current(identity, provider);
       },
       refreshProfile: refresh,
     });

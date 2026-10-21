@@ -1,5 +1,10 @@
 # Tessar Minimal Core Design
 
+> Historical design snapshot. For the implemented public contract, see
+> [API-REVIEW.md](../../../API-REVIEW.md). The child reservation/admission protocol
+> and automatic descendant usage aggregation described here were removed on
+> 2026-10-21: orchestration policy belongs to plugins. Thread fork lineage remains.
+
 Status: implemented and locally verified on Windows. This English spec
 supersedes the earlier core/public-API specs and their implementation plans.
 The user explicitly requested this rewrite followed by native implementation.

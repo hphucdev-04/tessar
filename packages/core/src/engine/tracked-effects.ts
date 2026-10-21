@@ -18,12 +18,10 @@ import type { AnyEvent, PayloadOf } from "../events/definition.js";
 import type { HookContext } from "../plugins/context.js";
 import {
   PluginStateAccess,
-  definePluginState,
   type PluginStateDefinition,
 } from "../state/plugin-state.js";
 import { canonicalJson } from "../state/commit.js";
 import { abortable } from "./abort.js";
-import type { ExecutionOrigin } from "../agent.js";
 export interface EffectContext {
   signal: AbortSignal;
   threadId: string;
@@ -62,17 +60,6 @@ export interface EffectBinding {
   pluginId: string;
   stateDefinition: PluginStateDefinition<JsonObject>;
 }
-export interface ChildReservation {
-  streamId: string;
-  threadId: string;
-  origin: ExecutionOrigin;
-}
-export const childStateDefinition = definePluginState<JsonObject>({
-  pluginId: "core",
-  namespace: "execution.children",
-  schemaVersion: 1,
-  initial: {},
-});
 export interface TrackedServices {
   models: {
     stream(options: {
@@ -87,12 +74,6 @@ export interface TrackedServices {
       input: I,
       options: { key: string },
     ): Promise<O>;
-  };
-  executions: {
-    reserveChild(options: {
-      threadId: string;
-      dispatchKey: string;
-    }): Promise<ChildReservation>;
   };
   events: {
     emit<D extends AnyEvent>(

@@ -7,12 +7,84 @@ selected thread and model, queues follow-ups and exposes events through
 `subscribe()`. A thread owns conversation history; a Session can select among
 several threads.
 
+Session and Thread IDs can be supplied when creating them. Omit `id` to generate
+one; creating an existing ID fails instead of replacing its state:
+
+```ts
+const session = await controller.createSession({ id: "chat-42" });
+const thread = await session.thread.create({ id: "conversation-42" });
+const fork = await session.thread.fork({ id: "conversation-42-copy" });
+// fork({ threadId, id }) selects the source with threadId and names the destination with id.
+```
+
+Resume and recover retain their existing execution IDs and receipts.
+`followUp(messages)` keeps its existing queue receipt `{ id, threadId }`.
+
+## Create and select a Thread
+
+For a new conversation, create and select its Thread in one call:
+
+```ts
+const session = await controller.createSession({
+  id: "chat-42", threadId: "conversation-42", scope: { userId: "user-42" },
+});
+```
+
+`threadId` creates a new Thread and inherits the Session scope, exactly like
+`await session.thread.create({ id: threadId })`. Existing IDs fail; use
+`session.thread.switch(id)` to select an existing Thread. Without `threadId`,
+create or select a Thread before calling `followUp()`.
+
+## Render snapshots
+
+Subscribe once and render complete snapshots instead of collecting individual
+text deltas or tool events:
+
+```ts
+import { stateChanged } from "@tessar/core";
+
+const unsubscribe = session.subscribe(stateChanged, event => {
+  render(event.payload.state); // Your terminal renderer or application transport.
+});
+render(session.state.get());
+await session.followUp("Hello");
+// Later: unsubscribe();
+```
+
+`session.state.get()` synchronously returns the latest immutable snapshot in
+memory. `stateChanged` is the string `"state_changed"`; a literal comparison
+`event.type === "state_changed"` works as well. The snapshot contains:
+
+- `status`, `error` and the pending `interrupt` when a response is required.
+- `messages`, including the accumulated assistant draft, and `currentMessage`
+  pointing to that draft until its final message is committed. Render `messages`
+  once; do not append `currentMessage` a second time.
+- `tools`: execution ID, tool-call ID, name, status, latest progress, result and error.
+- `queuedInputs`: follow-ups waiting to start, excluding the current execution.
+
+Text and reasoning appear incrementally. Completed messages remain across
+follow-ups. Selecting another Thread replaces the conversation snapshot.
+Restoring a Session loads committed messages and any pending interrupt; unfinished
+drafts and tool progress are transient. Thread and stream IDs stay on the event;
+`session.thread.getId()` returns the selected Thread ID.
+
+`session.followUp.count()` and `session.followUp.isEmpty()` inspect the queue.
+`session.isIdle()` means no execution is currently running, including while
+suspended and awaiting resume. It does not imply that the queue is empty or the
+conversation is finished. `session.isDisposed()` checks the handle's lifecycle;
+`controller.isReady()` checks whether initialization completed and it is usable.
+
+Snapshots are projections for rendering, not model context or checkpoints. The
+getter does not read storage, and snapshot events do not cause database writes.
+Use `session.thread.getHistory()` for explicit history reads. Browser clients
+need an application-owned transport; see [client SDK debt](../../docs/technical-debt.md).
+
 ## A two-message conversation
 
 Save as `conversation.ts` after the [setup](README.md).
 
 ```ts
-import { Agent, Controller, HumanMessage, message, stream } from "@tessar/core";
+import { Agent, Controller, message, stream } from "@tessar/core";
 import { OpenAIProvider } from "@tessar/openai";
 
 const agent = new Agent({
@@ -42,7 +114,7 @@ try {
       });
     });
     try {
-      await session.followUp(new HumanMessage(text));
+      await session.followUp(text);
       await completed;
       console.log();
     } finally {
@@ -70,9 +142,51 @@ helper waits for the completion event so this standalone example can close
 cleanly. An interactive application normally subscribes once and leaves its
 Controller alive across requests.
 
+`followUp(text)` creates a `HumanMessage` internally. You can also pass an explicit
+message or a readonly array of messages for metadata, multipart content or context.
+
 You can call `followUp()` while work is running: accepted input waits in the
 Session queue. Input that has not yet been admitted is held in memory. Failed or
 canceled work can discard queued input; observe Session events in your UI.
+
+## Send a signal to the selected Thread
+
+Keep your existing Session subscription. Send through the Agent using the selected
+Thread ID; do not add a second Session sending API:
+
+```ts
+const threadId = session.thread.getId();
+if (!threadId) throw Error("Select or create a Thread first");
+
+await agent.sendSignal({
+  threadId,
+  content: "A background task has finished.",
+  tagName: "notification",
+  attributes: { source: "background" },
+  metadata: { taskId: "build-42" },
+  persist: true, // default
+});
+```
+
+Supply exactly one of `threadId` and `streamId`. Use `threadId` for Session work
+and `streamId` for direct Agent streams. A running Thread consumes signal input
+at the next safe model boundary within its current execution. An idle selected
+Thread starts work with that Session's selected model/options, and events reach
+the same subscription. Unlike `followUp()`, it does not enqueue a later execution.
+
+The returned Promise acknowledges input in memory, without waiting for execution
+startup or persistence. Observe the subscription for execution failures. Input
+that has already been committed survives restart with persistent storage.
+
+A suspended Thread retains pending input until explicit `session.resume()`;
+signal does not answer its interruption or approve a tool. Committed pending input
+survives restart with a persistent backend: restore the Session first, then resume.
+`persist: false` input lasts only for that execution in this process.
+
+An idle target needs an unambiguous live Session handle. Multiple live handles
+selecting the same Thread are rejected; dispose unused handles. Stale Session
+revisions, unavailable Threads and work owned by another process fail explicitly.
+Signal is an in-process SDK receiver, not a cross-process message transport.
 
 ## Thread operations
 

@@ -22,6 +22,7 @@ import {
 import { aggregateUsage } from "./trace/usage.js";
 import type { Tool } from "./tools/tool.js";
 import { buildContext } from "./engine/context.js";
+import { applySignals, signalMessages } from "./engine/signal-delivery.js";
 import { callTools } from "./engine/tool-executor.js";
 import {
   providerCall,
@@ -47,7 +48,16 @@ export type LoopContext = {
     data: RecordEntry["data"],
   ): void;
   rows<T>(frame: ExecutionFrame, kind: RecordEntry["kind"]): T[];
-  commit(frame: ExecutionFrame, cause: CheckpointCause): Promise<void>;
+  commit(
+    frame: ExecutionFrame,
+    cause: CheckpointCause,
+    change?: () => void,
+  ): Promise<void>;
+  prepareMessage(
+    frame: ExecutionFrame,
+    message: MessageData,
+    persisted?: boolean,
+  ): Promise<MessageData>;
   updateUsage(frame: ExecutionFrame): Promise<void>;
   appendMessage(frame: ExecutionFrame, message: MessageData): Promise<void>;
   services(frame: ExecutionFrame, toolExecutionId?: string): TrackedServices;
@@ -140,7 +150,7 @@ export async function loop(
       }
       if (!hadTools && decision?.decision !== "continue") {
         await context.finish(frame, "completed", null);
-        return;
+        if (frame.stream.endedAt) return;
       }
       position.phase = "BeforeTurn";
       await context.commit(frame, "ExecutionTransition");
@@ -186,12 +196,14 @@ async function callModel(
   );
   if (selected.some((t) => !tools.some((tool) => tool.name === t.name)))
     fail("UnknownTool", "Tool selection includes unregistered tool");
+  await applySignals(frame, context);
   let request = buildContext(
     frame.cp,
     position.baseInstructions,
     selected,
     position.modelRef,
   );
+  request = { ...request, messages: signalMessages(frame) };
   if (position.modelOptions)
     request = { ...request, options: position.modelOptions };
   request = await context.hook(frame, contextHooks.prepare, request);

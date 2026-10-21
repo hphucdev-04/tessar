@@ -42,7 +42,7 @@ try {
         reject(Error(event.payload.error.message));
     }),
   );
-  await session.followUp(new HumanMessage("hello from an application"));
+  await session.followUp("hello from an application");
   await done;
   console.log(
     JSON.stringify({

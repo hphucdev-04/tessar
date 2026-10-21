@@ -46,6 +46,13 @@ export async function hook<D extends AnyEvent>(
       ? frame.cp.execution.handlerCursor
       : null;
   const decisions: JsonValue[] = cursor?.decisions.slice() ?? [];
+  // Transient initial input stays in memory, including decision continuation.
+  if (
+    cursor &&
+    definition === streamHooks.before &&
+    frame.signals?.transientInput
+  )
+    payload = { input: frame.signals.transientInput } as PayloadOf<D>;
   const kind = execution.runtime.hooks.kind(definition);
   const mutable = kind === "transformation" || kind === "decision";
   const context = {
@@ -108,7 +115,12 @@ export async function hook<D extends AnyEvent>(
               eventId: definition,
               handlerId: entry.handlerId,
               nextIndex: entry.index + 1,
-              payload: immutable(cursor?.payload ?? payload) as JsonValue,
+              payload: immutable(
+                definition === streamHooks.before &&
+                  frame.signals?.transientInput
+                  ? { input: [] }
+                  : (cursor?.payload ?? payload),
+              ) as JsonValue,
               decisions,
             };
             if (value?.decision !== "suspend")

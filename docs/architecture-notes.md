@@ -222,8 +222,9 @@ không phải được tạo lại khi application thay đổi filters.
 API Session hiện tại nhóm các thao tác dưới session.thread:
 create/select/get/getId/list/rename/fork/delete/getHistory. Tác giả plugin có
 thể dùng các state APIs thấp hơn qua public SDK với scope
-tường minh. Subagent tạo thread riêng, mặc định kế thừa scope của parent,
-và giữ parentThreadId/parentStreamId trong lineage metadata.
+tường minh. Plugin tự quyết định scope, context và quan hệ giữa các Agent;
+core không có protocol reserve/admit cho subagent. parentThreadId và
+sourceCheckpointId của Thread chỉ mô tả nguồn khi fork Thread.
 
 session.thread.getHistory đọc canonical messages đã commit theo Thread/
 checkpoint, có phân trang; Session áp scope mặc định, Thread cung cấp cùng

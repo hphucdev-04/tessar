@@ -1,4 +1,7 @@
-import { tool as toolHooks, stream as streamHooks } from "../../src/events/type.js";
+import {
+  tool as toolHooks,
+  stream as streamHooks,
+} from "../../src/events/type.js";
 import { expect, it } from "vitest";
 
 import { PluginHost } from "../../src/plugins/host.js";

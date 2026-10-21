@@ -35,6 +35,13 @@ export function normalizeContent(
   for (const part of parts) {
     if (!part || typeof part !== "object")
       fail("InvalidMessage", "Invalid message part");
+    if (
+      part.metadata !== undefined &&
+      (!part.metadata ||
+        typeof part.metadata !== "object" ||
+        Array.isArray(part.metadata))
+    )
+      fail("InvalidMessage", "Part metadata must be a JSON object");
     switch (part.type) {
       case "text":
       case "reasoning":

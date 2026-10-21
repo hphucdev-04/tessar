@@ -3,17 +3,37 @@ import { errorInfo, TessarError } from "../src/errors.js";
 
 it("retains the provider origin and SDK fields across outer catches", () => {
   const error = Object.assign(new Error("Rate limited"), {
-    name: "RateLimitError", code: "rate_limit_exceeded", status: 429,
+    name: "RateLimitError",
+    code: "rate_limit_exceeded",
+    status: 429,
     request_id: "request-1",
   });
-  expect(errorInfo(error, { source: "provider", providerId: "openai", modelId: "x" }))
-    .toMatchObject({ source: "provider", providerId: "openai", modelId: "x",
-      name: "RateLimitError", code: "rate_limit_exceeded", message: "Rate limited",
-      details: { status: 429, request_id: "request-1" } });
+  expect(
+    errorInfo(error, {
+      source: "provider",
+      providerId: "openai",
+      modelId: "x",
+    }),
+  ).toMatchObject({
+    source: "provider",
+    providerId: "openai",
+    modelId: "x",
+    name: "RateLimitError",
+    code: "rate_limit_exceeded",
+    message: "Rate limited",
+    details: { status: 429, request_id: "request-1" },
+  });
   expect(errorInfo(error).source).toBe("provider");
 });
 
 it("identifies framework errors and plain core exceptions without an unknown source", () => {
-  expect(new TessarError("ThreadBusy", "Busy").toJSON()).toMatchObject({ source: "tessar", code: "ThreadBusy" });
-  expect(errorInfo(new TypeError("Core bug"))).toMatchObject({ source: "tessar", name: "TypeError", code: "TypeError" });
+  expect(new TessarError("ThreadBusy", "Busy").toJSON()).toMatchObject({
+    source: "tessar",
+    code: "ThreadBusy",
+  });
+  expect(errorInfo(new TypeError("Core bug"))).toMatchObject({
+    source: "tessar",
+    name: "TypeError",
+    code: "TypeError",
+  });
 });

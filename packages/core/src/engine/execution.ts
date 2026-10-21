@@ -26,9 +26,15 @@ import {
 } from "./frame.js";
 import { eventContext } from "./hooks.js";
 import { Suspension } from "./interrupt.js";
-import { resolveChildAdmission } from "./lineage.js";
 import { prepareResume, prepareRecovery, restoreFrame } from "./resume.js";
 import { recoverTools } from "./tool-executor.js";
+import {
+  bindSignals,
+  detachSignals,
+  attachSignals,
+  signalMessages,
+} from "./signal-delivery.js";
+import { immutable } from "../json.js";
 
 export async function execute(
   execution: ExecutionContext,
@@ -42,7 +48,9 @@ export async function execute(
     if (sink.controller.signal.aborted)
       fail("Cancelled", "Execution cancelled before admission");
     if (request.kind === "resume") {
-      frame = await prepareResume(execution, request, sink, registry);
+      frame = await attachSignals(execution, request.threadId, () =>
+        prepareResume(execution, request, sink, registry),
+      );
       execution.active.set(frame.stream.id, frame);
       watchLease(execution, frame);
       sink.admitted();
@@ -82,7 +90,9 @@ export async function execute(
       return;
     }
     if (request.kind === "recover") {
-      frame = await prepareRecovery(execution, request, sink, registry);
+      frame = await attachSignals(execution, request.threadId, () =>
+        prepareRecovery(execution, request, sink, registry),
+      );
       execution.active.set(frame.stream.id, frame);
       watchLease(execution, frame);
       sink.admitted();
@@ -121,20 +131,14 @@ export async function execute(
         head.currentCheckpointId,
       ))!,
     );
-    const streamId = request.origin
-        ? await resolveChildAdmission(
-            execution.runtime.backend,
-            request.origin,
-            request.threadId,
-          )
-        : execution.ids.next("stream"),
+    const streamId = request.id!,
       usage = aggregateUsage([]);
+    if (await execution.runtime.backend.executions.get("streams", streamId))
+      fail("RegistrationConflict", "Stream ID already exists: " + streamId);
     const stream: StreamRecord = {
       id: streamId,
       threadId: request.threadId,
       scope: head.scope,
-      parentStreamId: request.origin?.parentStreamId ?? null,
-      parentToolExecutionId: request.origin?.parentToolExecutionId ?? null,
       triggerMessageId: null,
       status: "running",
       stopReason: null,
@@ -143,7 +147,6 @@ export async function execute(
       durationMs: null,
       error: null,
       directUsage: usage,
-      inclusiveUsage: usage,
       outputMessageIds: [],
     };
     const records = await loadRecords(execution, request.threadId);
@@ -200,11 +203,23 @@ export async function execute(
       ],
     };
     bindExecutionModel(registry, cp.execution, request.adapter);
+    bindSignals(execution, frame);
     const input = await execution.hook(frame, inputHooks.prepare, {
       messages: request.input,
     });
     if (input.rejected) throw errorFromInfo(input.rejected);
-    for (const message of input.messages)
+    const transientInput = request.initialSignal?.persist === false;
+    if (transientInput)
+      frame.signals!.transientInput = immutable(input.messages);
+    for (const message of input.messages) {
+      if (transientInput) {
+        const value = await execution.prepareMessage(frame, message, false);
+        frame.signals!.applied.push({
+          after: cp.state.messages.at(-1)?.id ?? null,
+          message: value,
+        });
+        continue;
+      }
       cp.state = {
         ...cp.state,
         messages: [
@@ -212,9 +227,14 @@ export async function execute(
           await execution.prepareMessage(frame, message),
         ],
       };
-    stream.triggerMessageId = input.messages[0]?.id ?? null;
+    }
+    stream.triggerMessageId = transientInput
+      ? null
+      : (input.messages[0]?.id ?? null);
     await execution.commit(frame, "InputCommitted");
+    sink.seedState({ messages: signalMessages(frame) });
     frame.admitted = true;
+    bindSignals(execution, frame);
     sink.admitted();
     await execution.hook(frame, streamHooks.started, {
       modelRef: request.model,
@@ -227,6 +247,7 @@ export async function execute(
       for (const message of input.handled.output)
         await execution.appendMessage(frame, message);
       await execution.finish(frame, "completed", null);
+      if (!frame.stream.endedAt) await loop(frame, execution);
       return;
     }
     const before = await execution.hook(frame, streamHooks.before, {
@@ -293,7 +314,9 @@ export async function execute(
       if (frame.heartbeat) clearInterval(frame.heartbeat);
       execution.active.delete(frame.stream.id);
       try {
-        await execution.runtime.backend.ownership.release(frame.lease);
+        await detachSignals(frame, () =>
+          execution.runtime.backend.ownership.release(frame!.lease),
+        );
       } catch {
         /* recovery uses lease expiry */
       }
@@ -335,12 +358,14 @@ export async function cancel(
     );
   let frame: ExecutionFrame | undefined;
   try {
-    frame = await restoreFrame(
-      execution,
-      { ...context, kind: "recover", threadId, streamId },
-      sink,
-      registry,
-      false,
+    frame = await attachSignals(execution, threadId, () =>
+      restoreFrame(
+        execution,
+        { ...context, kind: "recover", threadId, streamId },
+        sink,
+        registry,
+        false,
+      ),
     );
     watchLease(execution, frame);
     if (frame.cp.execution?.pendingToolExecutionIds.length)
@@ -366,7 +391,9 @@ export async function cancel(
   } finally {
     if (frame) {
       if (frame.heartbeat) clearInterval(frame.heartbeat);
-      await execution.runtime.backend.ownership.release(frame.lease);
+      await detachSignals(frame, () =>
+        execution.runtime.backend.ownership.release(frame!.lease),
+      );
     }
     await registry.release();
     sink.close();

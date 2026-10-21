@@ -1,4 +1,4 @@
-import { stream as streamHooks } from "./events/type.js";
+import { stream as streamHooks, stateChanged } from "./events/type.js";
 import type { Controller } from "./controller.js";
 import type { Model } from "./models/profile.js";
 import type {
@@ -45,11 +45,7 @@ import type {
   ExecutionFrame,
   ExecutionRequest,
 } from "./engine/frame.js";
-export type {
-  ExecutionFrame,
-  ExecutionRequest,
-  ExecutionOrigin,
-} from "./engine/frame.js";
+export type { ExecutionFrame, ExecutionRequest } from "./engine/frame.js";
 import { hook } from "./engine/hooks.js";
 import {
   put,
@@ -65,6 +61,15 @@ import { callAgent, modelRef, readOutcome } from "./engine/call.js";
 import type { ExecutionRuntime } from "./engine/runtime.js";
 import { isModelAdapter } from "./models/stream.js";
 import { reserveId } from "./identity.js";
+import { createSignalMessage, type SendSignalOptions } from "./signal.js";
+import {
+  reserveSignals,
+  releaseSignals,
+  findSignalTarget,
+  retainedSignals,
+  deliverSignal,
+  clearSignals,
+} from "./engine/signal-delivery.js";
 import {
   resumeAgent,
   cancelRetained,
@@ -91,6 +96,11 @@ export interface AgentExecutionOptions<M = ModelAdapter> {
   context?: JsonObject;
   signal?: AbortSignal;
   limits?: Partial<StreamLimits>;
+}
+export interface AgentStreamOptions<
+  M = ModelAdapter,
+> extends AgentExecutionOptions<M> {
+  id?: string;
 }
 export interface GenerateOutcome {
   threadId: string;
@@ -142,6 +152,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
   private readonly jobs = new Set<Promise<void>>();
   private readonly outcomes = new WeakMap<Stream, Promise<GenerateOutcome>>();
   private readonly active = new Map<string, ExecutionFrame>();
+  private readonly reservedStreamIds = new Set<string>();
   private readonly pendingModels = new Map<string, ModelAdapter>();
   private closed = false;
   private readonly releaseId: () => void;
@@ -204,7 +215,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
   }
   stream<T extends ModelAdapter = Extract<M, ModelAdapter>>(
     input: AgentInput,
-    options: AgentExecutionOptions<T> = {},
+    options: AgentStreamOptions<T> = {},
   ): Stream {
     return callAgent(this, input, options, this.controller);
   }
@@ -222,6 +233,63 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     if (this.closed) fail("Disposed", "Agent closed");
     return resumeAgent(this, options, this.controller);
   }
+  async sendSignal(options: SendSignalOptions): Promise<void> {
+    if (this.closed) fail("Disposed", "Agent closed");
+    const message = createSignalMessage(options);
+    const persist = options.persist ?? true;
+    const box = findSignalTarget(this, options);
+    if (options.threadId !== undefined) {
+      if (!this.controller)
+        fail(
+          "ThreadNotSelected",
+          "Thread signal targets require a live Session",
+        );
+      const controller = this.controller;
+      const session = controller.signalSession(
+        options.threadId,
+        box?.frame?.request.session,
+      );
+      return session.receiveSignal(
+        options.threadId,
+        message,
+        persist,
+        async () => {
+          let current = findSignalTarget(this, options);
+          if (current && !current.accepting) return false;
+          if (!current) {
+            const head = await controller.queries.requireThread(
+              options.threadId!,
+              { scope: session.scope() },
+            );
+            if (!head.activeStreamId) return false;
+            const cp = await controller.backend.checkpoints.get(
+              head.currentCheckpointId,
+            );
+            if (!cp?.execution?.pendingInterruptId)
+              fail(
+                "RecoveryRequired",
+                "Recover Thread before delivering signal",
+              );
+            current = retainedSignals(
+              this,
+              head.activeStreamId,
+              head.id,
+              controller,
+            );
+          }
+          deliverSignal(
+            this.executionContext(current.runtime),
+            current,
+            message,
+            persist,
+          );
+          return true;
+        },
+      );
+    }
+    if (!box) fail("StreamNotFound", "Signal target is not active");
+    deliverSignal(this.executionContext(box.runtime), box, message, persist);
+  }
   /** @internal Shared admission for Thread, Session and testing. */
   admit(
     request: ExecutionRequest,
@@ -236,6 +304,17 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     if (this.closed) fail("Disposed", "Agent closed");
     if (request.kind === "input")
       validateLimits({ ...this.configuredLimits, ...request.limits });
+    const id =
+      request.kind === "input"
+        ? requireId(request.id ?? this.ids.next("stream"), "stream id")
+        : request.kind === "recover"
+          ? request.streamId
+          : undefined;
+    if (request.kind === "input") {
+      if (this.reservedStreamIds.has(id!) || this.active.has(id!))
+        fail("RegistrationConflict", "Stream ID already in use: " + id);
+      request = { ...request, id };
+    }
     if (
       !request.adapter &&
       isModelAdapter(this.model) &&
@@ -256,8 +335,22 @@ export class Agent<M extends ModelSelection = ModelSelection> {
       target,
       request.signal,
       environment.report,
+      undefined,
+      id,
+      (state, context) => {
+        const session = request.session;
+        void environment.hooks
+          .dispatch(
+            stateChanged,
+            { state: session?.state.get() ?? state },
+            { ...context, ...(session ? { session } : {}) },
+          )
+          .catch((error) => environment.report(errorInfo(error), context));
+      },
     );
     const registry = environment.hooks.capture();
+    if (request.kind === "input") this.reservedStreamIds.add(id!);
+    reserveSignals(this, request, environment);
     if (admitted) {
       const notify = sink.admitted;
       sink.admitted = () => {
@@ -298,6 +391,14 @@ export class Agent<M extends ModelSelection = ModelSelection> {
         sink.close();
         throw error;
       } finally {
+        if (sink.stream.id && (request.kind === "input" || result))
+          releaseSignals(this, sink.stream.id, result);
+        if (
+          (request.kind === "input" || result) &&
+          result?.status !== "suspended" &&
+          sink.stream.id
+        )
+          this.reservedStreamIds.delete(sink.stream.id);
         await cleanup?.(result);
       }
     })();
@@ -326,10 +427,10 @@ export class Agent<M extends ModelSelection = ModelSelection> {
         hook(execution, frame, definition, payload, toolExecutionId),
       put,
       rows,
-      commit: (frame, cause) => commit(execution, frame, cause),
+      commit: (frame, cause, change) => commit(execution, frame, cause, change),
       updateUsage: (frame) => updateUsage(execution, frame),
-      prepareMessage: (frame, message) =>
-        prepareMessage(execution, frame, message),
+      prepareMessage: (frame, message, persisted) =>
+        prepareMessage(execution, frame, message, persisted),
       appendMessage: (frame, message) =>
         appendMessage(execution, frame, message),
       services: (frame, toolExecutionId) =>
@@ -355,13 +456,17 @@ export class Agent<M extends ModelSelection = ModelSelection> {
         target,
         context,
       ),
-    );
+    ).then(() => {
+      this.reservedStreamIds.delete(streamId);
+      releaseSignals(this, streamId, { status: "cancelled" });
+    });
   }
   async shutdown(): Promise<void> {
     this.closed = true;
     for (const frame of this.active.values())
       frame.sink.controller.abort("Controller disposed");
     await Promise.allSettled([...this.jobs]);
+    await clearSignals(this);
     await closeStandalone(this);
     this.pendingModels.clear();
     this.releaseId();

@@ -67,6 +67,7 @@ export interface HandlerCursor {
   decisions: readonly JsonValue[];
 }
 export interface ExecutionPosition {
+  pendingSignals?: readonly MessageData[];
   timing?: {
     completedActiveMs: number;
     segmentOpen: boolean;

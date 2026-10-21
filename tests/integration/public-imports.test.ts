@@ -28,3 +28,17 @@ it("loads built core without product startup I/O and runs the public APIs",()=>{
  `],{encoding:"utf8"});
  expect(result.error).toBeUndefined();expect(result.status,result.stderr).toBe(0);expect(result.stdout).toBe("");
 });
+
+it("composes independent agents through a plugin using built public APIs", () => {
+ const result = spawnSync(process.execPath, ["tests/fixtures/agent-composition.ts"], { encoding: "utf8" });
+ expect(result.error).toBeUndefined();
+ expect(result.status, result.stderr).toBe(0);
+ expect(result.stdout).toBe("");
+});
+
+it("delivers signals through built public Stream and Session APIs", () => {
+ const result = spawnSync(process.execPath, ["tests/fixtures/signal-consumer.ts"], { encoding: "utf8" });
+ expect(result.error).toBeUndefined();
+ expect(result.status, result.stderr).toBe(0);
+ expect(result.stdout).toBe("");
+});

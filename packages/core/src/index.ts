@@ -5,10 +5,12 @@ export * from "./messages/message.js";
 export { MessageCodec } from "./messages/codec.js";
 export * from "./instructions/instruction.js";
 export * from "./events/definition.js";
+export type { SendSignalOptions, SignalTarget } from "./signal.js";
 export {
   ready,
   shutdown,
   diagnostic,
+  stateChanged,
   thread,
   session,
   input,
@@ -82,7 +84,6 @@ export {
   defineEffect,
   type EffectContext,
   type EffectDefinition,
-  type ChildReservation,
   type TrackedServices,
   type ExecutionHookContext,
 } from "./engine/tracked-effects.js";
@@ -93,6 +94,7 @@ export {
   type AgentOptions,
   type AgentTools,
   type AgentExecutionOptions,
+  type AgentStreamOptions,
   type GenerateOutcome,
   type AgentResumeOptions,
   type Stream,
@@ -102,5 +104,6 @@ export { Thread } from "./thread.js";
 export { ProfileResolver } from "./models/resolver.js";
 export { snapshotModelOptions } from "./models/options.js";
 export * from "./session.js";
+export type { RuntimeState, StateTool } from "./runtime-state.js";
 
 export * from "./state/sessions.js";

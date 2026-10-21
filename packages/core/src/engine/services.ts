@@ -1,14 +1,12 @@
 import { model as modelHooks } from "../events/type.js";
 import { errorInfo, fail } from "../errors.js";
-import { immutable, type JsonValue } from "../json.js";
+import { immutable } from "../json.js";
 
 import type { ModelChunk, ModelRef, ModelRequest } from "../models/contract.js";
 import { providerCall, selectAdapter, streamModel } from "../models/stream.js";
 import { createModelAttempt } from "../trace/records.js";
 import {
   EffectService,
-  childStateDefinition,
-  type ChildReservation,
   type EffectBinding,
   type TrackedServices,
 } from "./tracked-effects.js";
@@ -56,42 +54,6 @@ export function services(
       execute: (definition, input, options) => {
         guard();
         return effects.execute(definition, input, options);
-      },
-    },
-    executions: {
-      reserveChild: async (options) => {
-        guard();
-        if (options.threadId === frame.cp.threadId)
-          fail("InvalidLineage", "Child requires a separate Thread");
-        if (!(await execution.runtime.backend.threads.get(options.threadId)))
-          fail("ThreadNotFound", "Child Thread not found");
-        const previous = state.get(childStateDefinition),
-          old = previous[options.dispatchKey] as unknown as
-            | ChildReservation
-            | undefined;
-        if (old) {
-          if (old.threadId !== options.threadId)
-            fail("CommitConflict", "Dispatch key is bound to another Thread");
-          await execution.commit(frame, "PluginStateCommitted");
-          return old;
-        }
-        const reservation: ChildReservation = {
-          threadId: options.threadId,
-          streamId: execution.ids.next("stream"),
-          origin: {
-            parentStreamId: frame.stream.id,
-            ...(toolExecutionId
-              ? { parentToolExecutionId: toolExecutionId }
-              : {}),
-            dispatchId: execution.ids.next("dispatch"),
-          },
-        };
-        state.update(childStateDefinition, {
-          ...previous,
-          [options.dispatchKey]: reservation as unknown as JsonValue,
-        });
-        await execution.commit(frame, "PluginStateCommitted");
-        return immutable(reservation);
       },
     },
     events: {

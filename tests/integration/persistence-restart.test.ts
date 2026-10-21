@@ -15,14 +15,14 @@ function completion(api: string, id: number) {
     : [{ id: "chat_" + id, choices: [{ index: 0, delta: { role: "assistant", content: "persisted answer" }, finish_reason: null }] }, { id: "chat_" + id, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }];
   return new Response(data.map(value => `data: ${JSON.stringify(value)}\n\n`).join("") + (api === "responses" ? "" : "data: [DONE]\n\n"), { headers: { "Content-Type": "text/event-stream" } });
 }
-async function send(session: Session, text: string) {
+async function send(session: Session, input: string | HumanMessage) {
   const done = new Promise<any>((resolve, reject) => {
     const off = session.subscribe(event => {
       if (event.type === stream.end) { off(); resolve(event.payload); }
       if (event.type === stream.error) { off(); reject(event.payload); }
     });
   });
-  await session.followUp(new HumanMessage(text));
+  await session.followUp(typeof input === "string" ? new HumanMessage(input) : input);
   const result = await done;
   await session.dispose();
   return result;
@@ -39,18 +39,35 @@ for (const api of ["responses", "chat-completions"] as const) it(`${api} restore
   }
   let controller = await open();
   try {
-    const session = await controller.createSession({ scope: { user: "a" }, metadata: { label: "work" } });
-    const thread = await session.thread.create({ title: "Conversation" });
-    expect((await send(session, "first question")).status).toBe("completed");
+    const session = await controller.createSession({ id: "application-session", scope: { user: "a" }, metadata: { label: "work" } });
+    const thread = await session.thread.create({ id: "application-thread", title: "Conversation" });
+    const fork = await session.thread.fork({ id: "application-fork" });
+    expect(fork.id).toBe("application-fork");
+    const first = new HumanMessage([
+      { type: "text", text: "first question" },
+      { type: "text", text: "\n\nadditional context", metadata: { source: "application", custom: { labels: ["reference"] } } },
+    ]);
+    session.subscribe("input.received", event => {
+      expect(event.payload.messages).toEqual([MessageCodec.encode(first)]);
+    });
+    expect((await send(session, first)).status).toBe("completed");
     await controller.dispose();
     controller = await open();
     const restored = (await controller.getSession(session.id, { scope: { user: "a" } }))!;
+    expect(restored.id).toBe("application-session");
+    expect((await restored.thread.get("application-fork"))!.id).toBe("application-fork");
     expect(restored.thread.getId()).toBe(thread.id);
-    expect((await restored.thread.getHistory()).items).toHaveLength(2);
+    const history = (await restored.thread.getHistory()).items;
+    expect(history).toHaveLength(2);
+    expect(history.find(message => message.id === first.id)).toEqual(MessageCodec.encode(first));
+    const snapshot = await (await restored.thread.get(thread.id))!.snapshot();
+    expect(snapshot.state.messages.find(message => message.id === first.id)).toEqual(MessageCodec.encode(first));
     expect((await send(restored, "next question")).status).toBe("completed");
     expect(requests).toHaveLength(2);
     expect(requests[1].temperature).toBe(0.25);
     expect(JSON.stringify(requests[1])).toContain("first question");
+    expect(JSON.stringify(requests[1])).toContain("additional context");
+    expect(JSON.stringify(requests[1])).not.toContain('"metadata"');
     expect(JSON.stringify(requests[1])).toContain("persisted answer");
     const stored = await controller.backend.sessions.get(session.id);
     expect(JSON.stringify(stored)).not.toContain("fixture-secret");
@@ -134,6 +151,6 @@ it.each(["endpoint", "protocol"])("rejects changed %s before resuming a Thread w
     const restored=(await getThread(controller, thread.id))!; let error:string|undefined;
     for await(const event of restored.stream({resume:{interruptId:pending.id,value:{}}})) if(event.type === stream.error) error=event.payload.error.code;
     expect(error).toBe("ModelContextIncompatible"); expect(calls).toBe(0);
-    expect((await controller.queries.getInterrupt(thread.id,pending.id))?.status).toBe("pending");
+    expect((await controller.queries.getRecord("interrupts",thread.id,pending.id))?.status).toBe("pending");
   } finally {await controller.dispose();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });

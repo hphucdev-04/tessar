@@ -1,13 +1,13 @@
 import type { Controller } from "../controller.js";
 import type {
   Agent,
-  AgentExecutionOptions,
+  AgentStreamOptions,
   AgentInput,
   GenerateOutcome,
   ModelSelection,
 } from "../agent.js";
 import { HumanMessage } from "../messages/message.js";
-import { MessageCodec } from "../messages/codec.js";
+import { inputMessages } from "../messages/codec.js";
 import { fail, requireId, errorInfo } from "../errors.js";
 import { immutable } from "../json.js";
 import { isModelAdapter } from "../models/stream.js";
@@ -60,7 +60,7 @@ function chooseModel(
 export function callAgent(
   agent: Agent<any>,
   input: AgentInput,
-  options: AgentExecutionOptions<any>,
+  options: AgentStreamOptions<any>,
   controller?: Controller,
 ): Stream {
   const selected = chooseModel(agent, options.model ?? agent.getModel());
@@ -114,14 +114,8 @@ export function callAgent(
       ...selected.adapter?.options,
       ...overrides,
     });
-    const values =
-      typeof input === "string"
-        ? [new HumanMessage(input)]
-        : Array.isArray(input)
-          ? input
-          : [input];
-    const messages = values.map((value) =>
-      MessageCodec.encode(MessageCodec.decode(MessageCodec.encode(value))),
+    const messages = inputMessages(
+      typeof input === "string" ? new HumanMessage(input) : input,
     );
     const threadId = agent.ids.next("thread");
     lifecycle = controller
@@ -142,6 +136,7 @@ export function callAgent(
     const stream = agent.admit(
       {
         kind: "input",
+        id: options.id,
         threadId,
         input: messages,
         model: ref,
@@ -177,7 +172,11 @@ export async function readOutcome(
   stream: Stream,
 ): Promise<GenerateOutcome> {
   if (!stream.id) fail("AdmissionFailed", "Execution was not admitted");
-  const record = await runtime.queries.getStream(stream.threadId, stream.id);
+  const record = await runtime.queries.getRecord(
+    "streams",
+    stream.threadId,
+    stream.id,
+  );
   if (!record) fail("StorageUnavailable", "Committed execution missing");
   const cp = await runtime.queries.snapshot(stream.threadId),
     pending = cp.execution?.pendingInterruptId;
@@ -190,7 +189,7 @@ export async function readOutcome(
     ),
     usage: record.directUsage,
     interrupt: pending
-      ? await runtime.queries.getInterrupt(stream.threadId, pending)
+      ? await runtime.queries.getRecord("interrupts", stream.threadId, pending)
       : null,
     error: record.error,
   };

@@ -31,6 +31,29 @@ pnpm test:storage --maxWorkers 4
 These tests use generated schemas/databases and skip when their URLs are absent.
 MongoDB needs a replica set or sharded deployment supporting transactions.
 
+## Public API changes
+
+[API-REVIEW.md](API-REVIEW.md) records the implemented public surface for comparison
+with agreed behavior; code and generated declarations do not override design decisions.
+[developer guides](examples/guide/README.md) show supported application flows.
+Dated documents under `docs/superpowers/` preserve design history. They do not
+authorize restoring APIs removed or superseded by later decisions.
+
+Before changing a public API:
+
+- Record the agreed behavior and its acceptance criteria before implementation.
+  State its purpose and the agreed Agent/Controller/Session/plugin boundary. New
+  core APIs must supply generic primitives rather than prescribe one plugin's policy.
+- Trace both producer and consumer. Check package exports, built declarations,
+  hooks, persistence and call sites; an exported type alone does not prove usability.
+- Add or update a runnable consumer using public package imports for the changed
+  flow. Harness tests cover runtime internals and do not replace this check.
+- Update the API reference and affected guides in the same change. Mark conflicting
+  historical sections superseded, and report commands actually verified in the PR.
+
+If implementation contradicts an agreed design, report the discrepancy before
+changing the design. Do not silently redefine the contract to match existing code.
+
 ## Releases
 
 All six public packages share one release version. Update `version` in

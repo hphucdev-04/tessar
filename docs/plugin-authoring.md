@@ -153,9 +153,9 @@ the host needs to detect changed code or configuration after restart.
 
 Tool context models.stream tracks auxiliary usage. effects.execute checkpoints
 intent/outcome for a registered effect; unknown outcomes need reconcile evidence.
-executions.reserveChild records child lineage before dispatch. A child runs on a
-separate Thread with the reserved origin. Thread.stream is available to plugin
-authors through Controller; factories and subagents use the same Agent loop.
+Plugins can register independent Agents with tessar.agent.register and call their
+public stream/generate APIs. Plugins own dispatch, process boundaries, relationships
+and aggregation of results or usage; core does not prescribe a child-execution protocol.
 
 Raw I/O in an arbitrary callback is not automatically durable or exactly-once.
 Plugins own skill sources, long-term memory storage, command syntax, compression

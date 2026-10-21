@@ -1,4 +1,4 @@
-import { fail } from "../errors.js";
+import { fail, requireId } from "../errors.js";
 import { randomIds, type JsonObject } from "../json.js";
 import type { StorageBackend } from "./storage-ports.js";
 import type { StateQuery, ThreadInfo } from "./schema.js";
@@ -6,6 +6,7 @@ import { StateQueries, checkpointSafety } from "./queries.js";
 import { ThreadService } from "./threads.js";
 import type { PluginStateDefinition } from "./plugin-state.js";
 export interface ForkOptions {
+  id?: string;
   atCheckpointId?: string;
   atMessageId?: string;
   metadata?: JsonObject;
@@ -35,7 +36,10 @@ export class ForkService {
     if (!cp) fail("CheckpointNotFound", "No exact fork checkpoint");
     if (!checkpointSafety(cp).forkable)
       fail("UnsafeForkPoint", "Fork prefix contains unresolved tool calls");
-    const targetId = randomIds.next("thread");
+    const targetId = requireId(
+      options.id ?? randomIds.next("thread"),
+      "thread id",
+    );
     const states = cp.state.pluginStates
       .filter((s) => s.ownerType === "thread")
       .map((s) => {
@@ -55,10 +59,9 @@ export class ForkService {
           };
         return { ...s, revision: 0 };
       });
-    return new ThreadService(this.backend, {
-      next: (kind) => (kind === "thread" ? targetId : randomIds.next(kind)),
-    }).create(
+    return new ThreadService(this.backend).create(
       {
+        id: targetId,
         scope: source.scope,
         instructions: cp.state.instructions ?? undefined,
         messages: cp.state.messages,
