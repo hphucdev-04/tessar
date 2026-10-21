@@ -5,13 +5,13 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import {
-  CommitCoordinator,
   type CommitBatch,
   type SessionRecord,
   type StorageBackend,
   type PluginStateSnapshot,
   type ToolExecutionRecord,
 } from "@tessar/core";
+import { CommitCoordinator } from "../../core/src/state/commit.js";
 import {
   initialBatch,
   storageConformance,

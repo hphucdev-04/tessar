@@ -1,7 +1,7 @@
+import { getThread } from "./state/thread-operations.js";
 import {
   diagnostic as diagnosticHooks,
   ready as readyHooks,
-  thread as threadHooks,
   shutdown as shutdownHooks,
 } from "./events/type.js";
 import {
@@ -12,7 +12,7 @@ import {
   type ErrorInfo,
 } from "./errors.js";
 import { immutable, randomIds } from "./json.js";
-import { matchesScope, normalizeScope } from "./state/scope.js";
+import { normalizeScope } from "./state/scope.js";
 import { snapshotModelOptions } from "./models/options.js";
 import type { StoredModelSelection, SessionRecord } from "./state/schema.js";
 
@@ -21,17 +21,13 @@ import { PluginHost } from "./plugins/host.js";
 import type { Plugin } from "./plugins/context.js";
 import type { Agent, ModelSelection } from "./agent.js";
 import type { Model } from "./models/profile.js";
-import type { ModelProviderRegistration, ModelRef } from "./models/contract.js";
+import type { ModelProviderRegistration } from "./models/contract.js";
 import { ModelRegistry } from "./models/registry.js";
 import { createMemoryBackend } from "./state/memory-backend.js";
 import type { StorageBackend } from "./state/storage-ports.js";
 import { StateQueries } from "./state/queries.js";
-import { ThreadService, type CreateThreadOptions } from "./state/threads.js";
-import { ForkService, type ForkOptions } from "./state/fork.js";
-import type { PageOptions, StateQuery, ThreadInfo } from "./state/schema.js";
-import type { PluginStateDefinition } from "./state/plugin-state.js";
+import type { PageOptions, StateQuery } from "./state/schema.js";
 import { canonicalJson } from "./state/commit.js";
-import { Thread } from "./thread.js";
 import { Session, type SessionOptions } from "./session.js";
 import { isModelAdapter } from "./models/stream.js";
 import { toolRegistrations } from "./engine/runtime.js";
@@ -40,9 +36,9 @@ import { reserveId } from "./identity.js";
 export class Controller {
   readonly id: string;
   readonly agent: Agent;
-  readonly models = new ModelRegistry();
-  readonly diagnostics: ErrorInfo[] = [];
-  readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
+  private readonly modelRegistry = new ModelRegistry();
+  /** @internal */ readonly diagnostics: ErrorInfo[] = [];
+  /** @internal */ readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
     this.diagnostics.push(error);
     // Copy only event identity, never execution services from the failing hook.
     const event = new EventEnvelope(
@@ -102,6 +98,7 @@ export class Controller {
   }) {
     this.id = requireId(options.id, "controller id");
     this.agent = options.agent;
+    const model = this.agent.getModel();
     this.hooks = new PluginHost({
       diagnostics: this.report,
       values: [
@@ -114,20 +111,20 @@ export class Controller {
           pluginVersion: 1,
           configurationId: null,
         },
-        ...toolRegistrations(this.agent.id, this.agent.tools),
-        ...(isModelAdapter(this.agent.model)
+        ...toolRegistrations(this.agent.id, this.agent.listTool()),
+        ...(isModelAdapter(model)
           ? [
               {
                 kind: "provider",
-                id: this.agent.model.ref.providerId,
+                id: model.ref.providerId,
                 version: 1,
                 pluginId: this.agent.id,
                 pluginVersion: 1,
-                configurationId: this.agent.model.ref.connectionId ?? null,
+                configurationId: model.ref.connectionId ?? null,
                 value: {
-                  id: this.agent.model.ref.providerId,
+                  id: model.ref.providerId,
                   create: (modelId: string) => {
-                    const model = this.agent.model;
+                    const model = this.agent.getModel();
                     if (!isModelAdapter(model))
                       fail("MissingProvider", "Executable model is missing");
                     if (model.ref.modelId === modelId) return model;
@@ -180,11 +177,11 @@ export class Controller {
           { controllerId: this.id, agentId: this.agent.id },
         );
         if ([...this.providers.keys()].some((p) => p.metadata))
-          void this.models.refreshCatalog();
+          void this.modelRegistry.refreshCatalog();
       } catch (error) {
         this.report(errorInfo(error));
         this.phase = "failed";
-        this.models.dispose();
+        this.modelRegistry.dispose();
         await this.hooks.dispose();
         if (this.defaultBackend) await this.backend?.close();
         throw error;
@@ -213,7 +210,10 @@ export class Controller {
       }
     for (const provider of current)
       if (!this.providers.has(provider))
-        this.providers.set(provider, this.models.registerProvider(provider));
+        this.providers.set(
+          provider,
+          this.modelRegistry.registerProvider(provider),
+        );
   }
   /** @internal */ resolveModel(value: ModelSelection | undefined): Model {
     this.requireReady();
@@ -227,50 +227,20 @@ export class Controller {
     requireId(ref.modelId, "model id");
     if (
       isModelAdapter(value) &&
-      "profile" in value &&
-      "refreshProfile" in value
+      "profile" in value && typeof value.profile === "function" &&
+      "refreshProfile" in value && typeof value.refreshProfile === "function"
     )
       return value as Model;
-    return this.models.get(ref);
-  }
-  /** @internal */ async prepareThread(
-    options: CreateThreadOptions = {},
-    reservedId?: string,
-  ): Promise<ThreadInfo> {
-    this.requireReady();
-    const prepared = await this.hooks.dispatch(threadHooks.prepare, options, {
-      controllerId: this.id,
-      agentId: this.agent.id,
-      scope: options.scope,
-    });
-    if (
-      canonicalJson(prepared.scope ?? {}) !== canonicalJson(options.scope ?? {})
-    )
-      fail("ThreadScopeMismatch", "Thread preparation cannot change scope");
-    const ids = reservedId
-      ? {
-          next: (kind: string) =>
-            kind === "thread" ? reservedId : randomIds.next(kind),
-        }
-      : randomIds;
-    const info = await new ThreadService(this.backend, ids).create(prepared);
-    await this.hooks.dispatch(threadHooks.started, info, {
-      controllerId: this.id,
-      agentId: this.agent.id,
-      threadId: info.id,
-      scope: info.scope,
-    });
-    return info;
-  }
-  async createThread(options: CreateThreadOptions = {}): Promise<Thread> {
-    return new Thread(this, await this.prepareThread(options));
+    return this.modelRegistry.get(ref);
   }
   /** @internal */ sessionModel(value: ModelSelection): {
     model: Model;
     stored: StoredModelSelection;
   } {
     const ref = "ref" in value ? value.ref : value;
-    const adapter = isModelAdapter(value) ? value : this.models.resolve(ref);
+    const adapter = isModelAdapter(value)
+      ? value
+      : this.modelRegistry.resolve(ref);
     const stored = immutable({
       ref: adapter.ref,
       ...(adapter.options
@@ -282,7 +252,7 @@ export class Controller {
   }
   async createSession(options: SessionOptions = {}): Promise<Session> {
     this.requireReady();
-    const selected = this.sessionModel(options.model ?? this.agent.model),
+    const selected = this.sessionModel(options.model ?? this.agent.getModel()),
       now = this.agent.clock.now();
     const record: SessionRecord = immutable({
       id: randomIds.next("session"),
@@ -297,7 +267,12 @@ export class Controller {
     });
     await this.backend.sessions.compareAndSet(record, 0);
     this.requireReady();
-    const session = new Session(this, record, selected.model);
+    const session = Session.create(
+      this,
+      record,
+      selected.model,
+      this.modelRegistry,
+    );
     session.created();
     return session;
   }
@@ -318,109 +293,22 @@ export class Controller {
     )
       fail("ModelContextIncompatible", "Session model connection changed");
     const thread = record.selectedThreadId
-      ? await this.getThread(record.selectedThreadId, { scope: record.scope })
+      ? await getThread(this, record.selectedThreadId, { scope: record.scope })
       : null;
     if (record.selectedThreadId && !thread)
       fail("ThreadNotFound", "Session selection is unavailable");
     this.requireReady();
-    return new Session(this, record, selected.model, thread);
+    return Session.create(
+      this,
+      record,
+      selected.model,
+      this.modelRegistry,
+      thread,
+    );
   }
   listSessions(query: StateQuery & PageOptions = {}) {
     this.requireReady();
     return this.backend.sessions.page({ ...query, agentId: this.agent.id });
-  }
-  async getThread(id: string, query: StateQuery = {}): Promise<Thread | null> {
-    this.requireReady();
-    const info = await this.queries.getThread(id, query);
-    return info ? new Thread(this, info) : null;
-  }
-  listThreads(query: StateQuery & PageOptions = {}) {
-    this.requireReady();
-    return this.queries.listThreads(query);
-  }
-  async deleteThread(id: string, query: StateQuery = {}): Promise<void> {
-    this.requireReady();
-    query = immutable(query);
-    const context = await this.threadContext(id, query);
-    await this.hooks.authorize(
-      threadHooks.beforeDelete,
-      immutable({ threadId: id }),
-      context,
-    );
-    this.requireReady();
-    await new ThreadService(this.backend).delete(id, query);
-    await this.hooks.dispatch(threadHooks.deleted, { threadId: id }, context);
-  }
-  async purgeThread(id: string, query: StateQuery = {}): Promise<void> {
-    this.requireReady();
-    query = immutable(query);
-    const info = await this.backend.threads.get(id, { includeDeleted: true });
-    if (!info || !matchesScope(info.scope, query.scope))
-      fail("ThreadNotFound", "Thread does not match query");
-    const context = {
-      controllerId: this.id,
-      agentId: this.agent.id,
-      threadId: id,
-      scope: info.scope,
-      thread: new Thread(this, info),
-    };
-    const payload = immutable({ threadId: id, permanent: true });
-    await this.hooks.authorize(threadHooks.beforeDelete, payload, context);
-    this.requireReady();
-    await new ThreadService(this.backend).purge(id, query);
-    await this.hooks.dispatch(threadHooks.deleted, payload, context);
-  }
-  async renameThread(
-    id: string,
-    title: string,
-    query: StateQuery = {},
-  ): Promise<void> {
-    this.requireReady();
-    if (typeof title !== "string")
-      fail("InvalidConfiguration", "Title must be text");
-    query = immutable(query);
-    const context = await this.threadContext(id, query);
-    const payload = immutable({ threadId: id, title });
-    await this.hooks.authorize(threadHooks.beforeRename, payload, context);
-    this.requireReady();
-    await new ThreadService(this.backend).rename(id, title, query);
-    await this.hooks.dispatch(threadHooks.renamed, payload, context);
-  }
-  async forkThread(
-    id: string,
-    options: ForkOptions & StateQuery = {},
-  ): Promise<Thread> {
-    this.requireReady();
-    options = immutable(options);
-    const context = await this.threadContext(id, options);
-    const { scope: _scope, ...forkOptions } = options;
-    await this.hooks.authorize(
-      threadHooks.beforeFork,
-      immutable({ threadId: id, options: forkOptions }),
-      context,
-    );
-    this.requireReady();
-    const defs = this.hooks
-      .registrations()
-      .filter((r) => r.kind === "state")
-      .map((r) => r.value as PluginStateDefinition<any>);
-    const info = await new ForkService(this.backend, defs).fork(id, options);
-    await this.hooks.dispatch(
-      threadHooks.forked,
-      { threadId: id, forkedThreadId: info.id },
-      context,
-    );
-    return new Thread(this, info);
-  }
-  private async threadContext(id: string, query: StateQuery) {
-    const info = await this.queries.requireThread(id, query);
-    return {
-      controllerId: this.id,
-      agentId: this.agent.id,
-      threadId: id,
-      scope: info.scope,
-      thread: new Thread(this, info),
-    };
   }
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
@@ -438,7 +326,7 @@ export class Controller {
         this.report(errorInfo(error));
       } finally {
         try {
-          this.models.dispose();
+          this.modelRegistry.dispose();
           await this.hooks.dispose();
           if (this.defaultBackend) await this.backend?.close();
         } finally {

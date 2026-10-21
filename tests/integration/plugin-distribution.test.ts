@@ -52,7 +52,8 @@ it("runs a packed installed CLI from another project and discovers a plugin adde
    try{if(process.argv[2]==='plugins'){console.log(JSON.stringify(await manager.discover()));}
    else{const provider=new ScriptedProvider([{text:'fixture answer'}]);
     const agent=new Agent({id:'packed',model:{providerId:'scripted',modelId:'test'}});
-    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.register({id:'scripted',create:()=>provider});}},...await manager.load()]});await controller.initialize();const result=await agent.generate(new HumanMessage('hello'));
+    const userPlugins=await manager.load();
+    controller=new Controller({id:'packed',agent,plugins:[{id:'provider',setup(tessar){tessar.models.register({id:'scripted',create:()=>provider});}},...userPlugins]});await controller.initialize();const result=await agent.generate(new HumanMessage('hello'));
     console.log(JSON.stringify({status:result.status,output:result.output.flatMap(m=>m.content).filter(p=>p.type==='text').map(p=>p.text).join('')}));
    }}finally{try{await controller?.dispose();}finally{manager.dispose();}}
   `);

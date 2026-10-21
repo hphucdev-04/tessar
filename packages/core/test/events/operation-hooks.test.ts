@@ -1,7 +1,8 @@
+import { getThread, createThread, renameThread, deleteThread, forkThread } from "../../src/state/thread-operations.js";
 import { expect, it } from "vitest";
 import * as hooks from "../../src/index.js";
 import { type Plugin, type AnyEvent } from "../../src/index.js";
-import { fixture, fixtureRef } from "../test-fixture.js";
+import { fixture } from "../test-fixture.js";
 
 it("exports prefix-free event groups with camelCase keys for hyphenated strings", () => {
   expect(hooks.tool.before).toBe("tool.before");
@@ -33,15 +34,15 @@ it.each(["fork", "rename", "delete"] as const)("authorizes thread %s once throug
   const policy: Plugin = { id: "policy", setup(tessar) {
     tessar.hook(before as any, async (event: any, context: any) => {
       order.push("before"); expect(context.thread.id).toBe(event.payload.threadId);
-      expect(context.thread.scope).toEqual({ user: "a" });
+      expect(context.thread.scope()).toEqual({ user: "a" });
       await context.thread.getHistory();
       return deny ? { decision: "deny", reason: "policy denied" } : { decision: "allow" };
     });
     tessar.hook(after as any, async (event: any) => {
       order.push("after");
-      if (operation === "rename") expect((await controller.getThread(event.payload.threadId))!.id).toBe(event.payload.threadId);
-      if (operation === "delete") expect(await controller.getThread(event.payload.threadId)).toBeNull();
-      if (operation === "fork") expect(await controller.getThread(event.payload.forkedThreadId)).not.toBeNull();
+      if (operation === "rename") expect((await getThread(controller, event.payload.threadId))!.id).toBe(event.payload.threadId);
+      if (operation === "delete") expect(await getThread(controller, event.payload.threadId)).toBeNull();
+      if (operation === "fork") expect(await getThread(controller, event.payload.forkedThreadId)).not.toBeNull();
     });
   } };
   const { controller } = await fixture([], [policy]);
@@ -50,14 +51,14 @@ it.each(["fork", "rename", "delete"] as const)("authorizes thread %s once throug
     const first = await session.thread.create();
     const callSession = () => operation === "rename" ? session.thread.rename("new") : operation === "delete" ? session.thread.delete() : session.thread.fork();
     await expect(callSession().then(() => {})).rejects.toMatchObject({ code: "OperationDenied" });
-    expect(await controller.getThread(first.id)).not.toBeNull(); expect(order).toEqual(["before"]);
+    expect(await getThread(controller, first.id)).not.toBeNull(); expect(order).toEqual(["before"]);
     deny = false; await callSession(); expect(order).toEqual(["before", "before", "after"]);
-    const second = await controller.createThread({ scope: { user: "a" } });
-    const callDirect = () => operation === "rename" ? controller.renameThread(second.id, "new") : operation === "delete" ? controller.deleteThread(second.id) : controller.forkThread(second.id);
+    const second = await createThread(controller, { scope: { user: "a" } });
+    const callDirect = () => operation === "rename" ? renameThread(controller, second.id, "new") : operation === "delete" ? deleteThread(controller, second.id) : forkThread(controller, second.id);
     await callDirect(); expect(order.slice(-2)).toEqual(["before", "after"]);
-    const foreign = await controller.createThread({ scope: { user: "b" } });
+    const foreign = await createThread(controller, { scope: { user: "b" } });
     const previous = order.length;
-    await expect(operation === "rename" ? controller.renameThread(foreign.id, "bad", { scope: { user: "a" } }) : operation === "delete" ? controller.deleteThread(foreign.id, { scope: { user: "a" } }) : controller.forkThread(foreign.id, { scope: { user: "a" } })).rejects.toMatchObject({ code: "ThreadNotFound" });
+    await expect(operation === "rename" ? renameThread(controller, foreign.id, "bad", { scope: { user: "a" } }) : operation === "delete" ? deleteThread(controller, foreign.id, { scope: { user: "a" } }) : forkThread(controller, foreign.id, { scope: { user: "a" } })).rejects.toMatchObject({ code: "ThreadNotFound" });
     expect(order).toHaveLength(previous);
     expect(controller.diagnostics).toEqual([]);
   } finally { await controller.dispose(); }
@@ -71,13 +72,13 @@ it("rejects concurrent controls and close while an asynchronous selection policy
   } }]);
   try {
     const session = await controller.createSession(); const first = await session.thread.create();
-    const selecting = session.setModel({ ...fixtureRef, modelId: "second" }); await reached;
-    expect(session.model.ref).toEqual(fixtureRef);
-    await expect(session.setModel(fixtureRef)).rejects.toMatchObject({ code: "SessionBusy" });
+    const selecting = session.model.switch("scripted/second"); await reached;
+    expect(session.model.get()).toBe("scripted/test");
+    await expect(session.model.switch("scripted/test")).rejects.toMatchObject({ code: "SessionBusy" });
     await expect(session.thread.create()).rejects.toMatchObject({ code: "SessionBusy" });
     await expect(session.dispose()).rejects.toMatchObject({ code: "SessionBusy" });
     expect(session.thread.getId()).toBe(first.id);
-    release(); await selecting; expect(session.model.ref.modelId).toBe("second");
+    release(); await selecting; expect(session.model.name()).toBe("second");
   } finally { release(); await controller.dispose(); }
 });
 
@@ -165,8 +166,8 @@ it("uses the fork options approved by policy even if the caller changes its orig
     });
   } }]);
   try {
-    const source = await controller.createThread();
-    const fork = await controller.forkThread(source.id, options);
+    const source = await createThread(controller);
+    const fork = await forkThread(controller, source.id, options);
     expect((await fork.snapshot()).state.metadata.label).toBe("approved");
   } finally { await controller.dispose(); }
 });
@@ -183,9 +184,9 @@ it.each(["fork", "rename", "delete"] as const)("does not emit thread %s success 
     tessar.hook(hooks.thread.deleted, event => { seen.push(event.type); });
   } }]);
   try {
-    const thread = await controller.createThread(); failWrite = true;
-    await expect((operation === "fork" ? controller.forkThread(thread.id) : operation === "rename" ? controller.renameThread(thread.id, "new") : controller.deleteThread(thread.id)).then(() => {})).rejects.toThrow("storage failed");
-    expect(seen).toEqual([]); expect(await controller.getThread(thread.id)).not.toBeNull();
+    const thread = await createThread(controller); failWrite = true;
+    await expect((operation === "fork" ? forkThread(controller, thread.id) : operation === "rename" ? renameThread(controller, thread.id, "new") : deleteThread(controller, thread.id)).then(() => {})).rejects.toThrow("storage failed");
+    expect(seen).toEqual([]); expect(await getThread(controller, thread.id)).not.toBeNull();
   } finally { await controller.dispose(); }
 });
 
@@ -194,17 +195,17 @@ it("awaits model policy, keeps selection on denial and exposes the correct Sessi
   const { controller } = await fixture([], [{ id: "model-policy", setup(tessar) {
     tessar.hook(hooks.session.model.beforeChange, async (event, context) => {
       expect(context.session).toBe(expectedSession);
-      expect(context.session.model.ref).toEqual(event.payload.previous);
+      expect(context.session.model.get()).toBe(event.payload.previous.providerId + "/" + event.payload.previous.modelId);
       await Promise.resolve(); return deny ? { decision: "deny" } : { decision: "allow" };
     });
     tessar.hook(hooks.session.modelChanged, event => { seen.push(event.payload.model.modelId); });
   } }]);
   try {
     const session = await controller.createSession(); expectedSession = session;
-    await expect(session.setModel({ ...fixtureRef, modelId: "second" })).rejects.toMatchObject({ code: "OperationDenied" });
-    expect(session.model.ref).toEqual(fixtureRef); expect(seen).toEqual([]);
-    deny = false; await session.setModel({ ...fixtureRef, modelId: "second" });
-    expect(session.model.ref.modelId).toBe("second"); expect(seen).toEqual(["second"]);
+    await expect(session.model.switch("scripted/second")).rejects.toMatchObject({ code: "OperationDenied" });
+    expect(session.model.get()).toBe("scripted/test"); expect(seen).toEqual([]);
+    deny = false; await session.model.switch("scripted/second");
+    expect(session.model.name()).toBe("second"); expect(seen).toEqual(["second"]);
   } finally { await controller.dispose(); }
 });
 
@@ -213,14 +214,14 @@ it("keeps thread selection on denied switch and rejects reentrant control withou
   const { controller } = await fixture([], [{ id: "switch-policy", setup(tessar) {
     tessar.hook(hooks.session.thread.beforeSwitch, async (event, context) => {
       expect(event.payload.previousThreadId).toBe(firstId);
-      await expect(context.session.setModel(fixtureRef)).rejects.toMatchObject({ code: "SessionBusy" });
+      await expect(context.session.model.switch("scripted/test")).rejects.toMatchObject({ code: "SessionBusy" });
       return deny ? { decision: "deny" } : { decision: "allow" };
     });
     tessar.hook(hooks.session.threadSwitched, event => { changed.push(event.payload.threadId); });
   } }]);
   try {
     const session = await controller.createSession(); firstId = (await session.thread.create()).id;
-    const target = await controller.createThread();
+    const target = await createThread(controller);
     await expect(session.thread.switch(target.id)).rejects.toMatchObject({ code: "OperationDenied" });
     expect(session.thread.getId()).toBe(firstId); expect(changed).toEqual([]);
     deny = false; await session.thread.switch(target.id);
@@ -235,8 +236,8 @@ it("rejects an unsupported operation decision before a later handler can hide it
     tessar.hook(hooks.thread.beforeDelete, () => { later = true; return { decision: "allow" }; });
   } }]);
   try {
-    const thread = await controller.createThread();
-    await expect(controller.deleteThread(thread.id)).rejects.toMatchObject({ code: "InvalidHookResult" });
-    expect(later).toBe(false); expect(await controller.getThread(thread.id)).not.toBeNull();
+    const thread = await createThread(controller);
+    await expect(deleteThread(controller, thread.id)).rejects.toMatchObject({ code: "InvalidHookResult" });
+    expect(later).toBe(false); expect(await getThread(controller, thread.id)).not.toBeNull();
   } finally { await controller.dispose(); }
 });

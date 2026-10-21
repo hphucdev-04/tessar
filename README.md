@@ -60,10 +60,10 @@ and tool calls. Use `stream()` to consume events as they arrive:
 import { message, stream } from "@tessar/core";
 
 for await (const event of agent.stream("Explain agent tools briefly.")) {
-  if (event.is(message.delta) && event.payload.partKind === "text") {
+  if (event.type === message.delta && event.payload.partKind === "text") {
     process.stdout.write(event.payload.delta);
   }
-  if (event.is(stream.error)) throw Error(event.payload.error.message);
+  if (event.type === stream.error) throw Error(event.payload.error.message);
 }
 ```
 
@@ -85,7 +85,7 @@ const add = createTool({
 
 const calculator = new Agent({
   id: "calculator",
-  model: agent.model,
+  model: agent.getModel(),
   tools: { add },
 });
 

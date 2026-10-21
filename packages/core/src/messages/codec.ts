@@ -8,6 +8,14 @@ import {
   ToolMessage,
   type MessageData,
 } from "./message.js";
+export function inputMessages(
+  input: MessageData | readonly MessageData[],
+): readonly MessageData[] {
+  const values = Array.isArray(input) ? input : [input];
+  return values.map((value) =>
+    MessageCodec.encode(MessageCodec.decode(MessageCodec.encode(value))),
+  );
+}
 export const MessageCodec = {
   encode(message: Message): MessageData {
     if (message.role === "tool") requireId(message.toolCallId!, "toolCallId");

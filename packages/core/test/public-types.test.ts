@@ -1,6 +1,6 @@
 import { tool as toolHooks, message as messageHooks } from "../src/index.js";
 import {it,expect} from "vitest";
-import { Agent, Controller, type Plugin, type HookSpec, type StreamEvent } from "../src/index.js";
+import { Agent, Controller, type Plugin, type HookSpec, type Stream, type StreamEvent } from "../src/index.js";
 declare module "../src/events/definition.js" {interface EventMap {"example.progress":HookSpec<{count:number}>;}}
 it("infers the public plugin type map and discriminated event union",()=>{
  const plugin:Plugin={id:"typed-public",setup(tessar){
@@ -23,6 +23,21 @@ it("infers the public plugin type map and discriminated event union",()=>{
  }};
  const inspect=(event:StreamEvent)=>{if(event.type===messageHooks.delta){const kind:"text"|"reasoning"=event.payload.partKind;return kind;}return null;};
  void inspect;expect(plugin.id).toBe("typed-public");
+ const inspectStream=async(execution:Stream)=>{
+  for await(const event of execution){
+   if(event.type===messageHooks.delta){
+    const delta:string=event.payload.delta;void delta;
+    // @ts-expect-error A message delta is not a tool execution event
+    event.payload.toolExecutionId;
+   }
+   if(event.type==="example.progress"){
+    const count:number=event.payload.count;void count;
+    // @ts-expect-error Plugin progress does not have a text delta
+    event.payload.delta;
+   }
+  }
+ };
+ void inspectStream;
  if(false){
   const agent = new Agent({id:"typed",model:{providerId:"test",modelId:"test"}});
   // @ts-expect-error Agent accepts messages first, not the legacy input wrapper

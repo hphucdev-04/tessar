@@ -38,13 +38,7 @@ import {
   type StorageBackend,
   type ThreadInfo,
 } from "@tessar/core";
-import {
-  decode,
-  mongoPage,
-  scopeFilter,
-  scopeTokens,
-  type Row,
-} from "./queries.js";
+import { decode, mongoPage, scopeFilter, scopeTokens } from "./queries.js";
 
 const kinds = [
   "streams",

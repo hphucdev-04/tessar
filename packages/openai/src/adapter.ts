@@ -46,6 +46,50 @@ export function createClient(options: OpenAIOptions): OpenAI {
   const { providerId, metadataPartition, ...clientOptions } = options;
   return new OpenAI(clientOptions);
 }
+export function validateRequest(
+  request: ModelRequest,
+  ref: ModelRef,
+  api: "responses" | "chat-completions",
+): void {
+  const chat = api === "chat-completions";
+  if (
+    request.model.providerId !== ref.providerId ||
+    request.model.modelId !== ref.modelId
+  )
+    fail(
+      "UnsupportedContext",
+      chat
+        ? "Chat model or connection identity mismatch"
+        : "Model identity mismatch",
+    );
+  if (request.model.connectionId !== ref.connectionId)
+    fail(
+      "UnsupportedContext",
+      chat
+        ? "Chat model or connection identity mismatch"
+        : "Model connection mismatch",
+    );
+  for (const key of [
+    "connectionId",
+    "api",
+    "model",
+    "input",
+    "messages",
+    "instructions",
+    "tools",
+    "stream",
+    ...(chat ? ["functions", "function_call"] : []),
+    ...clientKeys,
+  ])
+    if (request.options && key in request.options)
+      fail(
+        "UnsupportedOption",
+        key +
+          (chat
+            ? " is owned by the connection or Agent runtime"
+            : " is owned by the model connection or Agent runtime"),
+      );
+}
 function usage(value: ResponseUsage | null | undefined) {
   return normalizeUsage(
     {
@@ -79,29 +123,7 @@ export class OpenAIAdapter implements ModelAdapter {
   }
   validate(request: ModelRequest): void {
     try {
-      if (
-        request.model.providerId !== this.ref.providerId ||
-        request.model.modelId !== this.ref.modelId
-      )
-        fail("UnsupportedContext", "Model identity mismatch");
-      if (request.model.connectionId !== this.ref.connectionId)
-        fail("UnsupportedContext", "Model connection mismatch");
-      for (const key of [
-        "connectionId",
-        "api",
-        "model",
-        "input",
-        "messages",
-        "instructions",
-        "tools",
-        "stream",
-        ...clientKeys,
-      ])
-        if (request.options && key in request.options)
-          fail(
-            "UnsupportedOption",
-            key + " is owned by the model connection or Agent runtime",
-          );
+      validateRequest(request, this.ref, "responses");
       if (
         request.options?.background === true ||
         request.options?.conversation != null ||

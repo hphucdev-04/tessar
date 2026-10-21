@@ -25,7 +25,7 @@ export interface CapabilityRegistry {
 /** Controls that do not wait for completion of the active execution. */
 export type SessionHookHandle = Pick<
   Session,
-  "id" | "scope" | "model" | "thread" | "setModel" | "followUp"
+  "id" | "scope" | "model" | "thread" | "followUp"
 >;
 export type ThreadHookHandle = Pick<
   Thread,
@@ -35,6 +35,7 @@ export type ThreadHookHandle = Pick<
   | "getHistory"
   | "getCheckpoint"
   | "listCheckpoints"
+  | "listInterrupts"
 >;
 export interface HookContext {
   readonly registry: CapabilityRegistry;

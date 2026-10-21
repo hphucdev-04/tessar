@@ -1,0 +1,3135 @@
+# Tessar — Danh mục API public để nghiệm thu
+
+Ngày đối chiếu: **2026-10-21**. Nguồn: code, `package.json#exports` và declaration sau build trong checkout hiện tại. Đây là **hành vi đang được triển khai**, không phải bản thiết kế đề xuất và không khẳng định bản trên npm đã có các thay đổi này.
+
+`?` nghĩa là optional; field không có `?` là bắt buộc. `readonly` là hợp đồng TypeScript; không đồng nghĩa mọi object đều được freeze lúc chạy. Các kiểu dữ liệu đầy đủ nằm trong phụ lục cuối file, gồm cả kiểu của callback và kết quả.
+
+Danh mục gồm API ứng dụng, API viết plugin/provider/storage và các subpath testing được publish. Không đưa các class điều phối runtime nội bộ vào danh mục sử dụng. Phụ lục có chữ ký class public đã loại thành viên private/internal, bên cạnh các type và callback đầy đủ.
+
+### Quy tắc sau rà soát
+
+- Thao tác đọc cấu hình/state trên runtime dùng method: `getInstruction()`, `getModel()`, `listTool()`, `limits()`, `scope()`, `metadata()`, `profile()`.
+- Identity cố định và liên kết đối tượng readonly giữ dạng dữ liệu: `id`, `controller.agent`, `session.agent`, `session.controller`.
+- Namespace giữ dạng nhóm API: `session.model`, `session.thread`, `controller.plugins`, các nhóm trên PluginContext; thao tác bên trong là method.
+- Message, event, record, result, model connection descriptor và tool definition giữ field dữ liệu. Ví dụ `event.type`, `message.content`, `result.output`, `provider.ref`, `provider.options`, `tool.name` không phải các getter runtime được đổi ở trên.
+- Field private của TypeScript không thuộc hợp đồng public, nhưng không chặn JavaScript truy cập runtime như `#private`. Các field cũ của Agent không được giữ như alias public; TypeScript dùng method. Không coi `private` là sandbox hoặc cơ chế bảo mật.
+
+## Mục lục
+
+1. [Import từ package nào](#1-import-từ-package-nào)
+2. [Provider OpenAI](#2-provider-openai)
+3. [Agent](#3-agent)
+4. [Stream và generate](#4-stream-và-generate)
+5. [Controller](#5-controller)
+6. [Session](#6-session)
+7. [Session.model](#7-sessionmodel)
+8. [Session.thread và Thread](#8-sessionthread-và-thread)
+9. [Message](#9-message)
+10. [Instruction](#10-instruction)
+11. [Tool](#11-tool)
+12. [Plugin và hook](#12-plugin-và-hook)
+13. [State, effect, interruption và lời gọi phụ](#13-state-effect-interruption-và-lời-gọi-phụ)
+14. [PluginManager và logger](#14-pluginmanager-và-logger)
+15. [Storage](#15-storage)
+16. [Model profile và provider tự viết](#16-model-profile-và-provider-tự-viết)
+17. [Hàm nền tảng được export](#17-hàm-nền-tảng-được-export)
+18. [Testing SDK](#18-testing-sdk)
+19. [Điểm cần nghiệm thu](#19-điểm-cần-nghiệm-thu)
+20. [Chữ ký và kiểu dữ liệu đầy đủ](#20-chữ-ký-và-kiểu-dữ-liệu-đầy-đủ)
+
+## 1. Import từ package nào
+
+| Import | API |
+| --- | --- |
+| `@tessar/core` | Agent, Controller, Session, Thread, messages, instructions, tools, hooks, hợp đồng model/state/storage và các hàm nền tảng |
+| `@tessar/core/tool` | Tool, createTool, ToolSuspension và các type tool; cùng implementation với root |
+| `@tessar/core/testing` | ScriptedProvider, AgentHarness, ModelScript |
+| `@tessar/core/testing/storage-conformance` | initialBatch, storageConformance |
+| `@tessar/openai` | OpenAIProvider, OpenAIPlugin và các type cấu hình |
+| `@tessar/plugins` | PluginManager, PluginManagerOptions |
+| `@tessar/plugins/logger` | LoggerPlugin, LoggerOptions, LogEntry; default export là một instance logger |
+| `@tessar/sqlite` | SqliteStoragePlugin, createSqliteBackend, SqliteStorageOptions |
+| `@tessar/postgresql` | PostgresqlStoragePlugin, createPostgresqlBackend, PostgresqlStorageOptions |
+| `@tessar/mongodb` | MongoDBStoragePlugin, createMongoDBBackend, MongoDBStorageOptions |
+
+### Phạm vi đã đối chiếu
+
+| Nhóm API | Constructor / tạo đối tượng | Method / callback | Dữ liệu và namespace giữ property |
+| --- | --- | --- | --- |
+| Agent | `new Agent(options)` | getModel, getInstruction, listTool, limits, stream, generate, resume, shutdown | id |
+| Controller | `new Controller(options)` | initialize, dispose, createSession, getSession, listSessions, plugins.attach/detach | id, agent, plugins |
+| Session | Controller tạo/khôi phục | scope, metadata, subscribe, followUp, resume, recover, abort, dispose, model manager, thread manager | id, agent, controller, model/thread namespace |
+| Thread | Session.thread tạo/lấy/fork | scope, snapshot, history/checkpoint/trace/interrupt reads, dispose | id |
+| Message / Event | Constructors và MessageCodec | normalizeContent, encode/decode, EventEnvelope.is | Các field message/event và event map |
+| Instruction / Tool | buildInstruction, normalizeInstruction, createTool/new Tool, ToolSuspension | execute/resume, emit/suspend, recovery callbacks | Sections, schema, tool definition và identity |
+| Provider / Model | OpenAIProvider, provider registration factory | profile, refreshProfile, withModel, validate, stream | ref, connection, options, api và các metadata DTO |
+| ProfileResolver | `new ProfileResolver(options?)` | current, resolve, needsRefresh, clear | Không expose cache/catalog implementation |
+| Plugin authoring | Class implements Plugin | setup, registration, hook, emit, defer, state/effect/interrupt/child/auxiliary APIs | Plugin identity, capability namespaces và context data |
+| Plugin distribution / logger | PluginManager, LoggerPlugin | discover/load/install/update/remove/dispose, setup/write | directory bất biến, plugin id, LogEntry |
+| Storage | Ba storage plugin, ba backend factory, createMemoryBackend | setup, các StorageBackend port và close | Backend identity/capabilities, Session/checkpoint/trace DTO |
+| Foundation / testing | Error constructors, ScriptedProvider, AgentHarness factory | JSON/scope/paging/usage helpers, harness và conformance methods | Type contracts, metrics, fixture data |
+
+Đây là đối chiếu toàn bộ entrypoint, constructors, methods, thuộc tính dữ liệu/namespace, callback và type public; không chỉ một nhóm getter. Chữ ký cụ thể của từng nhóm nằm bên dưới.
+
+## 2. Provider OpenAI
+
+```ts
+import { OpenAIProvider } from "@tessar/openai";
+
+const model = new OpenAIProvider({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-6.1-sol",
+  reasoning: { effort: "high" },
+  max_output_tokens: 8192,
+});
+```
+
+### Constructor
+
+`new OpenAIProvider(configuration)` nhận một object phẳng:
+
+| Parameter | Kiểu | Mặc định / ý nghĩa |
+| --- | --- | --- |
+| `model` | `string` | Bắt buộc; native model ID |
+| `api?` | `"responses" \| "chat-completions"` | Tessar chọn `"responses"` khi bỏ trống |
+| `providerId?` | `string` | `"openai"`; có thể dùng ID khác cho gateway/kết nối khác |
+| `connectionId?` | `string` | Tessar sinh UUID nếu không khai báo; dùng ID ổn định khi cần khôi phục kết nối qua restart |
+| `metadataPartition?` | `string` | Phân vùng metadata; mặc định theo identity của kết nối |
+| Các field client | `OpenAIOptions` kế thừa SDK `ClientOptions` | Xem danh sách đầy đủ bên dưới |
+| Các field request | `OpenAIModelOptions` hoặc `OpenAIChatModelOptions` | Theo protocol đã chọn; xem danh sách đầy đủ bên dưới |
+
+Tessar tách field client khỏi body request, snapshot các field request đã khai báo và không tự thêm temperature/reasoning/max token. **OpenAI SDK vẫn có default riêng**, ví dụ retry; điều đó khác với việc Tessar tự thêm tham số vào body.
+
+Toàn bộ field client và body được chép từ declaration của **OpenAI SDK 7.34.0 đang cài trong repo** ở phần phụ lục provider. Type mang tên `OpenAI.*`, `Shared.*`, `ClientOptions.*` hoặc `SDK.*` là type của dependency, không phải thêm một lớp config của Tessar.
+
+### Thành viên trên provider
+
+| API | Parameter | Trả về / ý nghĩa |
+| --- | --- | --- |
+| `.ref` | — | `ModelRef`: providerId, modelId, connectionId |
+| `.connection` | — | `ModelConnectionDescriptor \| undefined`: identity không chứa secret |
+| `.options` | — | Object option request đã snapshot, readonly |
+| `.api` | — | Protocol đang dùng |
+| `.profile()` | Không có | `Readonly<ModelProfile>`; snapshot metadata hiện tại |
+| `.withModel(modelId)` | `modelId: string` | Provider mới dùng chung kết nối/client và defaults, đổi native model ID |
+| `.refreshProfile(options?)` | `{ signal?: AbortSignal }` | `Promise<ModelProfile>` |
+| `.validate(request)` | `request: ModelRequest` | `void`; hợp đồng provider cho runtime/custom integration |
+| `.stream(request, context)` | `request: ModelRequest`, `context: { signal: AbortSignal }` | `AsyncIterable<ModelChunk>`; stream provider chuẩn hóa, khác Agent stream |
+
+### Những field bị runtime giữ quyền
+
+Responses loại khỏi type cấu hình model: `model`, `input`, `instructions`, `tools`, `stream`, `background`, `conversation`, `previous_response_id`, `context_management`. Field `model` được khai báo riêng ở constructor. Cấu hình background/provider-managed conversation/compaction không được loop hỗ trợ.
+
+Chat Completions loại khỏi type cấu hình model: `model`, `messages`, `tools`, `stream`, `functions`, `function_call`, `n`; thêm lại `n?: 1`. Runtime chỉ nhận một choice.
+
+Các codec vẫn kiểm tra loại content/tool/continuity được hỗ trợ. Có field trong SDK type không có nghĩa mọi combination hoặc output modality đều được Tessar loop hỗ trợ.
+
+### OpenAIPlugin
+
+```ts
+new OpenAIPlugin(options: OpenAIOptions)
+```
+
+`options` bắt buộc là object, có thể dùng các field client ở phụ lục cùng `providerId?`, `metadataPartition?`. `.id` là `"provider." + providerId`; `.setup(tessar: PluginContext): void` đăng ký provider.
+
+**Hiện tại plugin này dùng Responses adapter**, không nhận `model`, `api`, temperature hoặc reasoning như constructor OpenAIProvider. Đây là khác biệt thực tế cần nghiệm thu; không mô tả hai constructor là tương đương.
+
+## 3. Agent
+
+```ts
+const agent = new Agent({
+  id: "assistant",
+  model,
+  instructions: "You are helpful.",
+  tools: { search: searchTool },
+});
+```
+
+### `new Agent(options)`
+
+| Field | Kiểu | Mặc định / ràng buộc |
+| --- | --- | --- |
+| `id` | `string` | Dev đặt; không rỗng; không trùng Agent đang sống trong cùng loaded core runtime |
+| `model` | `ModelAdapter \| Model \| ModelRef` | Bắt buộc. Muốn chạy độc lập phải có adapter executable; ModelRef cần provider được đăng ký qua Controller |
+| `instructions?` | `string \| Instruction` | Normalize từ chuỗi rỗng nếu bỏ qua |
+| `tools?` | `AgentTools` | Object chứa Tool; mặc định không có tool |
+| `limits?` | `Partial<StreamLimits>` | `maxTurns: 32`, `maxModelAttempts: 64`, `maxToolCalls: 128`; mỗi giá trị phải là số nguyên dương |
+
+`AgentTools` hiện có `concurrency?: number` và các key tool. Bỏ concurrency thì không giới hạn số tool chạy đồng thời; khai báo thì phải là số nguyên dương. Runtime lấy các Tool bằng `Object.values()`; **key `search` hiện chưa thay thế `searchTool.name`**. Tool name trùng bị từ chối.
+
+### Thành viên ứng dụng
+
+| API / thuộc tính | Parameter | Trả về |
+| --- | --- | --- |
+| `.id` | — | `string` |
+| `.limits()` | Không có | StreamLimits có default; override theo execution không sửa giá trị này |
+| `.listTool()` | Không có | `readonly Tool[]`; tool cấu hình trên Agent, trước selection/plugin theo execution |
+| `.getModel()` | Không có | Model mặc định, giữ kiểu generic từ constructor |
+| `.getInstruction()` | Không có | `Instruction` nền, trước hook |
+| `.stream(input, options?)` | Phần 4 | `Stream` |
+| `.generate(input, options?)` | Phần 4 | `Promise<GenerateOutcome>` |
+| `.resume(options)` | Bảng dưới | `Stream` tiếp tục execution suspended |
+| `.shutdown()` | Không có | `Promise<void>`; kết thúc tài nguyên/lifecycle của Agent |
+
+Đọc cấu hình qua `getModel()`, `listTool()`, `getInstruction()`, `limits()`. Các field lưu trữ là private, không phải API thuộc tính public. Constructor vẫn nhận `model`, `tools`, `instructions`, `limits` như bảng options phía trên. TypeScript từ chối đọc field private; code JavaScript không được đảm bảo bị chặn ở runtime vì implementation dùng `private`, không dùng `#private`.
+
+### `agent.resume(options)`
+
+| Field | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| `threadId` | `string` | Thread của execution chờ |
+| `interruptId` | `string` | ID từ interruption |
+| `value` | `JsonValue` | Câu trả lời user/approval |
+| `scope?` | `Scope` | Kiểm tra phạm vi thread |
+| `signal?` | `AbortSignal` | Hủy lần tiếp tục |
+
+Agent trực tiếp không có API public `initialize()`, `recover()` hay nhận message ngoài vào loop. Constructor và getters không yêu cầu Controller. Khi Agent đã gắn Controller, stream/generate dùng runtime/plugin của Controller mà không bắt buộc tạo Session.
+
+## 4. Stream và generate
+
+### Parameter chung
+
+```ts
+agent.stream(input, options?);
+await agent.generate(input, options?);
+```
+
+`input` bắt buộc là `string | MessageData | readonly MessageData[]`. Chuỗi được chuyển thành HumanMessage; có thể truyền nhiều message để tự dựng context. Mỗi lời gọi trực tiếp khởi tạo execution/thread mới, không tự nối hội thoại lần gọi trước.
+
+| `options` field | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| `model?` | `ModelAdapter \| Model \| ModelRef \| string` | Override model cho execution. String đổi native model trên adapter/kết nối hiện tại; đổi provider/kết nối dùng đối tượng tương ứng |
+| `modelOptions?` | `ModelOptions<M>` | Shallow override defaults của model được chọn; object con được thay nguyên object |
+| `scope?` | `Scope` | Scope state của execution trực tiếp |
+| `context?` | `JsonObject` | Dữ liệu app đưa vào execution hook context; không tự thành message gửi provider |
+| `signal?` | `AbortSignal` | Hủy execution; không dùng để truyền message |
+| `limits?` | `Partial<StreamLimits>` | Override giới hạn của execution |
+
+```ts
+for await (const event of agent.stream([
+  new HumanMessage("Tôi tên An"),
+  new AssistantMessage("Chào An"),
+  new HumanMessage("Tôi tên gì?"),
+], {
+  model: "gpt-6-astra",
+  modelOptions: { reasoning: { effort: "high" } },
+})) {
+  if (event.type === message.delta) console.log(event.payload.delta);
+}
+```
+
+### Stream handle
+
+| Thành viên | Kiểu / parameter | Ý nghĩa |
+| --- | --- | --- |
+| `.id` | `string \| null` | Logical stream ID; null trước admission |
+| `.threadId` | `string` | Thread ID |
+| `.handleId` | `string` | ID attachment hiện tại |
+| `.signal` | `AbortSignal` | Trạng thái hủy |
+| `.abort(reason?)` | `reason?: string` → `void` | Yêu cầu hủy |
+| `[Symbol.asyncIterator]()` | Không có → async iterator `StreamEvent` | Một iterator consumer; có thể dùng `for await` |
+
+Stream không có `.result`, `.output`, `.status` hay `.subscribe`. Kết quả cuối xem payload event `stream.end`; suspension xem `stream.suspended`.
+
+### Kết quả generate
+
+`GenerateOutcome` có **`threadId`, `streamId`, `status`, `output`, `usage`, `interrupt`, `error`**. `output` là `readonly MessageData[]`, không phải string. `status` thuộc `StreamStatus`; `interrupt` và `error` có thể null.
+
+`generate()` thu stream đến kết quả trả về. Lỗi runtime/provider đi qua đường thất bại có thể làm Promise reject; không dựa riêng vào `result.error` để bắt mọi lỗi. Suspend có thể trả outcome `status: "suspended"` để UI hỏi user rồi gọi `agent.resume()`.
+
+## 5. Controller
+
+### `new Controller(options)`
+
+| Field | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| `id` | `string` | Dev đặt; không rỗng; không trùng Controller đang sống |
+| `agent` | `Agent` | Agent gắn runtime này |
+| `plugins?` | `readonly Plugin[]` | Plugin ban đầu; mặc định `[]` |
+
+| API | Parameter | Trả về / ý nghĩa |
+| --- | --- | --- |
+| `.id`, `.agent` | — | Identity và Agent |
+| `.initialize()` | Không có | `Promise<void>`; setup plugin/storage/provider trước sử dụng runtime |
+| `.dispose()` | Không có | `Promise<void>`; đóng runtime và tài nguyên |
+| `.plugins.attach(plugin)` | `plugin: Plugin` | `Promise<void>`; thêm plugin khi ready |
+| `.plugins.detach(id)` | `id: string` | `Promise<void>`; ngừng cấp plugin cho execution mới; cleanup có thể chờ execution đang giữ registration kết thúc; storage không được detach khi ready |
+| `.createSession(options?)` | `SessionOptions` | `Promise<Session>`; sinh và lưu Session |
+| `.getSession(id, query?)` | `id: string`, `query?: { scope?: Scope }` | `Promise<Session \| null>` |
+| `.listSessions(query?)` | `query?: StateQuery & PageOptions` | `Promise<Page<SessionRecord>>`; lọc theo Agent của Controller |
+
+`SessionOptions`: `{ scope?: Scope; model?: Model | ModelRef; metadata?: JsonObject }`. Model mặc định lấy từ Agent; metadata mặc định `{}`. Không có `id` hoặc `instructions` trong options này.
+
+Đã xóa `.models` và các method `.createThread()`, `.getThread()`, `.listThreads()`, `.renameThread()`, `.forkThread()`, `.deleteThread()`, `.purgeThread()` khỏi class Controller; không giữ bản private hoặc alias của các API này. Dev dùng `session.model` và `session.thread`.
+
+Runtime vẫn cần registry provider riêng và các hàm truy cập state dùng chung. Ví dụ `controller.getSession()` gọi hàm nội bộ để đọc thread đã chọn trong record khi khôi phục Session. Hàm đó nằm ngoài class Controller; không phải một method quản lý thread trên Controller.
+
+## 6. Session
+
+Nhận Session từ `controller.createSession()` hoặc `controller.getSession()`. `session.id` tự sinh và persistent; `session.scope()` trả scope cố định theo record. Constructor Session không public.
+
+| API / thuộc tính | Parameter | Trả về / ý nghĩa |
+| --- | --- | --- |
+| `.id` | — | `string` |
+| `.scope()` | Không có | `Scope` |
+| `.metadata()` | Không có | `JsonObject` |
+| `.agent`, `.controller` | — | Đối tượng gắn với phiên |
+| `.subscribe(observer)` | `(event: StreamEvent) => unknown` | `() => void` để hủy subscription |
+| `.subscribe(name, observer)` | `name: AnyEvent`, callback nhận envelope đúng payload event | `() => void` |
+| `.followUp(input)` | `MessageData \| readonly MessageData[]` | `Promise<QueuedInputReceipt>`; nhận/xếp hàng input, chưa phải kết quả model |
+| `.resume(options)` | `{ interruptId: string; value: JsonValue; model?: Model \| ModelRef }` | `Promise<ExecutionReceipt>`; admission của phần tiếp tục |
+| `.recover(options)` | `{ streamId: string; model?: Model \| ModelRef }` | `Promise<ExecutionReceipt>`; tiếp quản execution đã lưu |
+| `.abort(reason?)` | `reason?: string`, mặc định `"Cancelled"` | `Promise<void>` |
+| `.dispose()` | Không có | `Promise<void>`; đóng handle, giữ record; active work phải được xử lý trước |
+| `.model` | Phần 7 | Quản lý lựa chọn model |
+| `.thread` | Phần 8 | Quản lý thread trong scope |
+
+`QueuedInputReceipt = { id: string; threadId: string }`.
+`ExecutionReceipt = { streamId: string; threadId: string }`.
+
+`followUp()` hiện không nhận string, options model, context hay AbortSignal. Dùng `new HumanMessage(text)`. Một Session có một foreground execution; follow-up queue chưa admission nằm trong RAM. `resume/recover` trả receipt, các event/kết quả tiếp tục đến subscription. `.subscribe()` không phải API đăng ký hook điều khiển policy.
+
+## 7. Session.model
+
+| API | Parameter | Trả về / ý nghĩa |
+| --- | --- | --- |
+| `.get()` | Không có | `string`: ID đầy đủ `providerId/modelId` |
+| `.name()` | Không có | `string`: native model ID, có thể chứa slash |
+| `.list()` | Không có | `readonly SessionModelInfo[]`: `{ id, name, profile }` từ catalog của provider đã đăng ký, gồm model đang chọn |
+| `.switch(modelId, options?)` | `modelId: string`, `options?: JsonObject` | `Promise<void>` |
+
+ID đầy đủ chọn provider đã đăng ký; bare ID không có slash giữ provider và connection hiện tại. Model có native ID chứa slash dùng full ID để tránh nhập nhằng.
+
+Mỗi switch dùng defaults của adapter đích cộng shallow override lần gọi này; bỏ overrides Session trước đó. Không truyền options thì trở về defaults đích. Cấm transport/runtime-owned fields như apiKey/baseURL/defaultHeaders/maxRetries/timeout/model/input/tools/stream trong options.
+
+Đổi model ảnh hưởng input được nhận sau switch. Input đã nhận/xếp hàng giữ snapshot model/options riêng. Trước đổi có `session.model.beforeChange`, sau khi lưu thành công có `session.modelChanged`; payload gồm `previous`, `model`, `previousOptions?`, `options?`.
+
+Không có `.set()` hoặc `session.setModel()`.
+
+## 8. Session.thread và Thread
+
+### Manager `session.thread`
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `.create(options?)` | `{ title?: string; messages?: readonly MessageData[]; metadata?: JsonObject }` | `Promise<Thread>`; tự sinh ID, kế thừa scope, chọn thread mới |
+| `.getId()` | Không có | `string \| null` |
+| `.get(id)` | `id: string` | `Promise<Thread \| null>`; lọc scope |
+| `.list(options?)` | `PageOptions` | `Promise<Page<ThreadInfo>>`; các thread trong scope |
+| `.switch(id)` | `id: string` | `Promise<Thread>`; lưu lựa chọn |
+| `.rename(title, target?)` | `title: string`, `target?: { threadId?: string }` | `Promise<void>` |
+| `.fork(options?)` | `{ atCheckpointId?: string; atMessageId?: string; metadata?: JsonObject; threadId?: string }` | `Promise<Thread>`; ID mới; không tự switch |
+| `.delete(target?)` | `{ threadId?: string }` | `Promise<void>`; soft delete |
+| `.purge(target?)` | `{ threadId?: string }` | `Promise<void>`; xóa vĩnh viễn thread đã soft-delete |
+| `.getHistory(options?)` | `{ cursor?: string; limit?: number; atCheckpointId?: string; threadId?: string }` | `Promise<HistoryPage>` |
+
+`threadId` bỏ qua nghĩa là thread đang chọn. `.create()` không nhận `id`, `scope`, `instructions`. Create/switch bị từ chối khi có active work hoặc input xếp hàng. Fork chỉ chọn một trong `atCheckpointId`/`atMessageId`; điểm fork phải an toàn. Delete/purge giữ policy, ownership và CAS; purge cần thread inactive, unowned và không còn fork tham chiếu.
+
+### Thread handle: API đọc
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `.id` | — | `string` |
+| `.scope()` | Không có | `Scope` |
+| `.snapshot()` | Không có | `Promise<Checkpoint & { activeStreamId: string \| null; currentCheckpointId: string; usage: UsageSummary }>` |
+| `.getHistory(options?)` | `HistoryOptions` | `Promise<HistoryPage>` |
+| `.getCheckpoint(id)` | `id: string` | `Promise<Checkpoint \| null>` |
+| `.listCheckpoints(options?)` | `PageOptions` | `Promise<Page<CheckpointInfo>>` |
+| `.getStream(id)` | `id: string` | `Promise<StreamRecord \| null>` |
+| `.listStreams(options?)` | `PageOptions` | `Promise<Page<StreamRecord>>` |
+| `.listTurns(streamId, options?)` | `streamId: string`, `options?: PageOptions` | `Promise<Page<TurnRecord>>` |
+| `.listModelAttempts(turnId, options?)` | `turnId: string`, `options?: PageOptions` | `Promise<Page<ModelAttemptRecord>>` |
+| `.listToolExecutions(turnId, options?)` | `turnId: string`, `options?: PageOptions` | `Promise<Page<ToolExecutionRecord>>` |
+| `.getInterrupt(id)` | `id: string` | `Promise<InterruptRecord \| null>` |
+| `.listInterrupts(options?)` | `PageOptions & { status?: "pending" \| "resolved" \| "cancelled" }` | `Promise<Page<InterruptRecord>>` |
+| `.dispose()` | Không có | `Promise<void>`; đóng handle |
+
+`PageOptions = { cursor?: string; limit?: number }`: mặc định limit 50, hợp lệ 1–200. `Page<T> = { items: readonly T[]; nextCursor: string | null }`. `HistoryPage` thêm `checkpointId`, `revision`; items là Message. Scope lọc bằng các key/value đã truyền, không tự chứng thực người dùng.
+
+Thread không có constructor public; lấy handle qua `session.thread`. Các method nội bộ để admit/stream/cancel execution không thuộc API Thread public.
+
+## 9. Message
+
+| Constructor | Parameter |
+| --- | --- |
+| `new HumanMessage(content, options?)` | `content: string \| readonly ContentPart[]`, `options?: MessageOptions`; role `user` |
+| `new SystemMessage(content, options?)` | Tương tự; role `system` |
+| `new AssistantMessage(content, options?)` | Tương tự; role `assistant` |
+| `new ToolMessage(content, options?)` | Tương tự; `options` thêm `toolCallId?: string`; role `tool` |
+
+`MessageOptions = { id?: string; metadata?: JsonObject; providerState?: JsonValue }`. Bỏ ID thì Tessar sinh ID. `Message` là abstract base class để đọc/kế thừa, không tạo trực tiếp.
+
+Các thuộc tính đọc: `schemaVersion: 1`, `id`, `role`, `content`, `metadata?`, `providerState?`, `toolCallId?`. Hiện role không có `developer`.
+
+ContentPart có các dạng: text, reasoning (có providerState?), tool-call (toolCallId/name/arguments), image/audio/file (mediaType/data), data (JsonValue). Chi tiết schema ở phụ lục; từng provider kiểm tra khả năng encode. Metadata hiện ở cấp message, chưa có cấp part.
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `normalizeContent(content)` | `string \| readonly ContentPart[]` | `readonly ContentPart[]` |
+| `MessageCodec.encode(message)` | `Message` hoặc MessageData tương thích cấu trúc | `MessageData` JSON, readonly snapshot |
+| `MessageCodec.decode(data)` | `unknown` | `Message`; kiểm tra schema/role/ID |
+
+ToolMessage trả từ tool có thể bỏ toolCallId; loop gắn ID tương ứng. Encode một message role tool để lưu/gửi độc lập cần toolCallId hợp lệ.
+
+## 10. Instruction
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `buildInstruction(sections)` | `readonly InstructionSection[]` | `Instruction` |
+| `normalizeInstruction(value?)` | `string \| Instruction`; mặc định `""` | `Instruction` |
+
+`InstructionSection = { readonly id: string; readonly content: string; readonly order?: number }`.
+`Instruction = { readonly sections: readonly InstructionSection[] }`.
+
+Order tăng dần, bỏ order so sánh như 0; bằng order thì so ID ordinal. ID section phải duy nhất, content phải là text, order hữu hạn. Plugin có thể thêm section ở `context.prepare`/`model.request`. Cách serialize system/instructions phụ thuộc provider.
+
+## 11. Tool
+
+```ts
+import { createTool, ToolMessage } from "@tessar/core/tool";
+import { z } from "zod";
+
+const add = createTool({
+  name: "add",
+  description: "Add two numbers",
+  schema: z.object({ a: z.number(), b: z.number() }),
+  execute: ({ a, b }, context) => ({ sum: a + b }),
+});
+```
+
+`createTool(definition)` và `new Tool(definition)` cùng nhận:
+
+| Field | Kiểu / callback | Ý nghĩa |
+| --- | --- | --- |
+| `name` | `string` | Bắt buộc, không rỗng |
+| `description` | `string` | Bắt buộc |
+| `schema` | `z.ZodType<I>` | Bắt buộc; parse input và sinh JSON Schema |
+| `execute` | `(input: I, context: ToolExecutionContext) => ToolResult \| Promise<ToolResult>` | Bắt buộc |
+| `resumeSchema?` | `z.ZodType<R>` | Validate câu trả lời resume |
+| `resume?` | `(response: R, input: I, context: ToolExecutionContext) => ToolResult \| Promise<ToolResult>` | Xử lý sau suspension; bỏ callback thì dùng response làm result |
+| `recovery?` | `ToolRecovery<I>` | idempotencyKey và reconcile khi phục hồi external work |
+
+`ToolOutput = JsonValue | ToolMessage`, `ToolResult = ToolOutput | ToolSuspension`.
+`tool.execute()` trả Promise và normalize output thường thành ToolMessage; suspension giữ ToolSuspension. Không trả undefined. Chưa có `outputSchema`, `inputSchema`, `retry`, `enabled` hay `id` trong ToolDefinition.
+
+Thuộc tính Tool: `name`, `description`, `schema`, `jsonSchema`, `execute`, `resumeSchema?`, `resumeJsonSchema`, `resume?`, `recovery?`, `configurationId`. `configurationId` là giá trị Tessar tạo từ schema để kiểm tra tương thích continuation.
+
+### ToolExecutionContext
+
+| Thành viên | Parameter / kiểu | Trả về |
+| --- | --- | --- |
+| `signal` | `AbortSignal` | Hủy execution |
+| `threadId`, `streamId`, `turnId`, `toolExecutionId` | `string` | Identity |
+| `emit(progress)` | `progress: JsonValue` | `void` |
+| `suspend(payload)` | `payload: JsonValue` | `ToolSuspension` |
+| `models`, `effects`, `executions`, `events` | TrackedServices ở phần 13 | Các dịch vụ plugin/tool dùng |
+
+`new ToolSuspension(payload: JsonValue)` là API public; `.payload` readonly. `context.suspend(payload)` tạo giá trị này. UI nhận interrupt payload/responseSchema, UI gửi `value` qua Agent/Session resume. Tool không phải tự tìm/gắn toolCallId.
+
+## 12. Plugin và hook
+
+### Hợp đồng Plugin
+
+```ts
+interface Plugin {
+  readonly id: string;
+  readonly version?: number;
+  readonly configurationId?: string;
+  setup(tessar: PluginContext): void | Disposer | Promise<void | Disposer>;
+}
+type Disposer = () => void | Promise<void>;
+```
+
+Dev có thể viết class implements Plugin và dùng `new`. `version` bỏ qua được host xử lý như 1. Setup trả disposer hoặc đăng ký bằng defer.
+
+### API trên tham số `tessar`
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `.hook(name, handler, options?)` | `name: AnyEvent`; `handler(event, context)`; `{ kind?: EventKind; version?: number }` | `Disposer` |
+| `.emit(name, payload)` | Tên event và payload đúng EventMap | `Promise<ResultOf<typeof name>>` |
+| `.defer(disposer)` | `Disposer` | `void` |
+| `.agent.register(agent)` | `Agent` | `void` |
+| `.tools.register(tool)` | `Tool` | `void` |
+| `.models.register(provider)` | `ModelProviderRegistration` | `void` |
+| `.storage.register(backend)` | `StorageBackend` | `void` |
+| `.state.define(definition)` | `PluginStateDefinition<T>` bỏ field `pluginId`; host tự gắn ID plugin | `PluginStateDefinition<T>` |
+| `.effects.register(definition)` | `EffectDefinition` | `void` |
+| `.interruptions.register(definition)` | `InterruptionDefinition` | `void` |
+| `.registry.register(kind, id, value, version?)` | `string`, `string`, `unknown`, `number?` | `void` |
+
+Custom events khai báo bằng module augmentation của `EventMap`. `HookSpec<P,R,C>` định nghĩa payload, result, context. Có các type public: `AnyEvent`, `PayloadOf<N>`, `ResultOf<N>`, `ContextOf<N>`, `EventHandler<N>`.
+
+### Hook context
+
+Context nền có `registry`, `sessionId?`, `signal?`, `session?`, `thread?`. Các identity khác xem EventContext; execution context bổ sung state và TrackedServices cho transformation/decision hooks.
+
+`context.registry.get<T>(kind: string, id: string): T | undefined`.
+`context.registry.list<T>(kind: string): readonly T[]`.
+
+Session hook handle cung cấp identity `id`, method `scope()`, namespace `model`/`thread`, method `followUp()` với chữ ký như Session. Thread hook handle cung cấp `id` và các method `scope()`, `snapshot()`, `getHistory()`, `getCheckpoint()`, `listCheckpoints()`, `listInterrupts()` với chữ ký như Thread.
+
+`EventKind`: notification, transformation, decision, barrier. Kind mặc định theo hook built-in; custom event không khai báo kind mặc định notification. Transformation trả payload thay thế; decision trả quyết định; notification không điều khiển flow; barrier được await và lỗi có thể chặn thao tác.
+
+### EventEnvelope và helper quyết định
+
+`new EventEnvelope(type, payload, context?)` với type string, payload generic và EventContext. Thuộc tính đọc gồm `type`, `payload` và identity/context. Dùng `event.type === message.delta` để narrow payload. Method `.is(name: AnyEvent)` **vẫn còn public** và trả type guard.
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `ToolDecision.allow()` | Không có | `ControlDecision` |
+| `ToolDecision.deny(reason)` | `string` | `ControlDecision` |
+| `TurnDecision.continue()` | Không có | `ControlDecision` |
+| `TurnDecision.stop(reason)` | `string` | `ControlDecision` |
+| `InputDecision.continue(messages)` | `readonly MessageData[]` | `InputPreparation` |
+| `InputDecision.handled(outcome)` | `{ output: readonly MessageData[] }` | `InputPreparation` |
+| `InputDecision.reject(error)` | `ErrorInfo` | `InputPreparation` |
+
+Tên map, tên string, kind, payload và result của **tất cả hook built-in** được liệt kê ở phụ lục event, không chỉ liệt kê tên.
+
+## 13. State, effect, interruption và lời gọi phụ
+
+### Definition API
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `definePluginState(definition)` | `PluginStateDefinition<T>`: pluginId, namespace, schemaVersion, initial, migrate?, fork? | Definition |
+| `defineEffect(definition)` | id, version, input/output InputDefinition, execute, reconcile? | Definition |
+| `defineInterruption(definition)` | id, version, response InputDefinition, payload InputDefinition?, resolve(response,payload) | Definition |
+
+`InputDefinition<T> = { readonly jsonSchema: JsonObject; parse(value: unknown): T }`. Các callback migrate/fork/resolve/reconcile và kiểu kết quả đầy đủ ở phụ lục. Đây là hợp đồng cho plugin, không yêu cầu app tự quản lý checkpoint class.
+
+### TrackedServices trong tool và execution hook
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `models.stream(options)` | `{ model: ModelRef; request: ModelRequest; purpose: "auxiliary" }` | `AsyncIterable<ModelChunk>` |
+| `effects.execute(definition, input, options)` | `EffectDefinition<I,O>`, `input: I`, `{ key: string }` | `Promise<O>` |
+| `executions.reserveChild(options)` | `{ threadId: string; dispatchKey: string }` | `Promise<ChildReservation>` |
+| `events.emit(name, payload)` | Tên notification event và payload | `Promise<void>` |
+
+`ChildReservation`: `{ streamId, threadId, origin: { parentStreamId, parentToolExecutionId?, dispatchId } }`. Reservation hỗ trợ provenance/idempotent dispatch; không tự tạo Agent/process hay chạy subagent.
+
+### State handle từ execution hook
+
+Đối tượng `context.state` được runtime cấp, không new class nội bộ:
+
+| Method | Parameter | Trả về |
+| --- | --- | --- |
+| `.get(definition)` | `PluginStateDefinition<T>` | `T` |
+| `.update(definition, value)` | Definition và `T \| ((previous: T) => T)` | `void` |
+| `.commit()` | Không có | `Promise<string>` checkpoint ID |
+| `.snapshots()` | Không có | `readonly PluginStateSnapshot[]` |
+| `.withOwner(owner)` | `{ type: "thread" \| "stream" \| "turn" \| "agent" \| "session"; id: string }` | State handle theo owner |
+| `.owned(owner)` | `{ type: "agent" \| "session"; id: string }` | Handle persistent CAS bên dưới |
+| `.owned(owner).read(definition)` | Definition | `Promise<{ value: T; revision: number; schemaVersion: number }>` |
+| `.owned(owner).update(definition, expectedRevision, value)` | Definition, `number`, `T` | `Promise<{ value: T; revision: number }>` |
+
+`DecisionHookContext.suspend(definition, payload): ControlDecision` là cơ chế trả quyết định suspend trong decision hook. `definition` phải được đăng ký tương thích. Khác `ToolExecutionContext.suspend(payload)` trả ToolSuspension từ execute/resume của tool.
+
+## 14. PluginManager và logger
+
+### PluginManager
+
+`new PluginManager({ directory: string; hostUrl?: string })`. `directory` bắt buộc, được resolve thành absolute path. `hostUrl` dùng để resolve SDK từ host; mặc định import.meta.url của module manager.
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `.directory` | — | `string` absolute path |
+| `.discover()` | Không có | `Promise<string[]>` |
+| `.load(sources?)` | `readonly string[]`; bỏ qua thì discover | `Promise<Plugin[]>`; chưa attach vào Controller |
+| `.install(source, options?)` | `source: string`, `{ name?: string }` | `Promise<string>` tên package đã cài/đăng ký |
+| `.update(name?)` | `name?: string`; bỏ qua để cập nhật package đã cấu hình | `Promise<void>` |
+| `.remove(name)` | `name: string` | `Promise<void>` |
+| `.dispose()` | Không có | `void` |
+
+Đường dẫn từ directory: `plugins/` chứa file/folder custom, `plugins.json` chứa `{ packages?: string[] }`, `npm/package.json` và `npm/node_modules/` cho package npm. Discover nhận `.mjs/.js/.cjs/.mts/.ts/.cts`, bỏ file declaration; folder chọn `index` tương ứng. Module plugin default-export một instance có id/setup. Git/URL/tarball source có thể cần `options.name`.
+
+### LoggerPlugin
+
+`new LoggerPlugin(options?: { write?: (entry: LogEntry) => void | Promise<void> })`.
+`.id = "logger"`, `.setup(tessar: PluginContext): void`.
+
+Mặc định ghi JSON qua console.error. `write` là callback, không phải path. LogEntry có EventContext cùng `level: "info" | "warn" | "error"`, `type`, `timestamp`, `payload`. Default export ở subpath là instance đã tạo; named class dùng với new.
+
+## 15. Storage
+
+### Constructor plugin và factory backend
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `new SqliteStoragePlugin(options)` | `{ filename: string }` | Plugin, id `storage.sqlite` |
+| `createSqliteBackend(options)` | `{ filename: string }` | `Promise<StorageBackend>` |
+| `new PostgresqlStoragePlugin(options)` | `{ connectionString: string; schema?: string; driverOptions?: Omit<PoolConfig, "connectionString"> }` | Plugin, id `storage.postgresql` |
+| `createPostgresqlBackend(options)` | Cùng options PostgreSQL | `Promise<StorageBackend>` |
+| `new MongoDBStoragePlugin(options)` | `{ uri: string; databaseName: string; clientOptions?: MongoClientOptions }` | Plugin, id `storage.mongodb` |
+| `createMongoDBBackend(options)` | Cùng options MongoDB | `Promise<StorageBackend>` |
+| `createMemoryBackend(options?)` | `{ clock?: Clock }` | `StorageBackend`, đồng bộ |
+
+Mỗi plugin có `.setup(tessar: PluginContext): Promise<void>`. PostgreSQL schema mặc định `tessar`; tên schema phải hợp lệ. SQLite dùng Node SQLite. MongoDB cần transaction support. Không truyền thêm `tables` hay migration option qua constructor này. `PoolConfig` và `MongoClientOptions` thuộc driver, không phải một tập field Tessar định nghĩa lại.
+
+### API cho tác giả backend
+
+`StorageBackend` là contract public để `tessar.storage.register(backend)`. Các namespace `sessions`, `ownedState`, `threads`, `executions`, `checkpoints`, `commits`, `ownership` và `close()` được chép đầy đủ ở phụ lục storage, gồm tất cả tham số và return type.
+
+Backend tự implement contract; ứng dụng thông thường dùng Session/Thread thay vì gọi trực tiếp các port. Cơ chế lưu records/checkpoint có thể được inspect qua các data type public trong phụ lục; không expose constructor coordinator/runtime nội bộ.
+
+## 16. Model profile và provider tự viết
+
+`ModelRef = { providerId: string; modelId: string; connectionId?: string }`.
+`Model` có descriptor `.ref`, method `.profile()` và `.refreshProfile({ signal? }?)`. Field `profile` trong kết quả `session.model.list()` vẫn là dữ liệu snapshot, không phải method.
+
+`ModelProfile` gồm identity, name, contextWindow, maxInputTokens, maxOutputTokens, capabilities, pricing, metadata. Thiếu thông tin thể hiện null/unavailable theo type, không tự điền số liệu phỏng đoán.
+
+Provider plugin đăng ký `ModelProviderRegistration`:
+
+| Field | Kiểu |
+| --- | --- |
+| `id` | `string` |
+| `create` | `(modelId: string) => ModelAdapter` |
+| `metadata?` | `MetadataResolver` với `.resolve(ref, { signal? }): Promise<ProfilePatch>` |
+| `endpoint?`, `metadataPartition?` | `string` |
+| `catalogModelRef?` | `(ref: ModelRef) => ModelRef \| null` |
+| `catalogMappingVersion?` | `number`; bắt buộc số nguyên dương khi khai báo mapping |
+
+`ModelAdapter` có ref, connection?, options?, withModel?, validate(request), stream(request, context). Toàn bộ request/response/chunk contract trong phụ lục.
+
+`new ProfileResolver(options?: { catalog?: CatalogSnapshot; clock?: Clock })` cung cấp:
+
+| Method | Parameter | Trả về |
+| --- | --- | --- |
+| `.needsRefresh(ref, provider)` | ModelRef, ModelProviderRegistration | `boolean` |
+| `.current(ref, provider)` | Tương tự | `ModelProfile` |
+| `.resolve(ref, provider, signal?)` | Tương tự, AbortSignal? | `Promise<ModelProfile>` |
+| `.clear()` | Không có | `void` |
+
+CatalogSnapshot là hình dạng `{ revision: string; fetchedAt: string; source?: string; entries: Record<string, Record<string, ProfilePatch>> }`; type này hiện không export trực tiếp từ root, nhưng xuất hiện trong constructor ProfileResolver. Phụ lục ghi đúng cấu trúc declaration.
+
+## 17. Hàm nền tảng được export
+
+Đây là các hàm root hiện cho phép import, hữu ích cho tác giả plugin/provider/backend. Chữ ký đầy đủ nằm ở phụ lục tương ứng.
+
+| Nhóm | API và parameter |
+| --- | --- |
+| JSON | `assertJson(value: unknown, parents?: Set<object>)`, `deepFreeze<T>(value: T)`, `immutable<T>(value: T)`, `snapshotModelOptions(value: object)` |
+| ID / clock | `randomIds.next(kind: string): string`, `systemClock.now(): string`; type `Clock`, `IdGenerator` |
+| Error | `new TessarError(code, message, details?)`, `.toJSON()`, `fail(code, message)`, `requireId(id, name?)`, `errorInfo(error, origin?)`, `errorFromInfo(info)` |
+| Usage | `normalizeUsage(input: Partial<TokenCounts>, providerDetails?: JsonValue)`, `aggregateUsage(attempts: readonly { id: string; usage: ModelUsage }[])`, constant `tokenMetrics` |
+| Scope | `normalizeScope(value?: Scope)`, `matchesScope(state: Scope, filter?: Scope)` |
+| Storage validation | `buildThreadInfo(batch, head, stream)`, `canonicalJson(value: unknown)`, `commitFingerprint(batch: CommitBatch)`, `validateBatch(batch: CommitBatch)`, `validateSession(value, previous, expected, thread)` |
+| Paging | `checkpointSafety(cp)`, `limitOf(limit?)`, `encodeCursor(value)`, `decodeCursor(value)`, `compareOrdinal(a,b)`, `pageAfter(options,binding)`, `pageRows(rows,options?,binding?)`, `recordBinding(kind,threadId,query)`, `historyCursor(id,options,query)` |
+
+Scope hiện là `Readonly<Record<string, string | number | boolean>>`. Number phải hữu hạn; không nhận nested object/array/null. Bỏ scope tương đương `{}`; filter chỉ yêu cầu các key đã khai báo khớp.
+
+## 18. Testing SDK
+
+Các API này ở subpath testing public; không phải API điều khiển runtime sản phẩm.
+
+### ScriptedProvider
+
+`new ScriptedProvider(scripts: readonly ModelScript[])`.
+`ModelScript = { text?: string; response?: ModelResponse; usage?: Partial<TokenCounts>; chunks?: readonly ModelChunk[]; error?: Error; gate?: Promise<void> }`.
+
+Thuộc tính `.ref: ModelRef`, `.calls: ModelRequest[]`. Methods `.withModel(modelId: string): ModelAdapter`, `.validate(request: ModelRequest): void`, `.stream(request: ModelRequest, context: ModelCallContext): AsyncIterable<ModelChunk>`.
+
+### AgentHarness
+
+| API | Parameter | Trả về |
+| --- | --- | --- |
+| `AgentHarness.create(options?)` | `{ modelScripts?: readonly ModelScript[]; plugins?: readonly Plugin[]; backend?: StorageBackend; instructions?: string; limits?: Partial<StreamLimits>; tools?: AgentTools }` | `Promise<AgentHarness>` |
+| `.agent`, `.controller`, `.provider`, `.backend` | — | Đối tượng được tạo cho test |
+| `.createThread(options?)` | `CreateThreadOptions`: title?, scope?, instructions?, messages?, metadata? | `Promise<ThreadInfo>`; đây là fixture helper, không phải Session.thread.create |
+| `.admit(request, target?)` | Test request và test delivery target ở dưới | `Stream` |
+| `.collect(stream)` | `Stream` | `Promise<StreamEvent[]>`; throw nếu gặp stream.error |
+| `.records(streamId)` | `string` | `Promise<{ stream: StreamRecord; turns: TurnRecord[]; attempts: ModelAttemptRecord[]; tools: ToolExecutionRecord[]; messages: readonly MessageData[] }>` |
+| `.checkpoint(threadId)` | `string` | `Promise<Checkpoint>` |
+| `.dispose()` | Không có | `Promise<void>` |
+
+Test request có một trong ba dạng: input `{ kind: "input", threadId, input: readonly MessageData[], model: ModelRef, origin?, context?, limits? }`; resume `{ kind: "resume", threadId, interruptId, value: JsonValue, model?: ModelRef }`; recover `{ kind: "recover", threadId, streamId, model?: ModelRef }`. Field chung optional: signal, adapter, modelOptions, session hook handle, thread hook handle. Đây là parameter cho test harness, không export thêm execution engine vào root SDK.
+
+Test target optional là `{ kind: "iterator" }` hoặc `{ kind: "observer"; observe(event: StreamEvent): void; admitted?(receipt: ExecutionReceipt): void; rejected?(error: ErrorInfo): void; closed?(): void }`.
+
+### Storage conformance
+
+`initialBatch(threadId?: string): CommitBatch` — mặc định `"t1"`.
+`storageConformance(name: string, factory: () => Promise<StorageBackend>): void` — đăng ký Vitest suite; cần Vitest trong môi trường test.
+
+## 19. Điểm cần nghiệm thu
+
+Các dòng này ghi nhận code hiện tại, chưa tự sửa trong công việc viết tài liệu:
+
+- **Alias tool:** object key trong option `tools` của constructor Agent chưa đổi Tool.name. Ví dụ `search_web: searchTool` vẫn dùng `searchTool.name`.
+- **Concurrency:** field `tools.concurrency` hiện vẫn có; bỏ khai báo thì Infinity.
+- **Session input:** followUp nhận Message hoặc mảng Message, không nhận string như Agent.stream/generate; chưa có options per followUp.
+- **Provider plugin:** OpenAIPlugin chỉ Responses và client options; OpenAIProvider hỗ trợ chọn protocol và body options.
+- **Event:** `.is()` vẫn tồn tại bên cạnh `.type`. Các group map là lowercase/camelCase và giá trị event là string.
+- **Instructions:** Session.thread.create không nhận instructions; type CreateThreadOptions dùng trong hook/testing vẫn có field này.
+- **Suspend:** Agent.resume trả Stream; Session.resume/recover trả receipt và phát event qua subscription.
+- **Chưa triển khai:** message signal/injection vào execution đang chạy; metadata cấp content part; không suy diễn các API này từ AbortSignal hay followUp.
+- **Đã thu hẹp declaration:** service backend/registry/clock/ID generator/cancel nội bộ của Agent; diagnostics/report của Controller; cache/catalog của ProfileResolver và registry/queries của harness không xuất hiện trong API public sau build. Session/Thread có constructor private; các factory nội bộ không export ra declaration. OpenAIProvider chỉ công khai constructor một object configuration, không expose tham số shared connection nội bộ.
+- **Thay đổi cách đọc:** `agent.limits()`, `session.scope()`, `session.metadata()`, `thread.scope()`, `model.profile()` là method. Không có alias property trả cùng dữ liệu. Các field metadata/scope/profile trong DTO vẫn là dữ liệu và được giữ nguyên schema.
+
+## 20. Chữ ký và kiểu dữ liệu đầy đủ
+
+Các phần dưới đối chiếu trực tiếp declaration hiện tại để xem đủ parameter con, optional field, callback và kết quả. Những type là dữ liệu checkpoint/trace có thể mô tả trạng thái execution; chúng là kiểu public được API đọc trả về, không phải lời mời gọi runtime engine.
+
+<!-- DECLARATION_REFERENCE -->
+
+## Chữ ký public của các class
+
+Các block này giữ nguyên tham số từ declaration đã build, bỏ field private/protected. Session và Thread được tạo qua Controller/Session; không có constructor public. OpenAIProvider được làm phẳng hai member kế thừa công khai `ref` và `connection`. `AgentHarness.collect()` dùng alias `StreamEvent[]` thay cho union event đã mở rộng. `OptionsFor<A>` là type hỗ trợ nội bộ, tương ứng Responses hoặc Chat options theo `A`, không phải root export.
+
+### Agent
+
+```ts
+export declare class Agent<M extends ModelSelection = ModelSelection> {
+    readonly id: string;
+    constructor(options: AgentOptions<M>);
+    listTool(): readonly Tool[];
+    getModel(): M;
+    getInstruction(): Instruction;
+    limits(): StreamLimits;
+    stream<T extends ModelAdapter = Extract<M, ModelAdapter>>(input: AgentInput, options?: AgentExecutionOptions<T>): Stream;
+    generate<T extends ModelAdapter = Extract<M, ModelAdapter>>(input: AgentInput, options?: AgentExecutionOptions<T>): Promise<GenerateOutcome>;
+    resume(options: AgentResumeOptions): Stream;
+    shutdown(): Promise<void>;
+}
+```
+
+### Controller
+
+```ts
+export declare class Controller {
+    readonly id: string;
+    readonly agent: Agent;
+    readonly plugins: {
+        attach: (plugin: Plugin) => Promise<void>;
+        detach: (id: string) => Promise<void>;
+    };
+    constructor(options: {
+        id: string;
+        agent: Agent;
+        plugins?: readonly Plugin[];
+    });
+    initialize(): Promise<void>;
+    createSession(options?: SessionOptions): Promise<Session>;
+    getSession(id: string, query?: StateQuery): Promise<Session | null>;
+    listSessions(query?: StateQuery & PageOptions): Promise<import("./state/schema.js").Page<SessionRecord>>;
+    dispose(): Promise<void>;
+}
+```
+
+### Session
+
+```ts
+export declare class Session {
+    readonly controller: Controller;
+    readonly agent: import("./agent.js").Agent<import("./agent.js").ModelSelection>;
+    readonly id: string;
+    metadata(): JsonObject;
+    scope(): Scope;
+    readonly model: Readonly<{
+        get: () => string;
+        name: () => string;
+        list: () => readonly SessionModelInfo[];
+        switch: (modelId: string, options?: JsonObject) => Promise<void>;
+    }>;
+    subscribe(observer: (event: StreamEvent) => unknown): () => void;
+    subscribe<N extends AnyEvent>(name: N, observer: (event: EventEnvelope<PayloadOf<N>, N>) => unknown): () => void;
+    readonly thread: {
+        create: (options?: SessionThreadOptions) => Promise<Thread>;
+        switch: (id: string) => Promise<Thread>;
+        get: (id: string) => Promise<Thread | null>;
+        getId: () => string | null;
+        list: (options?: PageOptions) => Promise<import("./state/schema.js").Page<import("./state/schema.js").ThreadInfo>>;
+        rename: (title: string, target?: ThreadTarget) => Promise<void>;
+        fork: (options?: ForkOptions & ThreadTarget) => Promise<Thread>;
+        delete: (target?: ThreadTarget) => Promise<void>;
+        purge: (target?: ThreadTarget) => Promise<void>;
+        getHistory: (options?: HistoryOptions & ThreadTarget) => Promise<import("./state/queries.js").HistoryPage>;
+    };
+    followUp(input: MessageData | readonly MessageData[]): Promise<QueuedInputReceipt>;
+    resume(options: {
+        interruptId: string;
+        value: JsonValue;
+        model?: Model | ModelRef;
+    }): Promise<ExecutionReceipt>;
+    recover(options: {
+        streamId: string;
+        model?: Model | ModelRef;
+    }): Promise<ExecutionReceipt>;
+    abort(reason?: string): Promise<void>;
+    dispose(): Promise<void>;
+}
+```
+
+### Thread
+
+```ts
+export declare class Thread {
+    readonly id: string;
+    scope(): Scope;
+    snapshot(): Promise<{
+        id: string;
+        threadId: string;
+        parentCheckpointId: string | null;
+        revision: number;
+        schemaVersion: 1;
+        createdAt: string;
+        state: import("./state/schema.js").ThreadState;
+        execution: import("./state/schema.js").ExecutionPosition | null;
+        cause: import("./state/schema.js").CheckpointCause;
+        activeStreamId: string | null;
+        currentCheckpointId: string;
+        usage: import("./trace/usage.js").UsageSummary;
+    }>;
+    getHistory(options?: HistoryOptions): Promise<import("./state/queries.js").HistoryPage>;
+    getCheckpoint(id: string): Promise<import("./state/schema.js").Checkpoint | null>;
+    listCheckpoints(options?: PageOptions): Promise<import("./state/schema.js").Page<import("./state/schema.js").CheckpointInfo>>;
+    getStream(id: string): Promise<import("./index.js").StreamRecord | null>;
+    listStreams(options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").StreamRecord>>;
+    listTurns(streamId: string, options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").TurnRecord>>;
+    listModelAttempts(turnId: string, options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").ModelAttemptRecord>>;
+    listToolExecutions(turnId: string, options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").ToolExecutionRecord>>;
+    getInterrupt(id: string): Promise<import("./state/schema.js").InterruptRecord | null>;
+    listInterrupts(options?: PageOptions & {
+        status?: "pending" | "resolved" | "cancelled";
+    }): Promise<import("./state/schema.js").Page<import("./state/schema.js").InterruptRecord>>;
+    dispose(): Promise<void>;
+}
+```
+
+### Message
+
+```ts
+export declare abstract class Message implements MessageData {
+    readonly role: MessageRole;
+    readonly schemaVersion: 1;
+    readonly id: string;
+    readonly content: readonly ContentPart[];
+    readonly metadata?: JsonObject;
+    readonly providerState?: JsonValue;
+    readonly toolCallId?: string;
+}
+```
+
+### HumanMessage
+
+```ts
+export declare class HumanMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions);
+}
+```
+
+### SystemMessage
+
+```ts
+export declare class SystemMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions);
+}
+```
+
+### AssistantMessage
+
+```ts
+export declare class AssistantMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions);
+}
+```
+
+### ToolMessage
+
+```ts
+export declare class ToolMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions & {
+        toolCallId?: string;
+    });
+}
+```
+
+### Tool
+
+```ts
+export declare class Tool<I = any, R = any, O extends ToolReturn = ToolReturn> {
+    readonly name: string;
+    readonly description: string;
+    readonly schema: z.ZodType<I>;
+    readonly jsonSchema: JsonObject;
+    readonly execute: (input: I, context: ToolExecutionContext) => Promise<Normalized<Awaited<O>>>;
+    readonly resumeSchema?: z.ZodType<R>;
+    readonly resumeJsonSchema: JsonObject;
+    readonly resume?: (response: R, input: I, context: ToolExecutionContext) => ToolResult | Promise<ToolResult>;
+    readonly configurationId: string;
+    readonly recovery?: ToolRecovery<I>;
+    constructor(definition: ToolDefinition<I, R, O>);
+}
+```
+
+### ToolSuspension
+
+```ts
+export declare class ToolSuspension {
+    readonly payload: JsonValue;
+    constructor(payload: JsonValue);
+}
+```
+
+### EventEnvelope
+
+```ts
+export declare class EventEnvelope<P = any, N extends string = string> implements EventContext {
+    readonly type: N;
+    readonly payload: P;
+    readonly controllerId?: string;
+    readonly agentId?: string;
+    readonly sessionId?: string;
+    readonly scope?: JsonObject;
+    readonly threadId?: string;
+    readonly streamId?: string | null;
+    readonly handleId?: string;
+    readonly sequence?: number;
+    readonly timestamp?: string;
+    readonly checkpointRevision?: number;
+    constructor(type: N, payload: P, context?: EventContext);
+    is<E extends AnyEvent>(name: E): this is EventEnvelope<PayloadOf<E>, E> & this;
+}
+```
+
+### ProfileResolver
+
+```ts
+export declare class ProfileResolver {
+    constructor(options?: {
+        catalog?: CatalogSnapshot;
+        clock?: Clock;
+    });
+    needsRefresh(ref: ModelRef, provider: ModelProviderRegistration): boolean;
+    current(ref: ModelRef, provider: ModelProviderRegistration): ModelProfile;
+    resolve(ref: ModelRef, provider: ModelProviderRegistration, signal?: AbortSignal): Promise<ModelProfile>;
+    clear(): void;
+}
+```
+
+### OpenAIProvider
+
+```ts
+export declare class OpenAIProvider<A extends OpenAIAPI = "responses"> {
+    readonly ref: ModelRef;
+    readonly connection?: ModelConnectionDescriptor;
+    readonly options: Readonly<OptionsFor<A>>;
+    readonly api: A;
+    constructor(configuration: OpenAIProviderOptions<A> & {
+        api?: A;
+    });
+    withModel(modelId: string): OpenAIProvider<A>;
+    validate(request: ModelRequest): void;
+    stream(request: ModelRequest, context: ModelCallContext): AsyncIterable<ModelChunk>;
+    profile(): Readonly<ModelProfile>;
+    refreshProfile(options?: {
+        signal?: AbortSignal;
+    }): Promise<ModelProfile>;
+}
+```
+
+### OpenAIPlugin
+
+```ts
+export declare class OpenAIPlugin implements Plugin {
+    readonly id: string;
+    constructor(options: OpenAIOptions);
+    setup(tessar: PluginContext): void;
+}
+```
+
+### PluginManager
+
+```ts
+export declare class PluginManager {
+    readonly directory: string;
+    constructor(options: PluginManagerOptions);
+    discover(): Promise<string[]>;
+    load(sources?: readonly string[]): Promise<Plugin[]>;
+    install(source: string, options?: {
+        name?: string;
+    }): Promise<string>;
+    update(name?: string): Promise<void>;
+    remove(name: string): Promise<void>;
+    dispose(): void;
+}
+```
+
+### LoggerPlugin
+
+```ts
+export declare class LoggerPlugin implements Plugin {
+    readonly id = "logger";
+    constructor(options?: LoggerOptions);
+    setup(tessar: PluginContext): void;
+}
+```
+
+### SqliteStoragePlugin
+
+```ts
+export declare class SqliteStoragePlugin implements Plugin {
+    readonly id = "storage.sqlite";
+    constructor(options: SqliteStorageOptions);
+    setup(tessar: PluginContext): Promise<void>;
+}
+```
+
+### PostgresqlStoragePlugin
+
+```ts
+export declare class PostgresqlStoragePlugin implements Plugin {
+    readonly id = "storage.postgresql";
+    constructor(options: PostgresqlStorageOptions);
+    setup(tessar: PluginContext): Promise<void>;
+}
+```
+
+### MongoDBStoragePlugin
+
+```ts
+export declare class MongoDBStoragePlugin implements Plugin {
+    readonly id = "storage.mongodb";
+    constructor(options: MongoDBStorageOptions);
+    setup(tessar: PluginContext): Promise<void>;
+}
+```
+
+### Testing
+
+```ts
+export declare class ScriptedProvider implements ModelAdapter {
+    readonly ref: ModelRef;
+    readonly calls: ModelRequest[];
+    constructor(scripts: readonly ModelScript[]);
+    withModel(modelId: string): ModelAdapter;
+    validate(request: ModelRequest): void;
+    stream(request: ModelRequest, context: ModelCallContext): AsyncIterable<ModelChunk>;
+}
+```
+
+### AgentHarness
+
+```ts
+export declare class AgentHarness {
+    readonly agent: Agent;
+    readonly controller: Controller;
+    readonly provider: ScriptedProvider;
+    readonly backend: StorageBackend;
+    static create(options?: {
+        modelScripts?: readonly ModelScript[];
+        plugins?: readonly Plugin[];
+        backend?: StorageBackend;
+        instructions?: string;
+        limits?: Partial<StreamLimits>;
+        tools?: AgentTools;
+    }): Promise<AgentHarness>;
+    admit(request: ExecutionRequest, target?: DeliveryTarget): Stream;
+    createThread(options?: CreateThreadOptions): Promise<import("../state/schema.js").ThreadInfo>;
+    collect(stream: Stream): Promise<StreamEvent[]>;
+    records(streamId: string): Promise<{
+        stream: import("../index.js").StreamRecord;
+        turns: import("../index.js").TurnRecord[];
+        attempts: import("../index.js").ModelAttemptRecord[];
+        tools: import("../index.js").ToolExecutionRecord[];
+        messages: readonly import("../index.js").MessageData[];
+    }>;
+    checkpoint(threadId: string): Promise<import("../state/schema.js").Checkpoint>;
+    dispose(): Promise<void>;
+}
+```
+
+## Các type và hàm public
+
+### Kiểu tham số và kết quả Agent
+
+Nguồn: [packages/core/src/agent.ts](packages/core/src/agent.ts).
+
+```ts
+export type ModelSelection = ModelAdapter | Model | ModelRef;
+
+export type AgentInput = string | MessageData | readonly MessageData[];
+
+export interface AgentOptions<M extends ModelSelection = ModelSelection> {
+    id: string;
+    model: M;
+    instructions?: string | Instruction;
+    limits?: Partial<StreamLimits>;
+    tools?: AgentTools;
+}
+
+export interface AgentTools {
+    concurrency?: number;
+    readonly [alias: string]: Tool | number | undefined;
+}
+
+export interface AgentExecutionOptions<M = ModelAdapter> {
+    model?: M | Model | ModelRef | string;
+    modelOptions?: ModelOptions<M>;
+    scope?: Scope;
+    context?: JsonObject;
+    signal?: AbortSignal;
+    limits?: Partial<StreamLimits>;
+}
+
+export interface GenerateOutcome {
+    threadId: string;
+    streamId: string;
+    status: StreamRecord["status"];
+    output: readonly MessageData[];
+    usage: import("./trace/usage.js").UsageSummary;
+    interrupt: InterruptRecord | null;
+    error: ErrorInfo | null;
+}
+
+export interface AgentResumeOptions {
+    threadId: string;
+    interruptId: string;
+    value: JsonValue;
+    scope?: Scope;
+    signal?: AbortSignal;
+}
+```
+
+### Session và paging
+
+Nguồn: [packages/core/src/session.ts](packages/core/src/session.ts).
+
+```ts
+export interface SessionOptions {
+    scope?: Scope;
+    model?: Model | ModelRef;
+    metadata?: JsonObject;
+}
+
+export type SessionThreadOptions = Pick<CreateThreadOptions, "title" | "messages" | "metadata">;
+
+export interface SessionModelInfo {
+    readonly id: string;
+    readonly name: string;
+    readonly profile: Readonly<ModelProfile>;
+}
+
+export interface ThreadTarget {
+    threadId?: string;
+}
+```
+
+### Stream và delivery target cho harness
+
+Nguồn: [packages/core/src/engine/delivery.ts](packages/core/src/engine/delivery.ts).
+
+```ts
+export interface Stream extends AsyncIterable<StreamEvent> {
+    readonly id: string | null;
+    readonly threadId: string;
+    readonly handleId: string;
+    readonly signal: AbortSignal;
+    abort(reason?: string): void;
+}
+
+export type DeliveryTarget = {
+    kind: "iterator";
+} | {
+    kind: "observer";
+    observe: (event: StreamEvent) => void;
+    admitted?: (receipt: {
+        streamId: string;
+        threadId: string;
+    }) => void;
+    rejected?: (error: ErrorInfo) => void;
+    closed?: () => void;
+};
+```
+
+### Execution request cho harness
+
+Nguồn: [packages/core/src/engine/frame.ts](packages/core/src/engine/frame.ts).
+
+```ts
+export interface ExecutionOrigin {
+    parentStreamId: string;
+    parentToolExecutionId?: string;
+    dispatchId: string;
+}
+
+export type ExecutionRequest = ({
+    kind: "input";
+    threadId: string;
+    input: readonly MessageData[];
+    model: ModelRef;
+    origin?: ExecutionOrigin;
+    context?: JsonObject;
+    limits?: Partial<StreamLimits>;
+} | {
+    kind: "resume";
+    threadId: string;
+    interruptId: string;
+    value: JsonValue;
+    model?: ModelRef;
+} | {
+    kind: "recover";
+    threadId: string;
+    streamId: string;
+    model?: ModelRef;
+}) & {
+    signal?: AbortSignal;
+    adapter?: ModelAdapter;
+    modelOptions?: JsonObject;
+    session?: SessionHookHandle;
+    thread?: ThreadHookHandle;
+};
+```
+
+`DeliveryTarget`, `ExecutionOrigin` và `ExecutionRequest` mô tả tham số testing của AgentHarness; không phải tên import từ root `@tessar/core`.
+
+### Message và content parts
+
+Nguồn: [packages/core/src/messages/parts.ts](packages/core/src/messages/parts.ts).
+
+```ts
+export type ContentPart = {
+    readonly type: "text";
+    readonly text: string;
+} | {
+    readonly type: "reasoning";
+    readonly text: string;
+    readonly providerState?: JsonValue;
+} | {
+    readonly type: "tool-call";
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly arguments: JsonObject;
+} | {
+    readonly type: "image" | "audio" | "file";
+    readonly mediaType: string;
+    readonly data: string;
+} | {
+    readonly type: "data";
+    readonly data: JsonValue;
+};
+```
+
+### Hình dạng Message
+
+Nguồn: [packages/core/src/messages/message.ts](packages/core/src/messages/message.ts).
+
+```ts
+export type MessageRole = "system" | "user" | "assistant" | "tool";
+
+export interface MessageOptions {
+    id?: string;
+    metadata?: JsonObject;
+    providerState?: JsonValue;
+}
+
+export interface MessageData {
+    readonly schemaVersion: 1;
+    readonly id: string;
+    readonly role: MessageRole;
+    readonly content: readonly ContentPart[];
+    readonly metadata?: JsonObject;
+    readonly providerState?: JsonValue;
+    readonly toolCallId?: string;
+}
+
+export declare function normalizeContent(content: string | readonly ContentPart[]): readonly ContentPart[];
+```
+
+### MessageCodec
+
+Nguồn: [packages/core/src/messages/codec.ts](packages/core/src/messages/codec.ts).
+
+```ts
+export declare const MessageCodec: {
+    encode(message: Message): MessageData;
+    decode(data: unknown): Message;
+};
+```
+
+### Instruction
+
+Nguồn: [packages/core/src/instructions/instruction.ts](packages/core/src/instructions/instruction.ts).
+
+```ts
+export interface InstructionSection {
+    readonly id: string;
+    readonly content: string;
+    readonly order?: number;
+}
+
+export interface Instruction {
+    readonly sections: readonly InstructionSection[];
+}
+
+export declare function buildInstruction(sections: readonly InstructionSection[]): Instruction;
+
+export declare function normalizeInstruction(value?: string | Instruction): Instruction;
+```
+
+### Tool definition, recovery và context
+
+Nguồn: [packages/core/src/tools/tool.ts](packages/core/src/tools/tool.ts).
+
+```ts
+export type ToolOutput = JsonValue | ToolMessage;
+
+export type ToolResult = ToolOutput | ToolSuspension;
+
+type ToolReturn = ToolResult | Promise<ToolResult>;
+
+type Normalized<T> = T extends ToolSuspension ? ToolSuspension : ToolMessage;
+
+export interface ToolExecutionContext extends TrackedServices {
+    readonly signal: AbortSignal;
+    readonly threadId: string;
+    readonly streamId: string;
+    readonly turnId: string;
+    readonly toolExecutionId: string;
+    emit(progress: JsonValue): void;
+    suspend(payload: JsonValue): ToolSuspension;
+}
+
+export type ReconcileResult = {
+    status: "completed";
+    result: ToolOutput;
+} | {
+    status: "safeToRetry";
+} | {
+    status: "unknown";
+};
+
+export interface ToolRecovery<I> {
+    idempotencyKey(input: I, identity: {
+        toolExecutionId: string;
+    }): string;
+    reconcile(operation: {
+        id: string;
+        input: I;
+        key: string;
+    }): Promise<ReconcileResult>;
+}
+
+export interface ToolDefinition<I, R = JsonValue, O extends ToolReturn = ToolReturn> {
+    name: string;
+    description: string;
+    schema: z.ZodType<I>;
+    execute(input: I, context: ToolExecutionContext): O;
+    resumeSchema?: z.ZodType<R>;
+    resume?(response: R, input: I, context: ToolExecutionContext): ToolResult | Promise<ToolResult>;
+    recovery?: ToolRecovery<I>;
+}
+
+export declare function createTool<I, R = JsonValue, O extends ToolReturn = ToolReturn>(definition: ToolDefinition<I, R, O>): Tool<I, R, O>;
+```
+
+`ToolReturn` và `Normalized<T>` trong block trên chỉ là ký hiệu type hỗ trợ chữ ký Tool; không phải tên export từ root.
+
+### InputDefinition
+
+Nguồn: [packages/core/src/tools/input-definition.ts](packages/core/src/tools/input-definition.ts).
+
+```ts
+export interface InputDefinition<T> {
+    readonly jsonSchema: JsonObject;
+    parse(value: unknown): T;
+}
+```
+
+### Event và plugin contracts
+
+Nguồn: [packages/core/src/events/definition.ts](packages/core/src/events/definition.ts).
+
+```ts
+export type EventKind = "notification" | "transformation" | "decision" | "barrier";
+
+export interface HookSpec<P, R = void, C = HookContext> {
+    payload: P;
+    result: R;
+    context: C;
+}
+
+export interface EventMap {
+}
+
+export type AnyEvent = keyof EventMap & string;
+
+export type PayloadOf<N extends AnyEvent> = EventMap[N]["payload"];
+
+export type ResultOf<N extends AnyEvent> = EventMap[N]["result"];
+
+export type ContextOf<N extends AnyEvent> = EventMap[N]["context"];
+
+export interface HookOptions {
+    kind?: EventKind;
+    version?: number;
+}
+
+export interface EventContext {
+    controllerId?: string;
+    agentId?: string;
+    sessionId?: string;
+    scope?: JsonObject;
+    threadId?: string;
+    streamId?: string | null;
+    handleId?: string;
+    sequence?: number;
+    timestamp?: string;
+    checkpointRevision?: number;
+}
+
+export type StreamEvent = {
+    [N in AnyEvent]: EventEnvelope<PayloadOf<N>, N>;
+}[AnyEvent];
+```
+
+### PluginContext và hook context
+
+Nguồn: [packages/core/src/plugins/context.ts](packages/core/src/plugins/context.ts).
+
+```ts
+export type Disposer = () => void | Promise<void>;
+
+export interface CapabilityRegistry {
+    get<T = unknown>(kind: string, id: string): T | undefined;
+    list<T = unknown>(kind: string): readonly T[];
+}
+
+export type SessionHookHandle = Pick<Session, "id" | "scope" | "model" | "thread" | "followUp">;
+
+export type ThreadHookHandle = Pick<Thread, "id" | "scope" | "snapshot" | "getHistory" | "getCheckpoint" | "listCheckpoints" | "listInterrupts">;
+
+export interface HookContext {
+    readonly registry: CapabilityRegistry;
+    readonly sessionId?: string;
+    readonly signal?: AbortSignal;
+    readonly session?: SessionHookHandle;
+    readonly thread?: ThreadHookHandle;
+    readonly [key: string]: unknown;
+}
+
+export interface SessionHookContext extends HookContext {
+    readonly session: SessionHookHandle;
+}
+
+export interface ThreadHookContext extends HookContext {
+    readonly thread: ThreadHookHandle;
+}
+
+export type EventHandler<D extends AnyEvent> = (event: EventEnvelope<PayloadOf<D>, D>, context: ContextOf<D>) => ResultOf<D> | void | Promise<ResultOf<D> | void>;
+
+export interface PluginContext {
+    readonly agent: {
+        register(agent: Agent): void;
+    };
+    readonly effects: {
+        register(definition: EffectDefinition): void;
+    };
+    readonly interruptions: {
+        register(definition: InterruptionDefinition): void;
+    };
+    readonly state: {
+        define<T extends JsonValue>(definition: Omit<PluginStateDefinition<T>, "pluginId">): PluginStateDefinition<T>;
+    };
+    readonly storage: {
+        register(backend: StorageBackend): void;
+    };
+    readonly tools: {
+        register(tool: Tool): void;
+    };
+    readonly models: {
+        register(provider: ModelProviderRegistration): void;
+    };
+    hook<D extends AnyEvent>(name: D, handler: EventHandler<D>, options?: HookOptions): Disposer;
+    emit<D extends AnyEvent>(definition: D, payload: PayloadOf<D>): Promise<ResultOf<D>>;
+    defer(disposer: Disposer): void;
+    readonly registry: {
+        register(kind: string, id: string, value: unknown, version?: number): void;
+    };
+}
+
+export interface Plugin {
+    readonly id: string;
+    readonly version?: number;
+    readonly configurationId?: string;
+    setup(tessar: PluginContext): void | Disposer | Promise<void | Disposer>;
+}
+```
+
+### Payload dùng chung và helper quyết định
+
+Nguồn: [packages/core/src/events/type.ts](packages/core/src/events/type.ts).
+
+```ts
+export type OperationDecision = {
+    decision: "allow" | "deny";
+    reason?: string;
+};
+
+export type OperationEvent = "session.model.before-change" | "session.thread.before-switch" | "thread.before-fork" | "thread.before-rename" | "thread.before-delete";
+
+export interface QueuedInputReceipt {
+    id: string;
+    threadId: string;
+}
+
+export interface ExecutionReceipt {
+    streamId: string;
+    threadId: string;
+}
+
+export type ControlDecision = {
+    decision: "allow" | "deny" | "continue" | "stop" | "retry" | "fail";
+    reason?: string;
+} | {
+    decision: "select";
+    model: ModelRef;
+} | {
+    decision: "suspend";
+    definitionId: string;
+    payload: JsonValue;
+    pluginId: string;
+    definitionVersion: number;
+};
+
+export interface InputPreparation {
+    messages: readonly MessageData[];
+    handled?: {
+        output: readonly MessageData[];
+    };
+    rejected?: ErrorInfo;
+}
+
+export interface ToolPreparation {
+    tool: ToolDescription;
+    toolCallId: string;
+    toolExecutionId: string;
+    arguments: JsonObject;
+}
+
+export interface StreamOutcome {
+    status: string;
+    reason: string | null;
+    output: readonly MessageData[];
+    usage: UsageSummary;
+    error: ErrorInfo | null;
+    interrupt: InterruptRecord | null;
+}
+
+export declare const ToolDecision: {
+    allow: () => ControlDecision;
+    deny: (reason: string) => ControlDecision;
+};
+
+export declare const TurnDecision: {
+    continue: () => ControlDecision;
+    stop: (reason: string) => ControlDecision;
+};
+
+export declare const InputDecision: {
+    continue: (messages: readonly MessageData[]) => InputPreparation;
+    handled: (outcome: {
+        output: readonly MessageData[];
+    }) => InputPreparation;
+    reject: (error: ErrorInfo) => InputPreparation;
+};
+```
+
+### Tất cả hook built-in: map, string và kind
+
+| Map import | Event string | Kind |
+| --- | --- | --- |
+| `ready` | `ready` | notification |
+| `shutdown` | `shutdown` | barrier |
+| `diagnostic` | `diagnostic` | notification |
+| `thread.prepare` | `thread.prepare` | transformation |
+| `thread.started` | `thread.started` | notification |
+| `thread.beforeShutdown` | `thread.before-shutdown` | barrier |
+| `thread.shutdown` | `thread.shutdown` | notification |
+| `thread.updated` | `thread.updated` | notification |
+| `thread.beforeFork` | `thread.before-fork` | decision |
+| `thread.forked` | `thread.forked` | notification |
+| `thread.beforeRename` | `thread.before-rename` | decision |
+| `thread.renamed` | `thread.renamed` | notification |
+| `thread.beforeDelete` | `thread.before-delete` | decision |
+| `thread.deleted` | `thread.deleted` | notification |
+| `session.created` | `session.created` | notification |
+| `session.modelChanged` | `session.model-changed` | notification |
+| `session.threadCreated` | `session.thread-created` | notification |
+| `session.threadSwitched` | `session.thread-switched` | notification |
+| `session.threadRenamed` | `session.thread-renamed` | notification |
+| `session.threadForked` | `session.thread-forked` | notification |
+| `session.threadDeleted` | `session.thread-deleted` | notification |
+| `session.inputQueued` | `session.input-queued` | notification |
+| `session.inputDiscarded` | `session.input-discarded` | notification |
+| `session.beforeClose` | `session.before-close` | barrier |
+| `session.closed` | `session.closed` | notification |
+| `session.model.beforeChange` | `session.model.before-change` | decision |
+| `session.thread.beforeSwitch` | `session.thread.before-switch` | decision |
+| `input.prepare` | `input.prepare` | transformation |
+| `input.received` | `input.received` | notification |
+| `stream.before` | `stream.before` | decision |
+| `stream.started` | `stream.started` | notification |
+| `stream.beforeEnd` | `stream.before-end` | barrier |
+| `stream.end` | `stream.end` | notification |
+| `stream.error` | `stream.error` | notification |
+| `stream.suspended` | `stream.suspended` | notification |
+| `stream.resumed` | `stream.resumed` | notification |
+| `stream.cancel` | `stream.cancel` | notification |
+| `turn.start` | `turn.start` | notification |
+| `turn.end` | `turn.end` | notification |
+| `turn.decision` | `turn.decision` | decision |
+| `context.prepare` | `context.prepare` | transformation |
+| `tools.select` | `tools.select` | transformation |
+| `model.select` | `model.select` | decision |
+| `model.request` | `model.request` | transformation |
+| `model.start` | `model.start` | notification |
+| `model.end` | `model.end` | notification |
+| `model.response` | `model.response` | transformation |
+| `model.usage` | `model.usage` | notification |
+| `model.error` | `model.error` | notification |
+| `model.recover` | `model.recover` | decision |
+| `message.prepare` | `message.prepare` | transformation |
+| `message.beforeCommit` | `message.before-commit` | barrier |
+| `message.delta` | `message.delta` | notification |
+| `message.committed` | `message.committed` | notification |
+| `tool.prepare` | `tool.prepare` | transformation |
+| `tool.before` | `tool.before` | decision |
+| `tool.start` | `tool.start` | notification |
+| `tool.update` | `tool.update` | notification |
+| `tool.end` | `tool.end` | notification |
+| `tool.error` | `tool.error` | notification |
+| `tool.result` | `tool.result` | transformation |
+| `checkpoint.committed` | `checkpoint.committed` | notification |
+
+Payload và result chính xác của từng event:
+
+```ts
+type Transform<P> = HookSpec<P, P, ExecutionHookContext>;
+type Decision<P> = HookSpec<P, ControlDecision, DecisionHookContext>;
+
+declare module "./definition.js" {
+    interface EventMap {
+        "session.model.before-change": HookSpec<{
+            previous: ModelRef;
+            model: ModelRef;
+            previousOptions?: JsonObject;
+            options?: JsonObject;
+        }, OperationDecision, SessionHookContext>;
+        "session.thread.before-switch": HookSpec<{
+            previousThreadId: string | null;
+            threadId: string;
+        }, OperationDecision, SessionHookContext>;
+        "thread.before-fork": HookSpec<{
+            threadId: string;
+            options: ForkOptions;
+        }, OperationDecision, ThreadHookContext>;
+        "thread.before-rename": HookSpec<{
+            threadId: string;
+            title: string;
+        }, OperationDecision, ThreadHookContext>;
+        "thread.before-delete": HookSpec<{
+            threadId: string;
+            permanent?: boolean;
+        }, OperationDecision, ThreadHookContext>;
+        "thread.forked": HookSpec<{
+            threadId: string;
+            forkedThreadId: string;
+        }, void, ThreadHookContext>;
+        "thread.renamed": HookSpec<{
+            threadId: string;
+            title: string;
+        }, void, ThreadHookContext>;
+        "thread.deleted": HookSpec<{
+            threadId: string;
+            permanent?: boolean;
+        }, void, ThreadHookContext>;
+        "session.created": HookSpec<{
+            model: ModelRef;
+        }, void, SessionHookContext>;
+        "session.model-changed": HookSpec<{
+            previous: ModelRef;
+            model: ModelRef;
+            previousOptions?: JsonObject;
+            options?: JsonObject;
+        }, void, SessionHookContext>;
+        "session.thread-created": HookSpec<{
+            threadId: string;
+        }, void, SessionHookContext>;
+        "session.thread-switched": HookSpec<{
+            previousThreadId: string | null;
+            threadId: string;
+        }, void, SessionHookContext>;
+        "session.thread-renamed": HookSpec<{
+            threadId: string;
+            title: string;
+        }, void, SessionHookContext>;
+        "session.thread-forked": HookSpec<{
+            sourceThreadId: string;
+            threadId: string;
+        }, void, SessionHookContext>;
+        "session.thread-deleted": HookSpec<{
+            threadId: string;
+        }, void, SessionHookContext>;
+        "session.input-queued": HookSpec<{
+            receipt: QueuedInputReceipt;
+        }, void, SessionHookContext>;
+        "session.input-discarded": HookSpec<{
+            receipt: QueuedInputReceipt;
+            cause: string;
+        }, void, SessionHookContext>;
+        "session.before-close": HookSpec<{}, void, SessionHookContext>;
+        "session.closed": HookSpec<{}, void, SessionHookContext>;
+        diagnostic: HookSpec<{
+            error: ErrorInfo;
+        }>;
+        ready: HookSpec<{
+            agentId: string;
+        }>;
+        shutdown: HookSpec<{}>;
+        "thread.prepare": HookSpec<CreateThreadOptions, CreateThreadOptions>;
+        "thread.started": HookSpec<ThreadInfo>;
+        "thread.before-shutdown": HookSpec<{
+            threadId: string;
+        }>;
+        "thread.shutdown": HookSpec<{
+            threadId: string;
+        }>;
+        "thread.updated": HookSpec<{
+            checkpointId: string;
+            revision: number;
+        }>;
+        "input.prepare": Transform<InputPreparation>;
+        "input.received": HookSpec<{
+            messages: readonly MessageData[];
+        }>;
+        "stream.before": Decision<{
+            input: readonly MessageData[];
+        }>;
+        "stream.started": HookSpec<{
+            modelRef: ModelRef;
+            checkpointId: string;
+        }>;
+        "stream.before-end": HookSpec<StreamOutcome>;
+        "stream.end": HookSpec<StreamOutcome>;
+        "stream.error": HookSpec<{
+            error: ErrorInfo;
+            lastKnownCheckpointId: string | null;
+            persistedStatus: string | null;
+        }>;
+        "stream.suspended": HookSpec<{
+            checkpointId: string;
+            interrupt: InterruptRecord;
+        }>;
+        "stream.resumed": HookSpec<{
+            checkpointId: string;
+            interruptId: string | null;
+            reason: string;
+        }>;
+        "turn.start": HookSpec<{
+            turnId: string;
+            index: number;
+        }>;
+        "turn.end": HookSpec<{
+            turnId: string;
+            usage: UsageSummary;
+        }>;
+        "turn.decision": Decision<{
+            turnId: string;
+            hadTools: boolean;
+        }>;
+        "context.prepare": Transform<ModelRequest>;
+        "tools.select": Transform<readonly ToolDescription[]>;
+        "model.select": Decision<{
+            model: ModelRef;
+        }>;
+        "model.request": Transform<ModelRequest>;
+        "model.start": HookSpec<{
+            attemptId: string;
+            model: ModelRef;
+        }>;
+        "model.end": HookSpec<{
+            attemptId: string;
+            response: ModelResponse;
+        }>;
+        "model.response": Transform<ModelResponse>;
+        "model.usage": HookSpec<{
+            attemptId: string;
+            usage: ModelUsage;
+        }>;
+        "model.error": HookSpec<{
+            attemptId: string;
+            error: ErrorInfo;
+        }>;
+        "model.recover": Decision<{
+            attemptId: string;
+            error: ErrorInfo;
+        }>;
+        "message.prepare": Transform<MessageData>;
+        "message.before-commit": HookSpec<{
+            message: MessageData;
+        }>;
+        "message.delta": HookSpec<{
+            messageId: string;
+            partId: string;
+            partKind: "text" | "reasoning";
+            delta: string;
+            attemptId: string;
+        }>;
+        "message.committed": HookSpec<{
+            message: MessageData;
+            checkpointId: string;
+        }>;
+        "tool.prepare": Transform<ToolPreparation>;
+        "tool.before": Decision<ToolPreparation>;
+        "tool.start": HookSpec<{
+            toolExecutionId: string;
+            toolCallId: string;
+        }>;
+        "tool.update": HookSpec<{
+            toolExecutionId: string;
+            progress: JsonValue;
+        }>;
+        "tool.end": HookSpec<{
+            toolExecutionId: string;
+            toolCallId: string;
+            result: MessageData;
+            status: string;
+        }>;
+        "tool.error": HookSpec<{
+            toolExecutionId: string;
+            error: ErrorInfo;
+        }>;
+        "tool.result": Transform<MessageData>;
+        "stream.cancel": HookSpec<{
+            reason: string;
+        }>;
+        "checkpoint.committed": HookSpec<{
+            checkpointId: string;
+            revision: number;
+        }>;
+    }
+}
+```
+
+### Plugin state definition
+
+Nguồn: [packages/core/src/state/plugin-state.ts](packages/core/src/state/plugin-state.ts).
+
+```ts
+export interface PluginStateDefinition<T extends JsonValue = JsonValue> {
+    pluginId: string;
+    namespace: string;
+    schemaVersion: number;
+    initial: T;
+    migrate?: (value: JsonValue, fromVersion: number) => T;
+    fork?: "copy" | "reset" | ((value: T, context: {
+        sourceThreadId: string;
+        targetThreadId: string;
+    }) => T);
+}
+
+export declare function definePluginState<T extends JsonValue>(definition: PluginStateDefinition<T>): PluginStateDefinition<T>;
+```
+
+### Effects, reservation và tracked services
+
+Nguồn: [packages/core/src/engine/tracked-effects.ts](packages/core/src/engine/tracked-effects.ts).
+
+```ts
+export interface EffectContext {
+    signal: AbortSignal;
+    threadId: string;
+    streamId: string;
+    turnId: string | null;
+    toolExecutionId?: string;
+    operationId: string;
+    key: string;
+}
+
+export interface EffectDefinition<I = any, O = any> {
+    id: string;
+    version: number;
+    input: InputDefinition<I>;
+    output: InputDefinition<O>;
+    execute: (input: I, context: EffectContext) => Promise<O>;
+    reconcile?: (operation: {
+        input: I;
+        key: string;
+        id: string;
+    }) => Promise<{
+        status: "completed";
+        output: O;
+    } | {
+        status: "safeToRetry";
+    } | {
+        status: "unknown";
+    }>;
+}
+
+export declare function defineEffect<I, O>(definition: EffectDefinition<I, O>): EffectDefinition<I, O>;
+
+export interface ChildReservation {
+    streamId: string;
+    threadId: string;
+    origin: ExecutionOrigin;
+}
+
+export interface TrackedServices {
+    models: {
+        stream(options: {
+            model: ModelRef;
+            request: ModelRequest;
+            purpose: "auxiliary";
+        }): AsyncIterable<ModelChunk>;
+    };
+    effects: {
+        execute<I, O>(definition: EffectDefinition<I, O>, input: I, options: {
+            key: string;
+        }): Promise<O>;
+    };
+    executions: {
+        reserveChild(options: {
+            threadId: string;
+            dispatchKey: string;
+        }): Promise<ChildReservation>;
+    };
+    events: {
+        emit<D extends AnyEvent>(definition: D, payload: PayloadOf<D>): Promise<void>;
+    };
+}
+
+export interface ExecutionHookContext extends HookContext, TrackedServices {
+    readonly state: PluginStateAccess;
+    readonly signal: AbortSignal;
+    readonly threadId: string;
+    readonly streamId: string;
+}
+```
+
+### Interruption definition và decision context
+
+Nguồn: [packages/core/src/engine/interrupt.ts](packages/core/src/engine/interrupt.ts).
+
+```ts
+export interface InterruptionDefinition<R = any, D extends ControlDecision = ControlDecision, P extends JsonValue = JsonValue> {
+    readonly id: string;
+    readonly version: number;
+    readonly response: InputDefinition<R>;
+    readonly payload?: InputDefinition<P>;
+    readonly resolve: (response: R, payload: P) => D;
+}
+
+export declare function defineInterruption<R, D extends ControlDecision, P extends JsonValue = JsonValue>(definition: InterruptionDefinition<R, D, P>): InterruptionDefinition<R, D, P>;
+
+export interface DecisionHookContext extends ExecutionHookContext {
+    readonly state: PluginStateAccess;
+    readonly signal: AbortSignal;
+    readonly threadId: string;
+    readonly streamId: string;
+    suspend<R, D extends ControlDecision, P extends JsonValue>(definition: InterruptionDefinition<R, D, P>, payload: P): ControlDecision;
+}
+```
+
+### Model adapter/request/response contract
+
+Nguồn: [packages/core/src/models/contract.ts](packages/core/src/models/contract.ts).
+
+```ts
+export interface ModelRef {
+    providerId: string;
+    modelId: string;
+    connectionId?: string;
+}
+
+export interface ModelConnectionDescriptor {
+    providerId: string;
+    connectionId: string;
+    protocol: string;
+    endpoint: string;
+}
+
+export interface ToolDescription {
+    name: string;
+    description: string;
+    inputSchema: JsonObject;
+}
+
+export interface ModelRequest {
+    model: ModelRef;
+    instructions: Instruction;
+    messages: readonly MessageData[];
+    tools: readonly ToolDescription[];
+    options?: JsonObject;
+}
+
+export interface ModelCallContext {
+    signal: AbortSignal;
+}
+
+export interface ModelResponse {
+    message: MessageData;
+    usage?: ModelUsage;
+    finishReason?: string;
+    providerRequestId?: string;
+}
+
+export type ModelChunk = {
+    type: "message-delta";
+    messageId: string;
+    partId: string;
+    partKind: "text" | "reasoning";
+    delta: string;
+} | {
+    type: "usage";
+    usage: ModelUsage;
+} | {
+    type: "response";
+    response: ModelResponse;
+};
+
+export interface ModelAdapter {
+    readonly ref: ModelRef;
+    readonly connection?: ModelConnectionDescriptor;
+    readonly options?: object;
+    withModel?(modelId: string): ModelAdapter;
+    validate(request: ModelRequest): void;
+    stream(request: ModelRequest, context: ModelCallContext): AsyncIterable<ModelChunk>;
+}
+
+export type ModelOptions<M> = M extends {
+    readonly options: infer O;
+} ? Partial<O> : JsonObject;
+
+export interface ModelProviderRegistration {
+    id: string;
+    create(modelId: string): ModelAdapter;
+    metadata?: MetadataResolver;
+    endpoint?: string;
+    metadataPartition?: string;
+    catalogModelRef?: (ref: ModelRef) => ModelRef | null;
+    catalogMappingVersion?: number;
+}
+```
+
+### Model profile và metadata
+
+Nguồn: [packages/core/src/models/profile.ts](packages/core/src/models/profile.ts).
+
+```ts
+export interface ModelPricing {
+    currency: string;
+    basis: "million-tokens";
+    type: "flat" | "tiered";
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    reasoning: number | null;
+    tiers?: readonly {
+        condition: JsonValue;
+        rates: JsonValue;
+    }[];
+}
+
+export interface ProfileMetadata {
+    completeness: "complete" | "partial" | "unavailable";
+    freshness: "fresh" | "stale" | "unknown";
+    fetchedAt: string | null;
+    sourceRevision: string | null;
+    provenance: Readonly<Record<string, string>>;
+}
+
+export interface ModelProfile extends ModelRef {
+    name: string | null;
+    contextWindow: number | null;
+    maxInputTokens: number | null;
+    maxOutputTokens: number | null;
+    capabilities: {
+        tools: boolean | null;
+        reasoning: boolean | null;
+        structuredOutput: boolean | null;
+        imageInput: boolean | null;
+        audioInput: boolean | null;
+        audioOutput: boolean | null;
+    };
+    pricing: ModelPricing | null;
+    metadata: ProfileMetadata;
+}
+
+export interface Model {
+    readonly ref: Readonly<ModelRef>;
+    profile(): Readonly<ModelProfile>;
+    refreshProfile(options?: {
+        signal?: AbortSignal;
+    }): Promise<ModelProfile>;
+}
+
+export type ProfilePatch = Partial<Omit<ModelProfile, "capabilities" | "metadata">> & {
+    capabilities?: Partial<ModelProfile["capabilities"]>;
+    metadata?: Partial<ProfileMetadata>;
+};
+
+export interface MetadataResolver {
+    resolve(ref: ModelRef, options: {
+        signal?: AbortSignal;
+    }): Promise<ProfilePatch>;
+}
+```
+
+### Catalog data nhận bởi ProfileResolver
+
+Nguồn: [packages/core/src/models/catalog.ts](packages/core/src/models/catalog.ts).
+
+```ts
+export interface CatalogSnapshot {
+    revision: string;
+    fetchedAt: string;
+    entries: Record<string, Record<string, ProfilePatch>>;
+    source?: string;
+}
+```
+
+### State, checkpoint và dữ liệu Session
+
+Nguồn: [packages/core/src/state/schema.ts](packages/core/src/state/schema.ts).
+
+```ts
+export type Scope = Readonly<Record<string, string | number | boolean>>;
+
+export interface PluginStateSnapshot {
+    pluginId: string;
+    namespace: string;
+    ownerType: "thread" | "stream" | "turn" | "agent" | "session";
+    ownerId: string;
+    schemaVersion: number;
+    revision: number;
+    data: JsonValue;
+}
+
+export interface ThreadState {
+    instructions: Instruction | null;
+    scope: Scope;
+    metadata: JsonObject;
+    messages: readonly MessageData[];
+    pluginStates: readonly PluginStateSnapshot[];
+}
+
+export declare const ExecutionPhase: {
+    readonly BeforeTurn: "BeforeTurn";
+    readonly BeforeModel: "BeforeModel";
+    readonly ModelPending: "ModelPending";
+    readonly BeforeTool: "BeforeTool";
+    readonly ToolPending: "ToolPending";
+    readonly TurnBoundary: "TurnBoundary";
+    readonly Suspended: "Suspended";
+};
+
+export declare const ExecutionPhase: {
+    readonly BeforeTurn: "BeforeTurn";
+    readonly BeforeModel: "BeforeModel";
+    readonly ModelPending: "ModelPending";
+    readonly BeforeTool: "BeforeTool";
+    readonly ToolPending: "ToolPending";
+    readonly TurnBoundary: "TurnBoundary";
+    readonly Suspended: "Suspended";
+};
+
+export interface StreamLimits {
+    maxTurns: number;
+    maxModelAttempts: number;
+    maxToolCalls: number;
+}
+
+export interface StreamBudgetState {
+    turns: number;
+    modelAttempts: number;
+    toolCalls: number;
+    limits: StreamLimits;
+}
+
+export interface RegistrationRequirement {
+    pluginId: string;
+    kind: string;
+    id: string;
+    version: number;
+    requiredForContinuation: boolean;
+    pluginVersion?: number;
+    configurationId?: string | null;
+}
+
+export interface HandlerCursor {
+    eventId: string;
+    handlerId: string;
+    nextIndex: number;
+    payload: JsonValue;
+    decisions: readonly JsonValue[];
+}
+
+export interface ExecutionPosition {
+    timing?: {
+        completedActiveMs: number;
+        segmentOpen: boolean;
+        complete: boolean;
+    };
+    streamId: string;
+    turnId: string | null;
+    phase: ExecutionPhase;
+    modelRef: ModelRef;
+    modelConnection?: ModelConnectionDescriptor;
+    modelOptions?: JsonObject;
+    baseInstructions: Instruction;
+    pendingToolExecutionIds: readonly string[];
+    pendingInterruptId: string | null;
+    handlerCursor: HandlerCursor | null;
+    budgets: StreamBudgetState;
+    registryManifest: readonly RegistrationRequirement[];
+}
+
+export type CheckpointCause = "ThreadCreated" | "InputCommitted" | "MessageCommitted" | "ExecutionTransition" | "PluginStateCommitted" | "Suspended" | "Resumed" | "Terminal" | "ForkCreated";
+
+export interface Checkpoint {
+    id: string;
+    threadId: string;
+    parentCheckpointId: string | null;
+    revision: number;
+    schemaVersion: 1;
+    createdAt: string;
+    state: ThreadState;
+    execution: ExecutionPosition | null;
+    cause: CheckpointCause;
+}
+
+export interface ThreadInfo {
+    id: string;
+    scope: Scope;
+    metadata: JsonObject;
+    revision: number;
+    currentCheckpointId: string;
+    activeStreamId: string | null;
+    createdAt: string;
+    updatedAt: string;
+    parentThreadId: string | null;
+    sourceCheckpointId: string | null;
+    deleted: boolean;
+}
+
+export interface InterruptRecord {
+    kind?: "decision" | "tool-result";
+    id: string;
+    threadId: string;
+    streamId: string;
+    checkpointId: string;
+    definitionId: string;
+    definitionVersion: number;
+    pluginId: string;
+    payload: JsonValue;
+    responseSchema: JsonObject;
+    actionRef: JsonObject | null;
+    status: "pending" | "resolved" | "cancelled";
+    response: JsonValue | null;
+    resolvedDecision: JsonValue | null;
+    createdAt: string;
+    resolvedAt: string | null;
+    revision: number;
+}
+
+export interface RecordTypes {
+    streams: StreamRecord;
+    turns: TurnRecord;
+    model_attempts: ModelAttemptRecord;
+    tool_executions: ToolExecutionRecord;
+    interrupts: InterruptRecord;
+}
+
+export type RecordKind = keyof RecordTypes;
+
+export type RecordEntry = {
+    [K in RecordKind]: {
+        kind: K;
+        id: string;
+        threadId: string;
+        data: RecordTypes[K];
+    };
+}[RecordKind];
+
+export interface PageOptions {
+    cursor?: string;
+    limit?: number;
+}
+
+export interface StateQuery {
+    scope?: Scope;
+}
+
+export interface Page<T> {
+    items: readonly T[];
+    nextCursor: string | null;
+}
+
+export interface HistoryOptions extends PageOptions {
+    atCheckpointId?: string;
+}
+
+export interface HistoryDataPage extends Page<MessageData> {
+    checkpointId: string;
+    revision: number;
+}
+
+export interface CheckpointInfo {
+    id: string;
+    threadId: string;
+    revision: number;
+    createdAt: string;
+    cause: string;
+    forkable: boolean;
+    unsafeReason: string | null;
+}
+
+export interface RecordQuery extends PageOptions {
+    streamId?: string;
+    turnId?: string;
+    status?: string;
+    atCheckpointId?: string;
+}
+
+export interface StoredModelSelection {
+    ref: ModelRef;
+    options?: JsonObject;
+    connection?: ModelConnectionDescriptor;
+}
+
+export interface SessionRecord {
+    id: string;
+    agentId: string;
+    scope: Scope;
+    metadata: JsonObject;
+    selectedThreadId: string | null;
+    selectedModel: StoredModelSelection;
+    revision: number;
+    createdAt: string;
+    updatedAt: string;
+}
+```
+
+### Trace records và status
+
+Nguồn: [packages/core/src/trace/records.ts](packages/core/src/trace/records.ts).
+
+```ts
+export type StreamStatus = "pending" | "running" | "suspended" | "interrupted" | "completed" | "stopped" | "failed" | "cancelled";
+
+export interface StreamRecord {
+    outputMessageIds: readonly string[];
+    id: string;
+    threadId: string;
+    scope: JsonObject;
+    parentStreamId: string | null;
+    parentToolExecutionId: string | null;
+    triggerMessageId: string | null;
+    status: StreamStatus;
+    stopReason: string | null;
+    startedAt: string;
+    endedAt: string | null;
+    durationMs: number | null;
+    error: ErrorInfo | null;
+    directUsage: UsageSummary;
+    inclusiveUsage: UsageSummary;
+}
+
+export interface TurnRecord {
+    id: string;
+    streamId: string;
+    scope: JsonObject;
+    index: number;
+    contextRevision: number;
+    assistantMessageId: string | null;
+    status: string;
+    stopReason: string | null;
+    startedAt: string;
+    endedAt: string | null;
+    durationMs: number | null;
+    error: ErrorInfo | null;
+    usage: UsageSummary;
+}
+
+export interface ModelAttemptRecord {
+    id: string;
+    turnId: string;
+    streamId: string;
+    scope: JsonObject;
+    callId: string;
+    attemptIndex: number;
+    purpose: "primary" | "auxiliary";
+    parentToolExecutionId: string | null;
+    providerId: string;
+    modelId: string;
+    providerRequestId: string | null;
+    responseMessageId: string | null;
+    contextRevision: number;
+    startedAt: string;
+    firstOutputAt: string | null;
+    endedAt: string | null;
+    durationMs: number | null;
+    timeToFirstOutputMs: number | null;
+    status: string;
+    finishReason: string | null;
+    error: ErrorInfo | null;
+    usage: ModelUsage;
+}
+
+export interface ToolExecutionRecord {
+    resume?: {
+        interruptId: string;
+        value: JsonValue;
+    };
+    id: string;
+    turnId: string;
+    streamId: string;
+    scope: JsonObject;
+    toolCallId: string;
+    parentToolExecutionId: string | null;
+    toolName: string;
+    arguments: JsonObject;
+    policyDecision: {
+        decision: "allowed" | "denied";
+        reason?: string;
+    } | null;
+    status: "pending" | "suspended" | "resuming" | "running" | "succeeded" | "failed" | "denied" | "cancelled" | "interrupted";
+    startedAt: string | null;
+    endedAt: string | null;
+    durationMs: number | null;
+    resultMessageId: string | null;
+    result: MessageData | null;
+    error: ErrorInfo | null;
+    idempotencyKey: string | null;
+}
+```
+
+### Token usage
+
+Nguồn: [packages/core/src/trace/usage.ts](packages/core/src/trace/usage.ts).
+
+```ts
+export declare const tokenMetrics: readonly ["inputTokens", "uncachedInputTokens", "outputTokens", "reasoningOutputTokens", "cacheReadInputTokens", "cacheWriteInputTokens", "totalTokens"];
+
+export type TokenMetric = (typeof tokenMetrics)[number];
+
+export type UsageSource = "provider" | "derived" | "estimated" | "unavailable";
+
+export type TokenCounts = Record<TokenMetric, number | null>;
+
+export interface ModelUsage extends TokenCounts {
+    provenance: Record<TokenMetric, UsageSource>;
+    providerDetails?: JsonValue;
+}
+
+export interface UsageMetricSummary {
+    knownTotal: number | null;
+    knownAttempts: number;
+    totalAttempts: number;
+    coverage: "complete" | "partial" | "unavailable";
+}
+
+export interface UsageSummary {
+    metrics: Record<TokenMetric, UsageMetricSummary>;
+}
+
+export declare function normalizeUsage(input: Partial<TokenCounts>, providerDetails?: JsonValue): ModelUsage;
+
+export declare function aggregateUsage(attempts: readonly {
+    id: string;
+    usage: ModelUsage;
+}[]): UsageSummary;
+```
+
+### StorageBackend: tất cả port và parameter
+
+Nguồn: [packages/core/src/state/storage-ports.ts](packages/core/src/state/storage-ports.ts).
+
+```ts
+export interface Lease {
+    threadId: string;
+    ownerToken: string;
+    fencingToken: number;
+    expiresAt: string;
+}
+
+export interface CommitBatch {
+    commitId: string;
+    threadId: string;
+    expectedRevision: number;
+    checkpoint: Checkpoint;
+    records: readonly RecordEntry[];
+    lineage?: {
+        parentThreadId: string;
+        sourceCheckpointId: string;
+    };
+    deleteThread?: boolean;
+}
+
+export interface CommitReceipt {
+    commitId: string;
+    threadId: string;
+    revision: number;
+    checkpointId: string;
+}
+
+export interface PublishRequest {
+    commitId: string;
+    threadId: string;
+    expectedRevision: number;
+    lease: Lease;
+}
+
+export interface ThreadStore {
+    purge(id: string, query?: StateQuery): Promise<void>;
+    get(id: string, options?: {
+        includeDeleted?: boolean;
+    }): Promise<ThreadInfo | null>;
+    page(query: StateQuery & PageOptions): Promise<Page<ThreadInfo>>;
+    list(query?: StateQuery): Promise<readonly ThreadInfo[]>;
+}
+
+export interface ExecutionStore {
+    page<K extends RecordKind>(kind: K, threadId: string, query: RecordQuery): Promise<Page<RecordTypes[K]>>;
+    get<K extends RecordKind>(kind: K, id: string, options?: {
+        threadId?: string;
+        atCheckpointId?: string;
+    }): Promise<RecordTypes[K] | null>;
+    listRecords<K extends RecordKind>(kind: K, threadId: string, options?: {
+        atCheckpointId?: string;
+    }): Promise<readonly RecordTypes[K][]>;
+}
+
+export interface CheckpointStore {
+    page(threadId: string, options: PageOptions): Promise<Page<CheckpointInfo>>;
+    history(threadId: string, options: HistoryOptions, query?: StateQuery): Promise<HistoryDataPage>;
+    get(id: string): Promise<Checkpoint | null>;
+    list(threadId: string): Promise<readonly Checkpoint[]>;
+}
+
+export interface CommitPort {
+    stage(batch: CommitBatch): Promise<void>;
+    publish(request: PublishRequest): Promise<CommitReceipt>;
+    lookupCommit(id: string): Promise<CommitReceipt | null>;
+}
+
+export interface OwnershipPort {
+    acquire(request: {
+        threadId: string;
+        ownerToken: string;
+        ttlMs: number;
+    }): Promise<Lease>;
+    renew(lease: Lease, ttlMs: number): Promise<Lease>;
+    release(lease: Lease): Promise<void>;
+}
+
+export interface StorageBackend {
+    readonly sessions: {
+        get(id: string, query?: StateQuery): Promise<SessionRecord | null>;
+        page(query: StateQuery & PageOptions & {
+            agentId: string;
+        }): Promise<Page<SessionRecord>>;
+        compareAndSet(value: SessionRecord, expectedRevision: number): Promise<void>;
+    };
+    readonly ownedState: {
+        get(key: Pick<PluginStateSnapshot, "ownerType" | "ownerId" | "pluginId" | "namespace">): Promise<PluginStateSnapshot | null>;
+        compareAndSet(state: PluginStateSnapshot, expectedRevision: number): Promise<void>;
+    };
+    readonly id: string;
+    readonly capabilities: {
+        durable: boolean;
+        atomicPublish: true;
+        coordination: "single-process" | "multi-process";
+    };
+    readonly threads: ThreadStore;
+    readonly executions: ExecutionStore;
+    readonly checkpoints: CheckpointStore;
+    readonly commits: CommitPort;
+    readonly ownership: OwnershipPort;
+    close(): Promise<void>;
+}
+```
+
+### Storage factory in-memory
+
+Nguồn: [packages/core/src/state/memory-backend.ts](packages/core/src/state/memory-backend.ts).
+
+```ts
+export declare function createMemoryBackend(options?: {
+    clock?: Clock;
+}): StorageBackend;
+```
+
+### Storage helpers public
+
+Nguồn: [packages/core/src/state/commit.ts](packages/core/src/state/commit.ts).
+
+```ts
+export declare function buildThreadInfo(batch: CommitBatch, head: ThreadInfo | null | undefined, stream: StreamRecord | null | undefined): ThreadInfo;
+
+export declare function canonicalJson(value: unknown): string;
+
+export declare const commitFingerprint: (batch: CommitBatch) => Promise<string>;
+
+export declare function validateBatch(batch: CommitBatch): void;
+```
+
+### Scope helpers
+
+Nguồn: [packages/core/src/state/scope.ts](packages/core/src/state/scope.ts).
+
+```ts
+export declare function normalizeScope(value?: Scope): Scope;
+
+export declare function matchesScope(state: Scope, filter?: Scope): boolean;
+```
+
+### Session validation cho backend
+
+Nguồn: [packages/core/src/state/sessions.ts](packages/core/src/state/sessions.ts).
+
+```ts
+export declare function validateSession(value: SessionRecord, previous: SessionRecord | null, expected: number, thread: ThreadInfo | null): void;
+```
+
+### Paging helpers public
+
+Nguồn: [packages/core/src/state/queries.ts](packages/core/src/state/queries.ts).
+
+```ts
+export interface HistoryPage extends Page<Message> {
+    checkpointId: string;
+    revision: number;
+}
+
+export declare function checkpointSafety(cp: Checkpoint): {
+    forkable: boolean;
+    unsafeReason: string | null;
+};
+
+export declare function limitOf(limit?: number): number;
+
+export declare function encodeCursor(value: unknown): string;
+
+export declare function decodeCursor(value: string): any;
+
+export declare function compareOrdinal(a: string, b: string): number;
+
+export declare function pageAfter(options: PageOptions, binding: string): [string, string] | null;
+
+export declare function pageRows<T extends {
+    id: string;
+}>(rows: readonly T[], options?: PageOptions, binding?: string): Page<T>;
+
+export declare function recordBinding(kind: RecordKind, threadId: string, query: RecordQuery): string;
+
+export declare function historyCursor(id: string, options: HistoryOptions, query: StateQuery): {
+    binding: string;
+    cursor: {
+        checkpointId: string;
+        end: number;
+    } | null;
+};
+```
+
+### Fork options
+
+Nguồn: [packages/core/src/state/fork.ts](packages/core/src/state/fork.ts).
+
+```ts
+export interface ForkOptions {
+    atCheckpointId?: string;
+    atMessageId?: string;
+    metadata?: JsonObject;
+}
+```
+
+### Thread preparation options cho hook/testing
+
+Nguồn: [packages/core/src/state/threads.ts](packages/core/src/state/threads.ts).
+
+```ts
+export interface CreateThreadOptions {
+    title?: string;
+    scope?: Scope;
+    instructions?: string | Instruction;
+    messages?: readonly MessageData[];
+    metadata?: JsonObject;
+}
+```
+
+### JSON, clock, ID
+
+Nguồn: [packages/core/src/json.ts](packages/core/src/json.ts).
+
+```ts
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | {
+    readonly [key: string]: JsonValue;
+};
+
+export type JsonObject = {
+    readonly [key: string]: JsonValue;
+};
+
+export declare function assertJson(value: unknown, parents?: Set<object>): asserts value is JsonValue;
+
+export declare function deepFreeze<T>(value: T): Readonly<T>;
+
+export declare function immutable<T>(value: T): Readonly<T>;
+
+export interface Clock {
+    now(): string;
+}
+
+export interface IdGenerator {
+    next(kind: string): string;
+}
+
+export declare const systemClock: Clock;
+
+export declare const randomIds: IdGenerator;
+```
+
+### Model options snapshot
+
+Nguồn: [packages/core/src/models/options.ts](packages/core/src/models/options.ts).
+
+```ts
+export declare function snapshotModelOptions(value: object): JsonObject;
+```
+
+### Errors
+
+Nguồn: [packages/core/src/errors.ts](packages/core/src/errors.ts).
+
+```ts
+export interface ErrorOrigin {
+    source: "tessar" | "provider" | "plugin" | "tool" | "storage" | "application";
+    providerId?: string;
+    modelId?: string;
+    pluginId?: string;
+    eventId?: string;
+    toolName?: string;
+    backendId?: string;
+}
+
+export interface ErrorInfo extends ErrorOrigin {
+    name: string;
+    code: string;
+    message: string;
+    retryable: boolean;
+    details?: Record<string, unknown>;
+}
+
+export declare class TessarError extends Error {
+    readonly code: string;
+    readonly details?: Record<string, unknown> | undefined;
+    constructor(code: string, message: string, details?: Record<string, unknown> | undefined);
+    toJSON(): ErrorInfo;
+}
+
+export declare function fail(code: string, message: string): never;
+
+export declare function requireId(id: string, name?: string): string;
+
+export declare function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo;
+
+export declare function errorFromInfo(info: ErrorInfo): unknown;
+```
+
+### PluginManager options
+
+Nguồn: [packages/plugins/src/index.ts](packages/plugins/src/index.ts).
+
+```ts
+export interface PluginManagerOptions {
+    directory: string;
+    hostUrl?: string;
+}
+```
+
+### Logger types
+
+Nguồn: [packages/plugins/src/logger.ts](packages/plugins/src/logger.ts).
+
+```ts
+export interface LogEntry extends EventContext {
+    level: "info" | "warn" | "error";
+    type: string;
+    timestamp: string;
+    payload: unknown;
+}
+
+export interface LoggerOptions {
+    write?: (entry: LogEntry) => void | Promise<void>;
+}
+```
+
+### SQLite options
+
+Nguồn: [packages/sqlite/src/backend.ts](packages/sqlite/src/backend.ts).
+
+```ts
+export interface SqliteStorageOptions {
+    filename: string;
+}
+
+export declare function createSqliteBackend(options: SqliteStorageOptions): Promise<StorageBackend>;
+```
+
+### PostgreSQL options
+
+Nguồn: [packages/postgresql/src/database.ts](packages/postgresql/src/database.ts).
+
+```ts
+export interface PostgresqlStorageOptions {
+    connectionString: string;
+    schema?: string;
+    driverOptions?: Omit<PoolConfig, "connectionString">;
+}
+```
+
+### MongoDB options
+
+Nguồn: [packages/mongodb/src/database.ts](packages/mongodb/src/database.ts).
+
+```ts
+export interface MongoDBStorageOptions {
+    uri: string;
+    databaseName: string;
+    clientOptions?: MongoClientOptions;
+}
+```
+
+### Scripted model test options
+
+Nguồn: [packages/core/src/testing/scripted-provider.ts](packages/core/src/testing/scripted-provider.ts).
+
+```ts
+export interface ModelScript {
+    text?: string;
+    response?: ModelResponse;
+    usage?: Partial<TokenCounts>;
+    chunks?: readonly ModelChunk[];
+    error?: Error;
+    gate?: Promise<void>;
+}
+```
+
+### Storage conformance helpers
+
+Nguồn: [packages/core/src/testing/storage-conformance.ts](packages/core/src/testing/storage-conformance.ts).
+
+```ts
+export declare function initialBatch(threadId?: string): CommitBatch;
+
+export declare function storageConformance(name: string, factory: () => Promise<StorageBackend>): void;
+```
+
+### OpenAI provider option types
+
+Nguồn: [packages/openai/src/provider.ts](packages/openai/src/provider.ts).
+
+```ts
+export type OpenAIAPI = "responses" | "chat-completions";
+
+export type OpenAIModelOptions = Omit<ResponseCreateParamsStreaming, "model" | "input" | "instructions" | "tools" | "stream" | "background" | "conversation" | "previous_response_id" | "context_management">;
+
+export type OpenAIChatModelOptions = Omit<ChatCompletionCreateParamsStreaming, "model" | "messages" | "tools" | "stream" | "functions" | "function_call" | "n"> & {
+    n?: 1;
+};
+
+export type OpenAIProviderOptions<A extends OpenAIAPI = OpenAIAPI> = OpenAIOptions & {
+    model: string;
+    connectionId?: string;
+} & (A extends "chat-completions" ? {
+    api: "chat-completions";
+} & OpenAIChatModelOptions : {
+    api?: "responses";
+} & OpenAIModelOptions);
+```
+
+### OpenAIOptions
+
+Nguồn: [packages/openai/src/adapter.ts](packages/openai/src/adapter.ts).
+
+```ts
+export interface OpenAIOptions extends ClientOptions {
+    providerId?: string;
+    metadataPartition?: string;
+}
+```
+
+### OpenAI SDK ClientOptions: toàn bộ field client
+
+```ts
+export interface ClientOptions {
+    apiKey?: string | ApiKeySetter | null | undefined;
+    adminAPIKey?: string | null | undefined;
+    organization?: string | null | undefined;
+    project?: string | null | undefined;
+    webhookSecret?: string | null | undefined;
+    baseURL?: string | null | undefined;
+    dataResidency?: DataResidency | null | undefined;
+    timeout?: number | undefined;
+    fetchOptions?: MergedRequestInit | undefined;
+    fetch?: Fetch | undefined;
+    maxRetries?: number | undefined;
+    defaultHeaders?: HeadersLike | undefined;
+    defaultQuery?: Record<string, string | undefined> | undefined;
+    dangerouslyAllowBrowser?: boolean | undefined;
+    logLevel?: LogLevel | undefined;
+    logger?: Logger | undefined;
+    workloadIdentity?: WorkloadIdentity | X509WorkloadIdentity | undefined;
+    x509Transport?: X509Transport | undefined;
+    credential?: X509Credential | undefined;
+    provider?: Provider | undefined;
+}
+```
+
+### Responses: toàn bộ field body Tessar nhận ở provider
+
+```ts
+export interface ResponseCreateParamsBase {
+    access_programs?: ResponseCreateParams.AccessPrograms;
+    include?: Array<ResponseIncludable> | null;
+    max_output_tokens?: number | null;
+    metadata?: Shared.Metadata | null;
+    moderation?: ResponseCreateParams.Moderation | null;
+    parallel_tool_calls?: boolean | null;
+    prompt?: ResponsePrompt | null;
+    prompt_cache_key?: string | null;
+    prompt_cache_options?: ResponseCreateParams.PromptCacheOptions;
+    prompt_cache_retention?: 'in_memory' | '24h' | null;
+    reasoning?: Shared.Reasoning | null;
+    safety_identifier?: string | null;
+    service_tier?: ServiceTier | null;
+    store?: boolean | null;
+    stream_options?: ResponseCreateParams.StreamOptions | null;
+    temperature?: number | null;
+    text?: ResponseTextConfig;
+    tool_choice?: ToolChoiceOptions | ToolChoiceAllowed | ToolChoiceTypes | ToolChoiceFunction | ToolChoiceMcp | ToolChoiceCustom | ResponseCreateParams.SpecificProgrammaticToolCallingParam | ToolChoiceApplyPatch | ToolChoiceShell;
+    top_logprobs?: number | null;
+    top_p?: number | null;
+    truncation?: 'auto' | 'disabled' | null;
+    user?: string;
+}
+export declare namespace ResponseCreateParams {
+    interface AccessPrograms {
+        cyber?: 'standard' | 'daybreak_blue' | 'daybreak_red';
+    }
+    interface ContextManagement {
+        type: string;
+        compact_threshold?: number | null;
+    }
+    interface Moderation {
+        model: string;
+        policy?: Moderation.Policy | null;
+    }
+    namespace Moderation {
+        interface Policy {
+            input?: Policy.Input | null;
+            output?: Policy.Output | null;
+        }
+        namespace Policy {
+            interface Input {
+                mode: 'score' | 'block';
+            }
+            interface Output {
+                mode: 'score' | 'block';
+            }
+        }
+    }
+    interface PromptCacheOptions {
+        comparison_response_id?: string | null;
+        mode?: 'implicit' | 'explicit';
+        prewarm?: boolean;
+        ttl?: '30m';
+    }
+    interface StreamOptions {
+        include_obfuscation?: boolean;
+    }
+    interface SpecificProgrammaticToolCallingParam {
+        type: 'programmatic_tool_calling';
+    }
+    type ResponseCreateParamsNonStreaming = ResponsesAPI.ResponseCreateParamsNonStreaming;
+    type ResponseCreateParamsStreaming = ResponsesAPI.ResponseCreateParamsStreaming;
+}
+```
+
+### Chat Completions: toàn bộ field body Tessar nhận ở provider
+
+```ts
+export interface ChatCompletionCreateParamsBase {
+    audio?: ChatCompletionAudioParam | null;
+    frequency_penalty?: number | null;
+    logit_bias?: {
+        [key: string]: number;
+    } | null;
+    logprobs?: boolean | null;
+    max_completion_tokens?: number | null;
+    max_tokens?: number | null;
+    metadata?: Shared.Metadata | null;
+    modalities?: Array<'text' | 'audio'> | null;
+    moderation?: ChatCompletionCreateParams.Moderation | null;
+    parallel_tool_calls?: boolean;
+    prediction?: ChatCompletionPredictionContent | null;
+    presence_penalty?: number | null;
+    prompt_cache_key?: string | null;
+    prompt_cache_options?: ChatCompletionCreateParams.PromptCacheOptions;
+    prompt_cache_retention?: 'in_memory' | '24h' | null;
+    reasoning_effort?: Shared.ReasoningEffort | null;
+    response_format?: Shared.ResponseFormatText | Shared.ResponseFormatJSONSchema | Shared.ResponseFormatJSONObject;
+    safety_identifier?: string | null;
+    seed?: number | null;
+    service_tier?: 'auto' | 'default' | 'flex' | 'scale' | 'priority' | 'fast' | null;
+    stop?: string | Array<string> | null;
+    store?: boolean | null;
+    stream_options?: ChatCompletionStreamOptions | null;
+    temperature?: number | null;
+    tool_choice?: ChatCompletionToolChoiceOption;
+    top_logprobs?: number | null;
+    top_p?: number | null;
+    user?: string;
+    verbosity?: 'low' | 'medium' | 'high' | null;
+    web_search_options?: ChatCompletionCreateParams.WebSearchOptions;
+}
+export declare namespace ChatCompletionCreateParams {
+    interface Function {
+        name: string;
+        description?: string;
+        parameters?: Shared.FunctionParameters;
+    }
+    interface Moderation {
+        model: string;
+        policy?: Moderation.Policy | null;
+    }
+    namespace Moderation {
+        interface Policy {
+            input?: Policy.Input | null;
+            output?: Policy.Output | null;
+        }
+        namespace Policy {
+            interface Input {
+                mode: 'score' | 'block';
+            }
+            interface Output {
+                mode: 'score' | 'block';
+            }
+        }
+    }
+    interface PromptCacheOptions {
+        mode?: 'implicit' | 'explicit';
+        ttl?: '30m';
+    }
+    interface WebSearchOptions {
+        search_context_size?: 'low' | 'medium' | 'high';
+        user_location?: WebSearchOptions.UserLocation | null;
+    }
+    namespace WebSearchOptions {
+        interface UserLocation {
+            approximate: UserLocation.Approximate;
+            type: 'approximate';
+        }
+        namespace UserLocation {
+            interface Approximate {
+                city?: string;
+                country?: string;
+                region?: string;
+                timezone?: string;
+            }
+        }
+    }
+    type ChatCompletionCreateParamsNonStreaming = ChatCompletionsAPI.ChatCompletionCreateParamsNonStreaming;
+    type ChatCompletionCreateParamsStreaming = ChatCompletionsAPI.ChatCompletionCreateParamsStreaming;
+}
+```
+
+Chat options bổ sung `n?: 1`; field model của hai protocol được cấu hình riêng. SDK namespace `ChatCompletionCreateParams` trong các type dưới đây dùng cho Chat Completions. `ResponseCreateParams` dùng cho Responses.
+
+### OpenAI nested option: Reasoning
+
+```ts
+export interface Reasoning {
+    context?: 'auto' | 'current_turn' | 'all_turns' | null;
+    effort?: ReasoningEffort | null;
+    generate_summary?: 'auto' | 'concise' | 'detailed' | null;
+    mode?: (string & {}) | 'standard' | 'pro';
+    summary?: 'auto' | 'concise' | 'detailed' | null;
+}
+```
+
+### OpenAI nested option: ReasoningEffort
+
+```ts
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+```
+
+### OpenAI nested option: ResponseFormatText
+
+```ts
+export interface ResponseFormatText {
+    type: 'text';
+}
+```
+
+### OpenAI nested option: ResponseFormatJSONObject
+
+```ts
+export interface ResponseFormatJSONObject {
+    type: 'json_object';
+}
+```
+
+### OpenAI nested option: ResponseFormatJSONSchema
+
+```ts
+export interface ResponseFormatJSONSchema {
+    json_schema: ResponseFormatJSONSchema.JSONSchema;
+    type: 'json_schema';
+}
+export declare namespace ResponseFormatJSONSchema {
+    interface JSONSchema {
+        name: string;
+        description?: string;
+        schema?: {
+            [key: string]: unknown;
+        };
+        strict?: boolean | null;
+    }
+}
+```
+
+### Responses nested option: ResponseTextConfig
+
+```ts
+export interface ResponseTextConfig {
+    format?: ResponseFormatTextConfig;
+    verbosity?: 'low' | 'medium' | 'high' | null;
+}
+```
+
+### Responses nested option: ResponseFormatTextConfig
+
+```ts
+export type ResponseFormatTextConfig = Shared.ResponseFormatText | ResponseFormatTextJSONSchemaConfig | Shared.ResponseFormatJSONObject;
+```
+
+### Responses nested option: ResponseFormatTextJSONSchemaConfig
+
+```ts
+export interface ResponseFormatTextJSONSchemaConfig {
+    name: string;
+    schema: {
+        [key: string]: unknown;
+    };
+    type: 'json_schema';
+    description?: string;
+    strict?: boolean | null;
+}
+```

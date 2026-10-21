@@ -1,3 +1,4 @@
+import { getThread } from "../src/state/thread-operations.js";
 import { randomUUID } from "node:crypto";
 import { stream as streamHooks, model as modelHooks } from "../src/index.js";
 import { expect, it } from "vitest";
@@ -77,7 +78,7 @@ it("uses default executable-model options through Controller and queued Session 
       let count = 0; session.subscribe(streamHooks.end, () => { if (++count === 2) resolve(); });
     });
     await session.followUp(new HumanMessage("one"));
-    await session.setModel({ ...model.ref, modelId: "second" });
+    await session.model.switch(model.ref.providerId + "/second");
     await session.followUp(new HumanMessage("two")); await done;
     expect(model.calls.map(call => call.model.modelId)).toEqual(["first", "second"]);
     expect(model.calls.map(call => call.options)).toEqual([model.options, model.options]);
@@ -137,7 +138,7 @@ it.each(["echo", "another"])("retains a per-call %s connection across suspension
     await controller.initialize();
     const result = await agent.generate("hello", { model: second });
     expect(result.status).toBe("suspended");
-    const thread = (await controller.getThread(result.threadId))!;
+    const thread = (await getThread(controller, result.threadId))!;
     for await (const _event of thread.stream({ recover: { streamId: result.streamId } })) {}
     for await (const _event of thread.stream({ resume: { interruptId: result.interrupt!.id, value: {} } })) {}
     expect((await thread.getStream(result.streamId))!.status).toBe("completed");
@@ -159,7 +160,7 @@ it.each(["resume", "recover"])("discards old connection options on a %s model ov
   try {
     await controller.initialize();
     const result = await agent.generate("hello");
-    const thread = (await controller.getThread(result.threadId))!;
+    const thread = (await getThread(controller, result.threadId))!;
     if (command === "recover")
       for await (const _event of thread.stream({ recover: { streamId: result.streamId }, model: other.ref })) {}
     for await (const _event of thread.stream({ resume: { interruptId: result.interrupt!.id, value: {} }, ...(command === "resume" ? { model: other.ref } : {}) })) {}

@@ -11,11 +11,7 @@ import { immutable, type Clock, type IdGenerator } from "./json.js";
 
 import type { AnyEvent, PayloadOf, ResultOf } from "./events/definition.js";
 import type { MessageData } from "./messages/message.js";
-import type {
-  ModelProviderRegistration,
-  ModelResponse,
-  ToolDescription,
-} from "./models/contract.js";
+import type { ModelResponse, ToolDescription } from "./models/contract.js";
 import type { CheckpointCause, RecordEntry } from "./state/schema.js";
 import {
   createModelAttempt,
@@ -25,7 +21,7 @@ import {
 } from "./trace/records.js";
 import { aggregateUsage } from "./trace/usage.js";
 import type { Tool } from "./tools/tool.js";
-import { ContextAssembler } from "./engine/context.js";
+import { buildContext } from "./engine/context.js";
 import { callTools } from "./engine/tool-executor.js";
 import {
   providerCall,
@@ -190,7 +186,7 @@ async function callModel(
   );
   if (selected.some((t) => !tools.some((tool) => tool.name === t.name)))
     fail("UnknownTool", "Tool selection includes unregistered tool");
-  let request = new ContextAssembler().build(
+  let request = buildContext(
     frame.cp,
     position.baseInstructions,
     selected,

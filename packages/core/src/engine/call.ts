@@ -9,11 +9,12 @@ import type {
 import { HumanMessage } from "../messages/message.js";
 import { MessageCodec } from "../messages/codec.js";
 import { fail, requireId, errorInfo } from "../errors.js";
-import { immutable, type JsonObject } from "../json.js";
+import { immutable } from "../json.js";
 import { isModelAdapter } from "../models/stream.js";
 import { snapshotModelOptions } from "../models/options.js";
 import type { ModelAdapter, ModelRef } from "../models/contract.js";
 import { ThreadService } from "../state/threads.js";
+import { prepareThread } from "../state/thread-operations.js";
 import { standaloneRuntime, type ExecutionRuntime } from "./runtime.js";
 import type { Stream } from "./delivery.js";
 import { retainStandalone } from "./continuation.js";
@@ -26,33 +27,32 @@ function chooseModel(
   agent: Agent<any>,
   selection: ModelSelection | string,
 ): { ref: ModelRef; adapter?: ModelAdapter } {
+  const model = agent.getModel();
   if (typeof selection === "string") {
     requireId(selection, "model id");
-    if (isModelAdapter(agent.model)) {
-      if (selection === agent.model.ref.modelId)
-        return { ref: agent.model.ref, adapter: agent.model };
-      if (!agent.model.withModel)
+    if (isModelAdapter(model)) {
+      if (selection === model.ref.modelId)
+        return { ref: model.ref, adapter: model };
+      if (!model.withModel)
         fail(
           "UnsupportedModelSelection",
           "This adapter does not support changing the model ID",
         );
-      const adapter = agent.model.withModel(selection);
+      const adapter = model.withModel(selection);
       return { ref: adapter.ref, adapter };
     }
-    return { ref: { ...modelRef(agent.model), modelId: selection } };
+    return { ref: { ...modelRef(model), modelId: selection } };
   }
   if (isModelAdapter(selection))
     return { ref: selection.ref, adapter: selection };
   const ref = modelRef(selection);
   if (
-    isModelAdapter(agent.model) &&
-    agent.model.ref.providerId === ref.providerId &&
-    agent.model.ref.connectionId === ref.connectionId
+    isModelAdapter(model) &&
+    model.ref.providerId === ref.providerId &&
+    model.ref.connectionId === ref.connectionId
   ) {
-    if (agent.model.ref.modelId === ref.modelId)
-      return { ref, adapter: agent.model };
-    if (agent.model.withModel)
-      return { ref, adapter: agent.model.withModel(ref.modelId) };
+    if (model.ref.modelId === ref.modelId) return { ref, adapter: model };
+    if (model.withModel) return { ref, adapter: model.withModel(ref.modelId) };
   }
   return { ref };
 }
@@ -63,8 +63,8 @@ export function callAgent(
   options: AgentExecutionOptions<any>,
   controller?: Controller,
 ): Stream {
-  const selected = chooseModel(agent, options.model ?? agent.model);
-  const runtime = controller ?? standaloneRuntime(agent.id, agent.tools);
+  const selected = chooseModel(agent, options.model ?? agent.getModel());
+  const runtime = controller ?? standaloneRuntime(agent.id, agent.listTool());
   let lifecycle: ReturnType<typeof retainStandalone> | undefined;
   try {
     controller?.requireReady();
@@ -129,9 +129,9 @@ export function callAgent(
       : retainStandalone(agent, threadId, runtime);
     const prepare = controller
       ? () =>
-          controller
-            .prepareThread({ scope: options.scope }, threadId)
-            .then(() => {})
+          prepareThread(controller, { scope: options.scope }, threadId).then(
+            () => {},
+          )
       : () =>
           new ThreadService(runtime.backend, {
             next: (kind) =>

@@ -35,7 +35,7 @@ it("keeps suspended state when its required policy plugin is removed",async()=>{
  const harness=await AgentHarness.create({plugins:[{id:"policy",setup(tessar){tessar.interruptions.register(Question);tessar.hook(streamHooks.before,(_event,context)=>context.suspend(Question,{}));}}]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
-  const events=await harness.collect(stream),interrupt=events.find(e=>e.is(streamHooks.suspended))!.payload.interrupt;
+  const events=await harness.collect(stream),interrupt=events.find(e=>e.type === streamHooks.suspended)!.payload.interrupt;
   await harness.registry.detach("policy");
   const errorCode=await harness.collect(harness.admit({kind:"resume",threadId:thread.id,interruptId:interrupt.id,value:{}})).then(()=>null,error=>error.code);
   expect(errorCode).toBe("ResumeIncompatible");
@@ -64,7 +64,7 @@ it("rejects changed plugin configuration before consuming a pending response",as
  const harness=await AgentHarness.create({modelScripts:[{text:"done"}],plugins:[plugin("original")]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
-  const events=await harness.collect(stream),interrupt=events.find(e=>e.is(streamHooks.suspended))!.payload.interrupt;
+  const events=await harness.collect(stream),interrupt=events.find(e=>e.type === streamHooks.suspended)!.payload.interrupt;
   await harness.registry.detach("configured");await harness.registry.attach(plugin("changed"));
   await expect(harness.collect(harness.admit({kind:"resume",threadId:thread.id,interruptId:interrupt.id,value:{}}))).rejects.toMatchObject({code:"ResumeIncompatible"});
   expect((await harness.queries.getInterrupt(thread.id,interrupt.id))!.status).toBe("pending");

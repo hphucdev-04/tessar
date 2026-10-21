@@ -10,12 +10,7 @@ import {
   type PluginStateDefinition,
 } from "../state/plugin-state.js";
 import type { Lease } from "../state/storage-ports.js";
-import type {
-  Checkpoint,
-  CheckpointCause,
-  RecordEntry,
-  StreamLimits,
-} from "../state/schema.js";
+import type { Checkpoint, RecordEntry, StreamLimits } from "../state/schema.js";
 import type { StreamRecord } from "../trace/records.js";
 import type { LoopContext } from "../loop.js";
 import type { Attachment } from "./delivery.js";

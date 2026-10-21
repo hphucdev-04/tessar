@@ -60,7 +60,7 @@ scheduling limit. Tools are authorized before dispatch; results enter the
 conversation in call order after the executions complete. Execution budgets
 such as `limits.maxToolCalls` still apply.
 
-`Agent.model` is required. `stream(message, options?)` and
+The Agent constructor's `model` option is required; read it with `agent.getModel()`. `stream(message, options?)` and
 `generate(message, options?)` accept a string, a message, or message history.
 Each direct call has independent context and automatic per-execution cleanup.
 Use a Session when the host needs a continuing conversation.
@@ -139,7 +139,7 @@ tessar.hook(session.model.beforeChange, event => console.log(event.payload.model
 Keys start lowercase and use camelCase for hyphens in the string identifier:
 `thread.beforeDelete === "thread.before-delete"`. There is no `events` prefix.
 The old `AgentEvents` and `SessionEvents` exports are replaced by these groups.
-Session selection policies are asynchronous: use `await session.setModel(model)`
+Session selection policies are asynchronous: use `await session.model.switch(modelId, options)`
 before queuing input that should use the new model. See
 [plugin authoring](../../docs/plugin-authoring.md) for decisions and capabilities.
 
@@ -168,9 +168,16 @@ not a persistence key. Session creation notifications are available to Controlle
 plugins; subscribe on the returned handle for subsequent events. Restoration
 does not emit another `session.created` notification.
 
-`controller.deleteThread` is a soft delete. `controller.purgeThread` permanently
+`session.thread.delete()` is a soft delete. `session.thread.purge({ threadId })` permanently
 removes only a deleted, inactive, unowned thread with no retained fork referencing
 it. Both invoke thread deletion policy; purge supplies `permanent: true`.
+
+Controller owns lifecycle, plugins and Session creation/restoration/listing.
+Model selection and thread CRUD belong to Session. Use `session.model.get()`
+for the full provider/model ID, `name()` for its native ID, and `list()` for
+readonly `{ id, name, profile }` entries. `switch(id, options?)` replaces previous
+Session overrides with destination defaults plus the supplied shallow options.
+Already accepted input keeps its model/options snapshot.
 
 Storage adapter authors must implement the new `sessions` CAS port, backend page
 and history queries, `threads.get(..., { includeDeleted })` and `threads.purge`.

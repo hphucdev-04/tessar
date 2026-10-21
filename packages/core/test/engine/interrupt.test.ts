@@ -17,7 +17,7 @@ it("suspends durably, validates before consume, and resumes past previous handle
  ]});
  try{
   const thread=await harness.createThread(),first=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("write"))],model:{providerId:"scripted",modelId:"test"}});
-  const events=await harness.collect(first),pending=events.find(e=>e.is(streamHooks.suspended))!;
+  const events=await harness.collect(first),pending=events.find(e=>e.type === streamHooks.suspended)!;
   expect(pending).toBeDefined();expect(executions).toBe(0);expect(before).toBe(1);
   const interruptId=pending.payload.interrupt.id;
   await expect(harness.collect(harness.admit({kind:"resume",threadId:thread.id,interruptId,value:{approved:"wrong"}}))).rejects.toMatchObject({code:"InvalidResumeResponse"});
@@ -39,7 +39,7 @@ it.each([streamHooks.before,modelHooks.select,turnHooks.decision,modelHooks.reco
  const harness=await AgentHarness.create({modelScripts:boundary===modelHooks.recover?[{error:new TessarError("ProviderError","fixture failure")},{text:"done"}]:[{text:"done"}],plugins:[{id:"boundary",setup(tessar){tessar.interruptions.register(Resume);tessar.hook(boundary,(_event,context)=>{asks++;return context.suspend(Resume,{});});}}]});
  try{
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
-  const events=await harness.collect(stream),request=events.find(e=>e.is(streamHooks.suspended))!.payload.interrupt;
+  const events=await harness.collect(stream),request=events.find(e=>e.type === streamHooks.suspended)!.payload.interrupt;
   await harness.collect(harness.admit({kind:"resume",threadId:thread.id,interruptId:request.id,value:{approved:true}}));
   expect(asks).toBe(1);expect((await harness.records(stream.id!)).stream.status).toBe("completed");
  }finally{await harness.dispose();}

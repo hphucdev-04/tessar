@@ -92,13 +92,19 @@ markers, history breakpoints or cache policy. Stable sections can precede changi
 sections using `order`; native cache options pass through only when configured.
 Cache hits still depend on the endpoint/model and the actual prompt prefix.
 
-`model.profile` reads a cached/bundled metadata snapshot without starting network
+`model.profile()` reads a cached/bundled metadata snapshot without starting network
 requests. `await model.refreshProfile()` explicitly refreshes provider metadata;
 metadata may be incomplete and carries provenance.
 
-OpenAIAdapter and OpenAIPlugin remain available for existing Controller/provider
-registrations. Passing an executable model to Controller already registers its
-provider; do not additionally register the same provider ID with a plugin.
+`OpenAIProvider` and `OpenAIPlugin` are the public runtime exports. The low-level
+adapters are internal implementations. `OpenAIAPI`, `OpenAIProviderOptions`,
+`OpenAIModelOptions`, `OpenAIChatModelOptions` and `OpenAIOptions` remain public
+types for application configuration. For example, `OpenAIAPI` describes
+`"responses" | "chat-completions"`; importing it does not load a runtime value.
+
+`OpenAIPlugin` registers a provider with a Controller. Passing an executable model
+to Controller already registers its provider; do not additionally register the
+same provider ID with a plugin.
 
 Each new provider has a separate opaque connection identity; `withModel()` keeps
 the existing client and identity. In-process suspension retains a per-call

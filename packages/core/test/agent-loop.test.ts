@@ -51,7 +51,7 @@ it("runs model tools model with committed trace and one terminal event",async()=
   expect(records.turns).toHaveLength(2);expect(records.attempts).toHaveLength(2);
   expect(records.messages.map(m=>m.role)).toEqual(["user","assistant","tool","assistant"]);
   expect(records.stream!.status).toBe("completed");
-  expect(events.filter(e=>e.is(streamHooks.end))).toHaveLength(1);
+  expect(events.filter(e=>e.type === streamHooks.end)).toHaveLength(1);
  }finally{await harness.dispose();}
 });
 it("handles input in a plugin without a model attempt",async()=>{
@@ -74,7 +74,7 @@ it("stops a tool batch at the hard limit without dispatching the remainder or en
   const thread=await harness.createThread(),stream=harness.admit({kind:"input",threadId:thread.id,input:[MessageCodec.encode(new HumanMessage("ask"))],model:{providerId:"scripted",modelId:"test"}});
   const events=await harness.collect(stream);
   expect(calls).toBe(1);expect((await harness.records(stream.id!)).stream!.status).toBe("stopped");
-  expect(events.filter(e=>e.is(streamHooks.end))).toHaveLength(1);
+  expect(events.filter(e=>e.type === streamHooks.end)).toHaveLength(1);
  }finally{await harness.dispose();}
 });
 it("commits required-finalizer failure as failed and preserves completed model usage",async()=>{

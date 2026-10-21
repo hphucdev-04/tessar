@@ -16,15 +16,23 @@ import {
   type ExecutionReceipt,
   type QueuedInputReceipt,
 } from "./events/type.js";
-import { errorInfo, errorFromInfo, fail, type ErrorInfo } from "./errors.js";
+import {
+  errorInfo,
+  errorFromInfo,
+  fail,
+  requireId,
+  type ErrorInfo,
+} from "./errors.js";
 import {
   immutable,
   randomIds,
   type JsonValue,
   type JsonObject,
 } from "./json.js";
-import { inputMessages } from "./agent.js";
-import type { Model } from "./models/profile.js";
+import { inputMessages } from "./messages/codec.js";
+import type { Model, ModelProfile } from "./models/profile.js";
+import type { ModelRegistry } from "./models/registry.js";
+import { snapshotModelOptions } from "./models/options.js";
 import type { ModelRef } from "./models/contract.js";
 import type { MessageData } from "./messages/message.js";
 import type { Scope, PageOptions, SessionRecord } from "./state/schema.js";
@@ -33,12 +41,29 @@ import type { CreateThreadOptions } from "./state/threads.js";
 import type { ForkOptions } from "./state/fork.js";
 import type { HistoryOptions } from "./state/queries.js";
 import type { Stream } from "./engine/delivery.js";
+import {
+  createThread,
+  getThread,
+  listThreads,
+  renameThread,
+  forkThread,
+  deleteThread,
+  purgeThread,
+} from "./state/thread-operations.js";
 export interface SessionOptions {
   scope?: Scope;
   model?: Model | ModelRef;
   metadata?: JsonObject;
 }
-export type SessionThreadOptions = Omit<CreateThreadOptions, "scope">;
+export type SessionThreadOptions = Pick<
+  CreateThreadOptions,
+  "title" | "messages" | "metadata"
+>;
+export interface SessionModelInfo {
+  readonly id: string;
+  readonly name: string;
+  readonly profile: Readonly<ModelProfile>;
+}
 export interface ThreadTarget {
   threadId?: string;
 }
@@ -63,10 +88,13 @@ interface Foreground {
 
 export class Session {
   readonly agent;
-  readonly scope: Scope;
+  private readonly sessionScope: Scope;
   readonly id: string;
-  get metadata(): JsonObject {
+  metadata(): JsonObject {
     return this.record.metadata;
+  }
+  scope(): Scope {
+    return this.sessionScope;
   }
   private selection: Thread | null = null;
   private selectedModel: Model;
@@ -93,22 +121,33 @@ export class Session {
     }
   }
 
-  constructor(
+  /** @internal */
+  static create(
+    controller: Controller,
+    record: SessionRecord,
+    model: Model,
+    modelCatalog: ModelRegistry,
+    thread: Thread | null = null,
+  ): Session {
+    return new Session(controller, record, model, modelCatalog, thread);
+  }
+  private constructor(
     readonly controller: Controller,
     private record: SessionRecord,
     model: Model,
+    private readonly modelCatalog: ModelRegistry,
     thread: Thread | null = null,
   ) {
     controller.requireReady();
     this.agent = controller.agent;
-    this.scope = record.scope;
+    this.sessionScope = record.scope;
     this.id = record.id;
     this.selection = thread;
     this.selectedModel = model;
   }
   /** @internal Called only after durable creation, never on restoration. */
   created(): void {
-    this.notify(sessionHooks.created, { model: this.model.ref });
+    this.notify(sessionHooks.created, { model: this.selectedModel.ref });
   }
   private async persist(
     patch: Partial<Pick<SessionRecord, "selectedThreadId" | "selectedModel">>,
@@ -129,7 +168,7 @@ export class Session {
   private async assertCurrent(): Promise<void> {
     const expected = this.record;
     const stored = await this.controller.backend.sessions.get(this.id, {
-      scope: this.scope,
+      scope: this.scope(),
     });
     this.check();
     if (
@@ -139,8 +178,30 @@ export class Session {
     )
       fail("CommitConflict", "Session changed; restore a current handle");
   }
-  get model(): Model {
-    return this.selectedModel;
+  readonly model = Object.freeze({
+    get: (): string => this.modelId(this.selectedModel.ref),
+    name: (): string => this.selectedModel.ref.modelId,
+    list: (): readonly SessionModelInfo[] => {
+      this.check();
+      const models = new Map(
+        this.modelCatalog
+          .list()
+          .map((model) => [this.modelId(model.ref), model]),
+      );
+      models.set(this.model.get(), this.selectedModel);
+      return immutable(
+        [...models].map(([id, model]) => ({
+          id,
+          name: model.ref.modelId,
+          profile: model.profile(),
+        })),
+      );
+    },
+    switch: (modelId: string, options?: JsonObject): Promise<void> =>
+      this.switchModel(modelId, options),
+  });
+  private modelId(ref: ModelRef): string {
+    return ref.providerId + "/" + ref.modelId;
   }
   private check(): void {
     this.controller.requireReady();
@@ -154,32 +215,86 @@ export class Session {
     this.check();
     if (this.busy) fail("SessionBusy", "Session has active work");
   }
+  private checkThreadSelectionChange(): void {
+    this.checkSelectionChange();
+    if (this.queue.length) fail("SessionBusy", "Session has queued input");
+  }
   private selected(id?: string): string {
     const value = id ?? this.selection?.id;
     if (!value) fail("ThreadNotSelected", "Select or create a Thread first");
     return value;
   }
   private async target(id?: string): Promise<Thread> {
-    const thread = await this.controller.getThread(this.selected(id), {
-      scope: this.scope,
+    const thread = await getThread(this.controller, this.selected(id), {
+      scope: this.scope(),
     });
     if (!thread) fail("ThreadNotFound", "Thread does not match Session scope");
     return thread;
   }
-  setModel(model: Model | ModelRef): Promise<void> {
+  private switchModel(modelId: string, options?: JsonObject): Promise<void> {
     return this.control(async () => {
-      const previous = this.model.ref,
-        selected = this.controller.sessionModel(model),
+      requireId(modelId, "model id");
+      if (
+        options !== undefined &&
+        (!options || typeof options !== "object" || Array.isArray(options))
+      )
+        fail("InvalidConfiguration", "Model options must be an object");
+      for (const key of [
+        "api",
+        "model",
+        "input",
+        "messages",
+        "instructions",
+        "tools",
+        "stream",
+        "apiKey",
+        "baseURL",
+        "defaultHeaders",
+        "maxRetries",
+        "timeout",
+        "connectionId",
+      ])
+        if (options && key in options)
+          fail("UnsupportedOption", key + " is not a model option");
+      const previous = this.selectedModel.ref;
+      const slash = modelId.indexOf("/");
+      const ref =
+        slash < 0
+          ? { ...previous, modelId }
+          : modelId.slice(0, slash) === previous.providerId
+            ? { ...previous, modelId: modelId.slice(slash + 1) }
+            : {
+                providerId: modelId.slice(0, slash),
+                modelId: modelId.slice(slash + 1),
+              };
+      const selected = this.controller.sessionModel(ref),
         next = selected.model;
+      const effective =
+        options === undefined
+          ? selected.stored.options
+          : snapshotModelOptions({ ...selected.stored.options, ...options });
+      const payload = immutable({
+        previous,
+        model: next.ref,
+        ...(this.record.selectedModel.options !== undefined
+          ? { previousOptions: this.record.selectedModel.options }
+          : {}),
+        ...(effective !== undefined ? { options: effective } : {}),
+      });
       await this.controller.hooks.authorize(
         sessionHooks.model.beforeChange,
-        immutable({ previous, model: next.ref }),
+        payload,
         this.context(),
       );
       this.check();
-      await this.persist({ selectedModel: selected.stored });
+      await this.persist({
+        selectedModel: {
+          ...selected.stored,
+          ...(effective !== undefined ? { options: effective } : {}),
+        },
+      });
       this.selectedModel = next;
-      this.notify(sessionHooks.modelChanged, { previous, model: next.ref });
+      this.notify(sessionHooks.modelChanged, payload);
     });
   }
   subscribe(observer: Observer): () => void;
@@ -213,7 +328,7 @@ export class Session {
       sessionId: this.id,
       controllerId: this.controller.id,
       agentId: this.agent.id,
-      scope: this.scope,
+      scope: this.scope(),
       threadId: this.selection?.id,
       sequence: ++this.sequence,
       timestamp: new Date().toISOString(),
@@ -229,12 +344,25 @@ export class Session {
   readonly thread = {
     create: (options: SessionThreadOptions = {}): Promise<Thread> =>
       this.control(async () => {
-        this.checkSelectionChange();
-        const thread = await this.controller.createThread({
-          ...options,
-          scope: this.scope,
-        });
-        this.checkSelectionChange();
+        this.checkThreadSelectionChange();
+        if (
+          Object.keys(options).some(
+            (key) => !["title", "messages", "metadata"].includes(key),
+          )
+        )
+          fail(
+            "InvalidConfiguration",
+            "Thread creation accepts title, messages and metadata only",
+          );
+        const thread = await createThread(
+          this.controller,
+          {
+            ...options,
+            scope: this.scope(),
+          },
+          this,
+        );
+        this.checkThreadSelectionChange();
         await this.persist({ selectedThreadId: thread.id });
         this.selection = thread;
         this.notify(sessionHooks.threadCreated, { threadId: thread.id });
@@ -242,18 +370,18 @@ export class Session {
       }),
     switch: (id: string): Promise<Thread> =>
       this.control(async () => {
-        this.checkSelectionChange();
+        this.checkThreadSelectionChange();
         const thread = await this.target(id);
-        this.checkSelectionChange();
+        this.checkThreadSelectionChange();
         const previousThreadId = this.selection?.id ?? null;
         await this.controller.hooks.authorize(
           sessionHooks.thread.beforeSwitch,
           immutable({ previousThreadId, threadId: id }),
           this.context(),
         );
-        this.checkSelectionChange();
+        this.checkThreadSelectionChange();
         const snapshot = await thread.snapshot();
-        this.checkSelectionChange();
+        this.checkThreadSelectionChange();
         await this.persist({ selectedThreadId: thread.id });
         this.selection = thread;
         if (snapshot.activeStreamId) this.blocked.add(id);
@@ -266,28 +394,39 @@ export class Session {
       }),
     get: (id: string): Promise<Thread | null> => {
       this.check();
-      return this.controller.getThread(id, { scope: this.scope });
+      return getThread(this.controller, id, { scope: this.scope() });
     },
     getId: (): string | null => this.selection?.id ?? null,
     list: (options: PageOptions = {}) => {
       this.check();
-      return this.controller.listThreads({ ...options, scope: this.scope });
+      return listThreads(this.controller, { ...options, scope: this.scope() });
     },
     rename: (title: string, target: ThreadTarget = {}): Promise<void> =>
       this.control(async () => {
         this.check();
         const id = this.selected(target.threadId);
-        await this.controller.renameThread(id, title, { scope: this.scope });
+        await renameThread(
+          this.controller,
+          id,
+          title,
+          { scope: this.scope() },
+          this,
+        );
         this.notify(sessionHooks.threadRenamed, { threadId: id, title });
       }),
     fork: (options: ForkOptions & ThreadTarget = {}): Promise<Thread> =>
       this.control(async () => {
         this.check();
         const sourceThreadId = this.selected(options.threadId),
-          thread = await this.controller.forkThread(sourceThreadId, {
-            ...options,
-            scope: this.scope,
-          });
+          thread = await forkThread(
+            this.controller,
+            sourceThreadId,
+            {
+              ...options,
+              scope: this.scope(),
+            },
+            this,
+          );
         this.notify(sessionHooks.threadForked, {
           sourceThreadId,
           threadId: thread.id,
@@ -295,38 +434,50 @@ export class Session {
         return thread;
       }),
     delete: (target: ThreadTarget = {}): Promise<void> =>
-      this.control(async () => {
-        this.check();
-        const id = this.selected(target.threadId);
-        await this.controller.deleteThread(id, { scope: this.scope });
-        const stored = await this.controller.backend.sessions.get(this.id, {
-          scope: this.scope,
-        });
-        const expected = {
-          ...this.record,
-          selectedThreadId:
-            this.record.selectedThreadId === id
-              ? null
-              : this.record.selectedThreadId,
-          revision:
-            this.record.revision +
-            (this.record.selectedThreadId === id ? 1 : 0),
-          updatedAt: stored?.updatedAt,
-        };
-        if (!stored || canonicalJson(stored) !== canonicalJson(expected))
-          fail(
-            "CommitConflict",
-            "Session changed during thread deletion; restore a current handle",
-          );
-        this.record = stored;
-        if (this.selection?.id === id) this.selection = null;
-        this.notify(sessionHooks.threadDeleted, { threadId: id });
-      }),
+      this.removeThread(target, false),
+    purge: (target: ThreadTarget = {}): Promise<void> =>
+      this.removeThread(target, true),
     getHistory: async (options: HistoryOptions & ThreadTarget = {}) => {
       this.check();
       return (await this.target(options.threadId)).getHistory(options);
     },
   };
+  private removeThread(
+    target: ThreadTarget,
+    permanent: boolean,
+  ): Promise<void> {
+    return this.control(async () => {
+      this.check();
+      const id = this.selected(target.threadId);
+      await (permanent ? purgeThread : deleteThread)(
+        this.controller,
+        id,
+        { scope: this.scope() },
+        this,
+      );
+      const stored = await this.controller.backend.sessions.get(this.id, {
+        scope: this.scope(),
+      });
+      const expected = {
+        ...this.record,
+        selectedThreadId:
+          this.record.selectedThreadId === id
+            ? null
+            : this.record.selectedThreadId,
+        revision:
+          this.record.revision + (this.record.selectedThreadId === id ? 1 : 0),
+        updatedAt: stored?.updatedAt,
+      };
+      if (!stored || canonicalJson(stored) !== canonicalJson(expected))
+        fail(
+          "CommitConflict",
+          "Session changed during thread deletion; restore a current handle",
+        );
+      this.record = stored;
+      if (this.selection?.id === id) this.selection = null;
+      this.notify(sessionHooks.threadDeleted, { threadId: id });
+    });
+  }
   async followUp(
     input: MessageData | readonly MessageData[],
   ): Promise<QueuedInputReceipt> {
@@ -431,11 +582,11 @@ export class Session {
             },
             rejected,
             observe: (event) => {
-              if (event.is(streamHooks.end))
+              if (event.type === streamHooks.end)
                 foreground.status = event.payload.status;
-              if (event.is(streamHooks.suspended))
+              if (event.type === streamHooks.suspended)
                 foreground.status = "suspended";
-              if (event.is(streamHooks.error))
+              if (event.type === streamHooks.error)
                 foreground.status = event.payload.persistedStatus ?? "failed";
               this.emit(event);
             },

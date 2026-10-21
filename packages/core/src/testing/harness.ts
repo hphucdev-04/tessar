@@ -22,10 +22,10 @@ export class AgentHarness {
     readonly provider: ScriptedProvider,
     readonly backend: StorageBackend,
   ) {}
-  get registry() {
+  /** @internal */ get registry() {
     return this.controller.hooks;
   }
-  get queries() {
+  /** @internal */ get queries() {
     return this.controller.queries;
   }
   static async create(
@@ -82,7 +82,8 @@ export class AgentHarness {
     const events = [];
     for await (const event of stream) {
       events.push(event);
-      if (event.is(streamHooks.error)) throw errorFromInfo(event.payload.error);
+      if (event.type === streamHooks.error)
+        throw errorFromInfo(event.payload.error);
     }
     return events;
   }

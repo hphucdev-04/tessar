@@ -48,6 +48,22 @@ ties. Put stable sections before changing sections to keep their prompt prefix
 stable. Sections are composed into one instruction string by the OpenAI adapter,
 rather than becoming one system message each. Caching depends on the endpoint.
 
+## Read the Agent configuration
+
+These synchronous methods work without a Controller or initialization:
+
+```ts
+const configuredTools = agent.listTool(); // readonly Tool[]
+const defaultModel = agent.getModel(); // Preserves the configured model's type.
+const baseInstruction = agent.getInstruction(); // Instruction with ordered sections.
+const configuredLimits = agent.limits(); // StreamLimits including loop defaults.
+```
+
+They return the Agent's constructor configuration. Per-execution model overrides,
+plugin tool registrations and instruction hook transformations do not change
+these defaults. Read `baseInstruction.sections` for the structured instruction;
+it is not a provider-formatted prompt string.
+
 ## Supply conversation messages yourself
 
 Direct calls do not automatically share history. This snippet explicitly passes
@@ -105,6 +121,6 @@ if (process.env.COMPATIBLE_API_KEY && process.env.COMPATIBLE_MODEL &&
 Choose the protocol your endpoint supports. Responses and Chat Completions have
 different native option names; see [the provider reference](../../packages/openai/README.md).
 SDK client settings such as `timeout`, `maxRetries` and `defaultHeaders` belong
-in the provider constructor. Reading `model.profile` returns a metadata snapshot;
+in the provider constructor. Calling `model.profile()` returns a metadata snapshot;
 `await model.refreshProfile()` explicitly refreshes it. Missing metadata fields
 can be `null`.
