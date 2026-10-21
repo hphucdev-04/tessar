@@ -12,7 +12,7 @@ export function inputMessages(
   input: MessageData | readonly MessageData[],
 ): readonly MessageData[] {
   const values = Array.isArray(input) ? input : [input];
-  return values.map(value =>
+  return values.map((value) =>
     MessageCodec.encode(MessageCodec.decode(MessageCodec.encode(value))),
   );
 }

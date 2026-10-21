@@ -11,10 +11,7 @@ import { immutable, type Clock, type IdGenerator } from "./json.js";
 
 import type { AnyEvent, PayloadOf, ResultOf } from "./events/definition.js";
 import type { MessageData } from "./messages/message.js";
-import type {
-  ModelResponse,
-  ToolDescription,
-} from "./models/contract.js";
+import type { ModelResponse, ToolDescription } from "./models/contract.js";
 import type { CheckpointCause, RecordEntry } from "./state/schema.js";
 import {
   createModelAttempt,

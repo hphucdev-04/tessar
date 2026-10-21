@@ -172,7 +172,10 @@ export class Thread {
       );
     return fail("InvalidConfiguration", "Choose input, resume or recover");
   }
-  /** @internal */ async cancelStream(streamId: string, reason?: string): Promise<void> {
+  /** @internal */ async cancelStream(
+    streamId: string,
+    reason?: string,
+  ): Promise<void> {
     this.check();
     await this.query.requireThread(this.id, this.filter);
     await this.controller.agent.cancel(this.id, streamId, reason, undefined, {
