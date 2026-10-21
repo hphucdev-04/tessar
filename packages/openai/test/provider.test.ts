@@ -20,7 +20,7 @@ it("forwards native options and headers without adding undeclared provider defau
     calls.push({ url: String(url), body: JSON.parse(init.body), headers: new Headers(init.headers) }); return completed();
   } });
   expect(calls).toHaveLength(0);
-  expect(model.profile.modelId).toBe("fixture");
+  expect(model.profile().modelId).toBe("fixture");
   expect(calls).toHaveLength(0);
   const result = await new Agent({ id: randomUUID(), model }).generate("hello");
   expect(result.output[0]!.content[0]).toMatchObject({ text: "ok" });

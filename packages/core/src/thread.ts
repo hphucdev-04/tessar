@@ -47,14 +47,21 @@ export type ThreadStreamOptions = {
 );
 export class Thread {
   readonly id: string;
-  readonly scope: Scope;
+  private readonly threadScope: Scope;
   private disposed = false;
-  constructor(
+  /** @internal */
+  static create(controller: Controller, info: ThreadInfo): Thread {
+    return new Thread(controller, info);
+  }
+  private constructor(
     private readonly controller: Controller,
     info: ThreadInfo,
   ) {
     this.id = info.id;
-    this.scope = immutable(info.scope);
+    this.threadScope = immutable(info.scope);
+  }
+  scope(): Scope {
+    return this.threadScope;
   }
   private check(): void {
     this.controller.requireReady();
@@ -65,7 +72,7 @@ export class Thread {
     return this.controller.queries;
   }
   private get filter() {
-    return { scope: this.scope };
+    return { scope: this.scope() };
   }
   async snapshot() {
     const cp = await this.query.snapshot(this.id, this.filter),
@@ -189,7 +196,7 @@ export class Thread {
       controllerId: this.controller.id,
       agentId: this.controller.agent.id,
       threadId: this.id,
-      scope: this.scope,
+      scope: this.scope(),
     };
     await this.controller.hooks.dispatch(
       threadHooks.beforeShutdown,

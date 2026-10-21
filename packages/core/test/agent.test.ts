@@ -6,7 +6,7 @@ import {fixture,fixtureRef} from "./test-fixture.js";
 it("delegates stream and generate to canonical execution and preserves default selection",async()=>{
  const {agent,controller,provider}=await fixture([{text:"first",usage:{inputTokens:5,outputTokens:3}},{text:"second"}]);
  try{const outcome=await agent.generate(new HumanMessage("ask"), {model:{...fixtureRef,modelId:"alternate"},scope:{user:"u"}});expect(outcome.status).toBe("completed");expect(outcome.output[0]!.content[0]).toMatchObject({text:"first"});expect(outcome.usage.metrics.outputTokens.knownTotal).toBe(3);
- const stream=agent.stream(new HumanMessage("next"));const events=[];for await(const event of stream)events.push(event);expect(events.some(e=>e.type === streamHooks.end)).toBe(true);expect(provider.calls.map(c=>c.model.modelId)).toEqual(["alternate","test"]);expect((await getThread(controller, outcome.threadId))!.scope).toEqual({user:"u"});}finally{await controller.dispose();}
+ const stream=agent.stream(new HumanMessage("next"));const events=[];for await(const event of stream)events.push(event);expect(events.some(e=>e.type === streamHooks.end)).toBe(true);expect(provider.calls.map(c=>c.model.modelId)).toEqual(["alternate","test"]);expect((await getThread(controller, outcome.threadId))!.scope()).toEqual({user:"u"});}finally{await controller.dispose();}
 });
 it("returns suspended generate with durable interrupt and does not wait for a response",async()=>{
  const approval=defineInterruption({id:"ask",version:1,response:{jsonSchema:{type:"boolean"},parse:v=>Boolean(v)},resolve:()=>ToolDecision.allow()});

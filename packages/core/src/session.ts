@@ -88,10 +88,13 @@ interface Foreground {
 
 export class Session {
   readonly agent;
-  readonly scope: Scope;
+  private readonly sessionScope: Scope;
   readonly id: string;
-  get metadata(): JsonObject {
+  metadata(): JsonObject {
     return this.record.metadata;
+  }
+  scope(): Scope {
+    return this.sessionScope;
   }
   private selection: Thread | null = null;
   private selectedModel: Model;
@@ -118,7 +121,17 @@ export class Session {
     }
   }
 
-  constructor(
+  /** @internal */
+  static create(
+    controller: Controller,
+    record: SessionRecord,
+    model: Model,
+    modelCatalog: ModelRegistry,
+    thread: Thread | null = null,
+  ): Session {
+    return new Session(controller, record, model, modelCatalog, thread);
+  }
+  private constructor(
     readonly controller: Controller,
     private record: SessionRecord,
     model: Model,
@@ -127,7 +140,7 @@ export class Session {
   ) {
     controller.requireReady();
     this.agent = controller.agent;
-    this.scope = record.scope;
+    this.sessionScope = record.scope;
     this.id = record.id;
     this.selection = thread;
     this.selectedModel = model;
@@ -155,7 +168,7 @@ export class Session {
   private async assertCurrent(): Promise<void> {
     const expected = this.record;
     const stored = await this.controller.backend.sessions.get(this.id, {
-      scope: this.scope,
+      scope: this.scope(),
     });
     this.check();
     if (
@@ -180,7 +193,7 @@ export class Session {
         [...models].map(([id, model]) => ({
           id,
           name: model.ref.modelId,
-          profile: model.profile,
+          profile: model.profile(),
         })),
       );
     },
@@ -213,7 +226,7 @@ export class Session {
   }
   private async target(id?: string): Promise<Thread> {
     const thread = await getThread(this.controller, this.selected(id), {
-      scope: this.scope,
+      scope: this.scope(),
     });
     if (!thread) fail("ThreadNotFound", "Thread does not match Session scope");
     return thread;
@@ -315,7 +328,7 @@ export class Session {
       sessionId: this.id,
       controllerId: this.controller.id,
       agentId: this.agent.id,
-      scope: this.scope,
+      scope: this.scope(),
       threadId: this.selection?.id,
       sequence: ++this.sequence,
       timestamp: new Date().toISOString(),
@@ -345,7 +358,7 @@ export class Session {
           this.controller,
           {
             ...options,
-            scope: this.scope,
+            scope: this.scope(),
           },
           this,
         );
@@ -381,12 +394,12 @@ export class Session {
       }),
     get: (id: string): Promise<Thread | null> => {
       this.check();
-      return getThread(this.controller, id, { scope: this.scope });
+      return getThread(this.controller, id, { scope: this.scope() });
     },
     getId: (): string | null => this.selection?.id ?? null,
     list: (options: PageOptions = {}) => {
       this.check();
-      return listThreads(this.controller, { ...options, scope: this.scope });
+      return listThreads(this.controller, { ...options, scope: this.scope() });
     },
     rename: (title: string, target: ThreadTarget = {}): Promise<void> =>
       this.control(async () => {
@@ -396,7 +409,7 @@ export class Session {
           this.controller,
           id,
           title,
-          { scope: this.scope },
+          { scope: this.scope() },
           this,
         );
         this.notify(sessionHooks.threadRenamed, { threadId: id, title });
@@ -410,7 +423,7 @@ export class Session {
             sourceThreadId,
             {
               ...options,
-              scope: this.scope,
+              scope: this.scope(),
             },
             this,
           );
@@ -439,11 +452,11 @@ export class Session {
       await (permanent ? purgeThread : deleteThread)(
         this.controller,
         id,
-        { scope: this.scope },
+        { scope: this.scope() },
         this,
       );
       const stored = await this.controller.backend.sessions.get(this.id, {
-        scope: this.scope,
+        scope: this.scope(),
       });
       const expected = {
         ...this.record,

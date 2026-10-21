@@ -101,7 +101,7 @@ export class ModelRegistry {
     const resolver = this.resolver;
     const model: Model = Object.freeze({
       ref: identity,
-      get profile() {
+      profile() {
         profile = resolver.current(identity, provider);
         return profile;
       },

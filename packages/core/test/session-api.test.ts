@@ -14,7 +14,9 @@ it("exposes model/thread operations only through Session", async () => {
     expect(session.model).not.toHaveProperty("set");
     expect(session).not.toHaveProperty("setModel");
     const thread = await session.thread.create({ title: "one", messages: [new HumanMessage("seed")], metadata: { project: "a" } });
-    expect(thread.scope).toEqual({ user: "one" });
+    expect(thread.scope()).toEqual({ user: "one" });
+    expect(session.scope()).toEqual({ user: "one" });
+    expect(session.metadata()).toEqual({});
     expect((await thread.getHistory()).items).toHaveLength(1);
     await expect(session.thread.create({ instructions: "forbidden" } as never)).rejects.toMatchObject({ code: "InvalidConfiguration" });
     await session.thread.delete();

@@ -71,6 +71,12 @@ export class OpenAIProvider<
   private readonly sharedConnection: Connection;
   private readonly registration: ModelProviderRegistration;
 
+  constructor(configuration: OpenAIProviderOptions<A> & { api?: A });
+  /** @internal */
+  constructor(
+    configuration: OpenAIProviderOptions<A> & { api?: A },
+    connection: Connection,
+  );
   constructor(
     configuration: OpenAIProviderOptions<A> & { api?: A },
     connection?: Connection,
@@ -198,7 +204,7 @@ export class OpenAIProvider<
     if (this.chat) yield* this.chat.stream(request, context);
     else yield* super.stream(request, context);
   }
-  get profile(): Readonly<ModelProfile> {
+  profile(): Readonly<ModelProfile> {
     return this.sharedConnection.resolver.current(this.ref, this.registration);
   }
   refreshProfile(

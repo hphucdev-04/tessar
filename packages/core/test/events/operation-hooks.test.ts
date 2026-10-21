@@ -34,7 +34,7 @@ it.each(["fork", "rename", "delete"] as const)("authorizes thread %s once throug
   const policy: Plugin = { id: "policy", setup(tessar) {
     tessar.hook(before as any, async (event: any, context: any) => {
       order.push("before"); expect(context.thread.id).toBe(event.payload.threadId);
-      expect(context.thread.scope).toEqual({ user: "a" });
+      expect(context.thread.scope()).toEqual({ user: "a" });
       await context.thread.getHistory();
       return deny ? { decision: "deny", reason: "policy denied" } : { decision: "allow" };
     });

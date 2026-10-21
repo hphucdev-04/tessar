@@ -37,8 +37,8 @@ export class Controller {
   readonly id: string;
   readonly agent: Agent;
   private readonly modelRegistry = new ModelRegistry();
-  readonly diagnostics: ErrorInfo[] = [];
-  readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
+  /** @internal */ readonly diagnostics: ErrorInfo[] = [];
+  /** @internal */ readonly report = (error: ErrorInfo, context: EventContext = {}): void => {
     this.diagnostics.push(error);
     // Copy only event identity, never execution services from the failing hook.
     const event = new EventEnvelope(
@@ -98,6 +98,7 @@ export class Controller {
   }) {
     this.id = requireId(options.id, "controller id");
     this.agent = options.agent;
+    const model = this.agent.getModel();
     this.hooks = new PluginHost({
       diagnostics: this.report,
       values: [
@@ -110,20 +111,20 @@ export class Controller {
           pluginVersion: 1,
           configurationId: null,
         },
-        ...toolRegistrations(this.agent.id, this.agent.tools),
-        ...(isModelAdapter(this.agent.model)
+        ...toolRegistrations(this.agent.id, this.agent.listTool()),
+        ...(isModelAdapter(model)
           ? [
               {
                 kind: "provider",
-                id: this.agent.model.ref.providerId,
+                id: model.ref.providerId,
                 version: 1,
                 pluginId: this.agent.id,
                 pluginVersion: 1,
-                configurationId: this.agent.model.ref.connectionId ?? null,
+                configurationId: model.ref.connectionId ?? null,
                 value: {
-                  id: this.agent.model.ref.providerId,
+                  id: model.ref.providerId,
                   create: (modelId: string) => {
-                    const model = this.agent.model;
+                    const model = this.agent.getModel();
                     if (!isModelAdapter(model))
                       fail("MissingProvider", "Executable model is missing");
                     if (model.ref.modelId === modelId) return model;
@@ -226,8 +227,8 @@ export class Controller {
     requireId(ref.modelId, "model id");
     if (
       isModelAdapter(value) &&
-      "profile" in value &&
-      "refreshProfile" in value
+      "profile" in value && typeof value.profile === "function" &&
+      "refreshProfile" in value && typeof value.refreshProfile === "function"
     )
       return value as Model;
     return this.modelRegistry.get(ref);
@@ -251,7 +252,7 @@ export class Controller {
   }
   async createSession(options: SessionOptions = {}): Promise<Session> {
     this.requireReady();
-    const selected = this.sessionModel(options.model ?? this.agent.model),
+    const selected = this.sessionModel(options.model ?? this.agent.getModel()),
       now = this.agent.clock.now();
     const record: SessionRecord = immutable({
       id: randomIds.next("session"),
@@ -266,7 +267,7 @@ export class Controller {
     });
     await this.backend.sessions.compareAndSet(record, 0);
     this.requireReady();
-    const session = new Session(
+    const session = Session.create(
       this,
       record,
       selected.model,
@@ -297,7 +298,7 @@ export class Controller {
     if (record.selectedThreadId && !thread)
       fail("ThreadNotFound", "Session selection is unavailable");
     this.requireReady();
-    return new Session(
+    return Session.create(
       this,
       record,
       selected.model,

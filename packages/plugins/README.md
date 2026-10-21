@@ -15,7 +15,8 @@ const manager = new PluginManager({
   directory: ".my-cli",
   hostUrl: import.meta.url,
 });
-const plugins = [new LoggerPlugin(), ...await manager.load()];
+const userPlugins = await manager.load();
+const plugins = [new LoggerPlugin(), ...userPlugins];
 // Pass plugins to new Controller({ id, agent, plugins }).
 // Dispose Controller first, then call manager.dispose() in finally.
 ```
@@ -28,6 +29,10 @@ Erasable TypeScript custom files are supported; npm packages publish JavaScript.
 subdirectory. Installed package names are recorded in `plugins.json` under
 `packages`; custom files are discovered automatically. `load()` never installs
 missing dependencies. A consuming CLI chooses its own command name and directory.
+
+Controller owns plugin setup and cleanup. Its `plugins.attach(instance)` and
+`plugins.detach(id)` operations also work with directly imported plugins, without
+a PluginManager. The manager does not activate plugins or watch for file changes.
 
 Logger writes JSON lifecycle/error entries to stderr by default. Use
 `new LoggerPlugin({ write: entry => yourLogger.write(entry) })` for another sink.

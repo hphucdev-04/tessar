@@ -80,6 +80,8 @@ These are operations on a Session instance, after initialization:
 
 | API | Behavior |
 | --- | --- |
+| `session.scope()` | Read the fixed state scope inherited by its threads |
+| `session.metadata()` | Read the Session's persisted metadata |
 | `session.thread.create({ title })` | Create and select a new thread |
 | `session.thread.getId()` | Read the selected thread ID, or `null` |
 | `session.thread.get(id)` | Get a thread within the Session's scope |

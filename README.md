@@ -85,7 +85,7 @@ const add = createTool({
 
 const calculator = new Agent({
   id: "calculator",
-  model: agent.model,
+  model: agent.getModel(),
   tools: { add },
 });
 

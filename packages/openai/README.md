@@ -92,7 +92,7 @@ markers, history breakpoints or cache policy. Stable sections can precede changi
 sections using `order`; native cache options pass through only when configured.
 Cache hits still depend on the endpoint/model and the actual prompt prefix.
 
-`model.profile` reads a cached/bundled metadata snapshot without starting network
+`model.profile()` reads a cached/bundled metadata snapshot without starting network
 requests. `await model.refreshProfile()` explicitly refreshes provider metadata;
 metadata may be incomplete and carries provenance.
 

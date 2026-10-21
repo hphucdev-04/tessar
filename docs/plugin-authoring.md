@@ -178,7 +178,8 @@ const manager = new PluginManager({ directory: resolve(".tessar"), hostUrl: impo
 let controller: Controller | undefined;
 try {
   const agent = new Agent({ id: "host", model });
-  controller = new Controller({ id: "host", agent, plugins: await manager.load() });
+  const userPlugins = await manager.load();
+  controller = new Controller({ id: "host", agent, plugins: userPlugins });
   await controller.initialize();
   // Use the ordinary Agent/Session APIs.
 } finally {

@@ -120,7 +120,7 @@ const askUser = createTool({
 
 const questioner = new Agent({
   id: "questioner",
-  model: agent.model,
+  model: agent.getModel(),
   tools: { askUser },
 });
 ```

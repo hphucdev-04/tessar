@@ -27,9 +27,19 @@ it("reads Agent defaults without initialization or changing them during executio
     expect(agent.listTool()).toEqual([tool]);
     expect(agent.getModel()).toBe(model);
     expect(agent.getInstruction()).toEqual(instructions);
+    expect(agent.limits()).toEqual({ maxTurns: 32, maxModelAttempts: 64, maxToolCalls: 128 });
+    expect(Object.isFrozen(agent.limits())).toBe(true);
     expect(model.calls).toHaveLength(0);
     const concrete: ScriptedProvider = agent.getModel();
     expect(concrete).toBe(model);
+    if (false) {
+      // @ts-expect-error Agent configuration is read through methods.
+      agent.model;
+      // @ts-expect-error Agent configuration is read through methods.
+      agent.tools;
+      // @ts-expect-error Agent configuration is read through methods.
+      agent.instructions;
+    }
     await agent.generate("hello", { model: "alternate" });
     expect(agent.getModel()).toBe(model);
     expect(agent.getModel().ref.modelId).toBe("test");

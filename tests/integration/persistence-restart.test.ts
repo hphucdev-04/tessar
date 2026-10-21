@@ -128,7 +128,8 @@ it.each(["endpoint", "protocol"])("rejects changed %s before resuming a Thread w
   let controller=await open();
   try {
     const thread=await createThread(controller); let pending:any;
-    for await(const event of thread.stream({input:new HumanMessage("pause"),model:"ref" in controller.agent.model ? controller.agent.model.ref : controller.agent.model})) if(event.type === stream.suspended) pending=event.payload.interrupt;
+    const model = controller.agent.getModel();
+    for await(const event of thread.stream({input:new HumanMessage("pause"),model:"ref" in model ? model.ref : model})) if(event.type === stream.suspended) pending=event.payload.interrupt;
     await controller.dispose(); controller=await open(true);
     const restored=(await getThread(controller, thread.id))!; let error:string|undefined;
     for await(const event of restored.stream({resume:{interruptId:pending.id,value:{}}})) if(event.type === stream.error) error=event.payload.error.code;

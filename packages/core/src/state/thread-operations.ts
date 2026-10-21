@@ -58,7 +58,7 @@ export async function createThread(
   options: CreateThreadOptions = {},
   session?: SessionHookHandle,
 ): Promise<Thread> {
-  return new Thread(
+  return Thread.create(
     controller,
     await prepareThread(controller, options, undefined, session),
   );
@@ -71,7 +71,7 @@ export async function getThread(
 ): Promise<Thread | null> {
   controller.requireReady();
   const info = await controller.queries.getThread(id, query);
-  return info ? new Thread(controller, info) : null;
+  return info ? Thread.create(controller, info) : null;
 }
 
 export function listThreads(
@@ -129,7 +129,7 @@ export async function purgeThread(
     agentId: controller.agent.id,
     threadId: id,
     scope: info.scope,
-    thread: new Thread(controller, info),
+    thread: Thread.create(controller, info),
   };
   const payload = immutable({ threadId: id, permanent: true });
   await controller.hooks.authorize(threadHooks.beforeDelete, payload, context);
@@ -194,7 +194,7 @@ export async function forkThread(
     { threadId: id, forkedThreadId: info.id },
     context,
   );
-  return new Thread(controller, info);
+  return Thread.create(controller, info);
 }
 
 async function threadContext(
@@ -208,6 +208,6 @@ async function threadContext(
     agentId: controller.agent.id,
     threadId: id,
     scope: info.scope,
-    thread: new Thread(controller, info),
+    thread: Thread.create(controller, info),
   };
 }

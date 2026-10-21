@@ -60,7 +60,7 @@ scheduling limit. Tools are authorized before dispatch; results enter the
 conversation in call order after the executions complete. Execution budgets
 such as `limits.maxToolCalls` still apply.
 
-`Agent.model` is required. `stream(message, options?)` and
+The Agent constructor's `model` option is required; read it with `agent.getModel()`. `stream(message, options?)` and
 `generate(message, options?)` accept a string, a message, or message history.
 Each direct call has independent context and automatic per-execution cleanup.
 Use a Session when the host needs a continuing conversation.

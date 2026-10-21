@@ -56,6 +56,7 @@ These synchronous methods work without a Controller or initialization:
 const configuredTools = agent.listTool(); // readonly Tool[]
 const defaultModel = agent.getModel(); // Preserves the configured model's type.
 const baseInstruction = agent.getInstruction(); // Instruction with ordered sections.
+const configuredLimits = agent.limits(); // StreamLimits including loop defaults.
 ```
 
 They return the Agent's constructor configuration. Per-execution model overrides,
@@ -120,6 +121,6 @@ if (process.env.COMPATIBLE_API_KEY && process.env.COMPATIBLE_MODEL &&
 Choose the protocol your endpoint supports. Responses and Chat Completions have
 different native option names; see [the provider reference](../../packages/openai/README.md).
 SDK client settings such as `timeout`, `maxRetries` and `defaultHeaders` belong
-in the provider constructor. Reading `model.profile` returns a metadata snapshot;
+in the provider constructor. Calling `model.profile()` returns a metadata snapshot;
 `await model.refreshProfile()` explicitly refreshes it. Missing metadata fields
 can be `null`.

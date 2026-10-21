@@ -115,9 +115,9 @@ function validateLimits(limits: Partial<StreamLimits>): void {
 }
 export class Agent<M extends ModelSelection = ModelSelection> {
   readonly id: string;
-  readonly tools: readonly Tool[];
+  private readonly tools: readonly Tool[];
   /** @internal */ readonly toolConcurrency: number;
-  readonly model: M;
+  private readonly model: M;
   private controller?: Controller;
   /** @internal */ attachController(controller: Controller): void {
     if (this.controller)
@@ -129,16 +129,16 @@ export class Agent<M extends ModelSelection = ModelSelection> {
       fail("ControllerNotReady", "Initialize a Controller for this Agent");
     return this.controller;
   }
-  get backend(): StorageBackend {
+  /** @internal */ get backend(): StorageBackend {
     return this.runtime().backend;
   }
-  get registry(): PluginHost {
+  /** @internal */ get registry(): PluginHost {
     return this.runtime().hooks;
   }
-  readonly ids: IdGenerator;
-  readonly clock: Clock;
-  readonly limits: StreamLimits;
-  readonly instructions: Instruction;
+  /** @internal */ readonly ids: IdGenerator;
+  /** @internal */ readonly clock: Clock;
+  private readonly configuredLimits: StreamLimits;
+  private readonly instructions: Instruction;
   private readonly jobs = new Set<Promise<void>>();
   private readonly outcomes = new WeakMap<Stream, Promise<GenerateOutcome>>();
   private readonly active = new Map<string, ExecutionFrame>();
@@ -177,13 +177,13 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     this.ids = randomIds;
     this.clock = systemClock;
     this.instructions = normalizeInstruction(options.instructions);
-    this.limits = immutable({
+    this.configuredLimits = immutable({
       maxTurns: 32,
       maxModelAttempts: 64,
       maxToolCalls: 128,
       ...options.limits,
     });
-    validateLimits(this.limits);
+    validateLimits(this.configuredLimits);
     this.releaseId = reserveId("Agent", this.id, this);
   }
   /** Tools configured on this Agent, before execution-time plugin selection. */
@@ -197,6 +197,10 @@ export class Agent<M extends ModelSelection = ModelSelection> {
   /** Base instructions, before execution-time hook transformations. */
   getInstruction(): Instruction {
     return this.instructions;
+  }
+  /** Configured loop limits, including defaults; execution overrides are separate. */
+  limits(): StreamLimits {
+    return this.configuredLimits;
   }
   stream<T extends ModelAdapter = Extract<M, ModelAdapter>>(
     input: AgentInput,
@@ -231,7 +235,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     if (environment === this.controller) this.controller!.requireReady();
     if (this.closed) fail("Disposed", "Agent closed");
     if (request.kind === "input")
-      validateLimits({ ...this.limits, ...request.limits });
+      validateLimits({ ...this.configuredLimits, ...request.limits });
     if (
       !request.adapter &&
       isModelAdapter(this.model) &&
@@ -335,7 +339,7 @@ export class Agent<M extends ModelSelection = ModelSelection> {
     };
     return execution;
   }
-  async cancel(
+  /** @internal */ async cancel(
     threadId: string,
     streamId: string,
     reason = "Cancelled",

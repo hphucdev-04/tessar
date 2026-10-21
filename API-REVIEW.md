@@ -4,7 +4,15 @@ Ngày đối chiếu: **2026-10-21**. Nguồn: code, `package.json#exports` và 
 
 `?` nghĩa là optional; field không có `?` là bắt buộc. `readonly` là hợp đồng TypeScript; không đồng nghĩa mọi object đều được freeze lúc chạy. Các kiểu dữ liệu đầy đủ nằm trong phụ lục cuối file, gồm cả kiểu của callback và kết quả.
 
-Danh mục gồm API ứng dụng, API viết plugin/provider/storage và các subpath testing được publish. Không đưa các class điều phối runtime nội bộ vào danh mục sử dụng. Một số thành viên nội bộ còn lộ trong declaration được ghi tên ở phần nghiệm thu, không liệt kê thành API được khuyến nghị dùng.
+Danh mục gồm API ứng dụng, API viết plugin/provider/storage và các subpath testing được publish. Không đưa các class điều phối runtime nội bộ vào danh mục sử dụng. Phụ lục có chữ ký class public đã loại thành viên private/internal, bên cạnh các type và callback đầy đủ.
+
+### Quy tắc sau rà soát
+
+- Thao tác đọc cấu hình/state trên runtime dùng method: `getInstruction()`, `getModel()`, `listTool()`, `limits()`, `scope()`, `metadata()`, `profile()`.
+- Identity cố định và liên kết đối tượng readonly giữ dạng dữ liệu: `id`, `controller.agent`, `session.agent`, `session.controller`.
+- Namespace giữ dạng nhóm API: `session.model`, `session.thread`, `controller.plugins`, các nhóm trên PluginContext; thao tác bên trong là method.
+- Message, event, record, result, model connection descriptor và tool definition giữ field dữ liệu. Ví dụ `event.type`, `message.content`, `result.output`, `provider.ref`, `provider.options`, `tool.name` không phải các getter runtime được đổi ở trên.
+- Field private của TypeScript không thuộc hợp đồng public, nhưng không chặn JavaScript truy cập runtime như `#private`. Các field cũ của Agent không được giữ như alias public; TypeScript dùng method. Không coi `private` là sandbox hoặc cơ chế bảo mật.
 
 ## Mục lục
 
@@ -43,6 +51,25 @@ Danh mục gồm API ứng dụng, API viết plugin/provider/storage và các s
 | `@tessar/sqlite` | SqliteStoragePlugin, createSqliteBackend, SqliteStorageOptions |
 | `@tessar/postgresql` | PostgresqlStoragePlugin, createPostgresqlBackend, PostgresqlStorageOptions |
 | `@tessar/mongodb` | MongoDBStoragePlugin, createMongoDBBackend, MongoDBStorageOptions |
+
+### Phạm vi đã đối chiếu
+
+| Nhóm API | Constructor / tạo đối tượng | Method / callback | Dữ liệu và namespace giữ property |
+| --- | --- | --- | --- |
+| Agent | `new Agent(options)` | getModel, getInstruction, listTool, limits, stream, generate, resume, shutdown | id |
+| Controller | `new Controller(options)` | initialize, dispose, createSession, getSession, listSessions, plugins.attach/detach | id, agent, plugins |
+| Session | Controller tạo/khôi phục | scope, metadata, subscribe, followUp, resume, recover, abort, dispose, model manager, thread manager | id, agent, controller, model/thread namespace |
+| Thread | Session.thread tạo/lấy/fork | scope, snapshot, history/checkpoint/trace/interrupt reads, dispose | id |
+| Message / Event | Constructors và MessageCodec | normalizeContent, encode/decode, EventEnvelope.is | Các field message/event và event map |
+| Instruction / Tool | buildInstruction, normalizeInstruction, createTool/new Tool, ToolSuspension | execute/resume, emit/suspend, recovery callbacks | Sections, schema, tool definition và identity |
+| Provider / Model | OpenAIProvider, provider registration factory | profile, refreshProfile, withModel, validate, stream | ref, connection, options, api và các metadata DTO |
+| ProfileResolver | `new ProfileResolver(options?)` | current, resolve, needsRefresh, clear | Không expose cache/catalog implementation |
+| Plugin authoring | Class implements Plugin | setup, registration, hook, emit, defer, state/effect/interrupt/child/auxiliary APIs | Plugin identity, capability namespaces và context data |
+| Plugin distribution / logger | PluginManager, LoggerPlugin | discover/load/install/update/remove/dispose, setup/write | directory bất biến, plugin id, LogEntry |
+| Storage | Ba storage plugin, ba backend factory, createMemoryBackend | setup, các StorageBackend port và close | Backend identity/capabilities, Session/checkpoint/trace DTO |
+| Foundation / testing | Error constructors, ScriptedProvider, AgentHarness factory | JSON/scope/paging/usage helpers, harness và conformance methods | Type contracts, metrics, fixture data |
+
+Đây là đối chiếu toàn bộ entrypoint, constructors, methods, thuộc tính dữ liệu/namespace, callback và type public; không chỉ một nhóm getter. Chữ ký cụ thể của từng nhóm nằm bên dưới.
 
 ## 2. Provider OpenAI
 
@@ -83,7 +110,7 @@ Toàn bộ field client và body được chép từ declaration của **OpenAI 
 | `.connection` | — | `ModelConnectionDescriptor \| undefined`: identity không chứa secret |
 | `.options` | — | Object option request đã snapshot, readonly |
 | `.api` | — | Protocol đang dùng |
-| `.profile` | — | `Readonly<ModelProfile>` |
+| `.profile()` | Không có | `Readonly<ModelProfile>`; snapshot metadata hiện tại |
 | `.withModel(modelId)` | `modelId: string` | Provider mới dùng chung kết nối/client và defaults, đổi native model ID |
 | `.refreshProfile(options?)` | `{ signal?: AbortSignal }` | `Promise<ModelProfile>` |
 | `.validate(request)` | `request: ModelRequest` | `void`; hợp đồng provider cho runtime/custom integration |
@@ -135,10 +162,7 @@ const agent = new Agent({
 | API / thuộc tính | Parameter | Trả về |
 | --- | --- | --- |
 | `.id` | — | `string` |
-| `.model` | — | Model mặc định đã khai báo |
-| `.tools` | — | `readonly Tool[]` cấu hình trên Agent |
-| `.instructions` | — | Instruction nền đã normalize |
-| `.limits` | — | StreamLimits có default |
+| `.limits()` | Không có | StreamLimits có default; override theo execution không sửa giá trị này |
 | `.listTool()` | Không có | `readonly Tool[]`; tool cấu hình trên Agent, trước selection/plugin theo execution |
 | `.getModel()` | Không có | Model mặc định, giữ kiểu generic từ constructor |
 | `.getInstruction()` | Không có | `Instruction` nền, trước hook |
@@ -146,6 +170,8 @@ const agent = new Agent({
 | `.generate(input, options?)` | Phần 4 | `Promise<GenerateOutcome>` |
 | `.resume(options)` | Bảng dưới | `Stream` tiếp tục execution suspended |
 | `.shutdown()` | Không có | `Promise<void>`; kết thúc tài nguyên/lifecycle của Agent |
+
+Đọc cấu hình qua `getModel()`, `listTool()`, `getInstruction()`, `limits()`. Các field lưu trữ là private, không phải API thuộc tính public. Constructor vẫn nhận `model`, `tools`, `instructions`, `limits` như bảng options phía trên. TypeScript từ chối đọc field private; code JavaScript không được đảm bảo bị chặn ở runtime vì implementation dùng `private`, không dùng `#private`.
 
 ### `agent.resume(options)`
 
@@ -227,7 +253,7 @@ Stream không có `.result`, `.output`, `.status` hay `.subscribe`. Kết quả 
 | `.initialize()` | Không có | `Promise<void>`; setup plugin/storage/provider trước sử dụng runtime |
 | `.dispose()` | Không có | `Promise<void>`; đóng runtime và tài nguyên |
 | `.plugins.attach(plugin)` | `plugin: Plugin` | `Promise<void>`; thêm plugin khi ready |
-| `.plugins.detach(id)` | `id: string` | `Promise<void>`; tháo plugin, chờ lifecycle liên quan; storage không được detach khi ready |
+| `.plugins.detach(id)` | `id: string` | `Promise<void>`; ngừng cấp plugin cho execution mới; cleanup có thể chờ execution đang giữ registration kết thúc; storage không được detach khi ready |
 | `.createSession(options?)` | `SessionOptions` | `Promise<Session>`; sinh và lưu Session |
 | `.getSession(id, query?)` | `id: string`, `query?: { scope?: Scope }` | `Promise<Session \| null>` |
 | `.listSessions(query?)` | `query?: StateQuery & PageOptions` | `Promise<Page<SessionRecord>>`; lọc theo Agent của Controller |
@@ -240,11 +266,13 @@ Runtime vẫn cần registry provider riêng và các hàm truy cập state dùn
 
 ## 6. Session
 
-Nhận Session từ `controller.createSession()` hoặc `controller.getSession()`. `session.id` tự sinh và persistent; `session.scope` cố định theo record.
+Nhận Session từ `controller.createSession()` hoặc `controller.getSession()`. `session.id` tự sinh và persistent; `session.scope()` trả scope cố định theo record. Constructor Session không public.
 
 | API / thuộc tính | Parameter | Trả về / ý nghĩa |
 | --- | --- | --- |
-| `.id`, `.scope`, `.metadata` | — | `string`, `Scope`, `JsonObject` |
+| `.id` | — | `string` |
+| `.scope()` | Không có | `Scope` |
+| `.metadata()` | Không có | `JsonObject` |
 | `.agent`, `.controller` | — | Đối tượng gắn với phiên |
 | `.subscribe(observer)` | `(event: StreamEvent) => unknown` | `() => void` để hủy subscription |
 | `.subscribe(name, observer)` | `name: AnyEvent`, callback nhận envelope đúng payload event | `() => void` |
@@ -301,7 +329,8 @@ Không có `.set()` hoặc `session.setModel()`.
 
 | API | Parameter | Trả về |
 | --- | --- | --- |
-| `.id`, `.scope` | — | `string`, `Scope` |
+| `.id` | — | `string` |
+| `.scope()` | Không có | `Scope` |
 | `.snapshot()` | Không có | `Promise<Checkpoint & { activeStreamId: string \| null; currentCheckpointId: string; usage: UsageSummary }>` |
 | `.getHistory(options?)` | `HistoryOptions` | `Promise<HistoryPage>` |
 | `.getCheckpoint(id)` | `id: string` | `Promise<Checkpoint \| null>` |
@@ -316,6 +345,8 @@ Không có `.set()` hoặc `session.setModel()`.
 | `.dispose()` | Không có | `Promise<void>`; đóng handle |
 
 `PageOptions = { cursor?: string; limit?: number }`: mặc định limit 50, hợp lệ 1–200. `Page<T> = { items: readonly T[]; nextCursor: string | null }`. `HistoryPage` thêm `checkpointId`, `revision`; items là Message. Scope lọc bằng các key/value đã truyền, không tự chứng thực người dùng.
+
+Thread không có constructor public; lấy handle qua `session.thread`. Các method nội bộ để admit/stream/cancel execution không thuộc API Thread public.
 
 ## 9. Message
 
@@ -436,7 +467,7 @@ Context nền có `registry`, `sessionId?`, `signal?`, `session?`, `thread?`. C�
 `context.registry.get<T>(kind: string, id: string): T | undefined`.
 `context.registry.list<T>(kind: string): readonly T[]`.
 
-Session hook handle cung cấp `id`, `scope`, `model`, `thread`, `followUp` với chữ ký như Session. Thread hook handle cung cấp `id`, `scope`, `snapshot`, `getHistory`, `getCheckpoint`, `listCheckpoints`, `listInterrupts` với chữ ký như Thread.
+Session hook handle cung cấp identity `id`, method `scope()`, namespace `model`/`thread`, method `followUp()` với chữ ký như Session. Thread hook handle cung cấp `id` và các method `scope()`, `snapshot()`, `getHistory()`, `getCheckpoint()`, `listCheckpoints()`, `listInterrupts()` với chữ ký như Thread.
 
 `EventKind`: notification, transformation, decision, barrier. Kind mặc định theo hook built-in; custom event không khai báo kind mặc định notification. Transformation trả payload thay thế; decision trả quyết định; notification không điều khiển flow; barrier được await và lỗi có thể chặn thao tác.
 
@@ -546,7 +577,7 @@ Backend tự implement contract; ứng dụng thông thường dùng Session/Thr
 ## 16. Model profile và provider tự viết
 
 `ModelRef = { providerId: string; modelId: string; connectionId?: string }`.
-`Model` có `.ref`, `.profile` và `.refreshProfile({ signal? }?)`.
+`Model` có descriptor `.ref`, method `.profile()` và `.refreshProfile({ signal? }?)`. Field `profile` trong kết quả `session.model.list()` vẫn là dữ liệu snapshot, không phải method.
 
 `ModelProfile` gồm identity, name, contextWindow, maxInputTokens, maxOutputTokens, capabilities, pricing, metadata. Thiếu thông tin thể hiện null/unavailable theo type, không tự điền số liệu phỏng đoán.
 
@@ -627,7 +658,7 @@ Test target optional là `{ kind: "iterator" }` hoặc `{ kind: "observer"; obse
 
 Các dòng này ghi nhận code hiện tại, chưa tự sửa trong công việc viết tài liệu:
 
-- **Alias tool:** object key trong Agent.tools chưa đổi Tool.name. Ví dụ `search_web: searchTool` vẫn dùng `searchTool.name`.
+- **Alias tool:** object key trong option `tools` của constructor Agent chưa đổi Tool.name. Ví dụ `search_web: searchTool` vẫn dùng `searchTool.name`.
 - **Concurrency:** field `tools.concurrency` hiện vẫn có; bỏ khai báo thì Infinity.
 - **Session input:** followUp nhận Message hoặc mảng Message, không nhận string như Agent.stream/generate; chưa có options per followUp.
 - **Provider plugin:** OpenAIPlugin chỉ Responses và client options; OpenAIProvider hỗ trợ chọn protocol và body options.
@@ -635,13 +666,383 @@ Các dòng này ghi nhận code hiện tại, chưa tự sửa trong công việ
 - **Instructions:** Session.thread.create không nhận instructions; type CreateThreadOptions dùng trong hook/testing vẫn có field này.
 - **Suspend:** Agent.resume trả Stream; Session.resume/recover trả receipt và phát event qua subscription.
 - **Chưa triển khai:** message signal/injection vào execution đang chạy; metadata cấp content part; không suy diễn các API này từ AbortSignal hay followUp.
-- **Còn lộ declaration:** Agent.backend/registry/ids/clock/cancel, Controller.report/diagnostics, constructor tạo Session/Thread, tham số connection thứ hai của OpenAIProvider, cache/catalog của ProfileResolver và registry/queries của harness có phần implementation chưa đóng kín. Không liệt kê chữ ký nội bộ của chúng làm API sử dụng trong file này. Chưa đổi code để ẩn chúng.
+- **Đã thu hẹp declaration:** service backend/registry/clock/ID generator/cancel nội bộ của Agent; diagnostics/report của Controller; cache/catalog của ProfileResolver và registry/queries của harness không xuất hiện trong API public sau build. Session/Thread có constructor private; các factory nội bộ không export ra declaration. OpenAIProvider chỉ công khai constructor một object configuration, không expose tham số shared connection nội bộ.
+- **Thay đổi cách đọc:** `agent.limits()`, `session.scope()`, `session.metadata()`, `thread.scope()`, `model.profile()` là method. Không có alias property trả cùng dữ liệu. Các field metadata/scope/profile trong DTO vẫn là dữ liệu và được giữ nguyên schema.
 
 ## 20. Chữ ký và kiểu dữ liệu đầy đủ
 
 Các phần dưới đối chiếu trực tiếp declaration hiện tại để xem đủ parameter con, optional field, callback và kết quả. Những type là dữ liệu checkpoint/trace có thể mô tả trạng thái execution; chúng là kiểu public được API đọc trả về, không phải lời mời gọi runtime engine.
 
 <!-- DECLARATION_REFERENCE -->
+
+## Chữ ký public của các class
+
+Các block này giữ nguyên tham số từ declaration đã build, bỏ field private/protected. Session và Thread được tạo qua Controller/Session; không có constructor public. OpenAIProvider được làm phẳng hai member kế thừa công khai `ref` và `connection`. `AgentHarness.collect()` dùng alias `StreamEvent[]` thay cho union event đã mở rộng. `OptionsFor<A>` là type hỗ trợ nội bộ, tương ứng Responses hoặc Chat options theo `A`, không phải root export.
+
+### Agent
+
+```ts
+export declare class Agent<M extends ModelSelection = ModelSelection> {
+    readonly id: string;
+    constructor(options: AgentOptions<M>);
+    listTool(): readonly Tool[];
+    getModel(): M;
+    getInstruction(): Instruction;
+    limits(): StreamLimits;
+    stream<T extends ModelAdapter = Extract<M, ModelAdapter>>(input: AgentInput, options?: AgentExecutionOptions<T>): Stream;
+    generate<T extends ModelAdapter = Extract<M, ModelAdapter>>(input: AgentInput, options?: AgentExecutionOptions<T>): Promise<GenerateOutcome>;
+    resume(options: AgentResumeOptions): Stream;
+    shutdown(): Promise<void>;
+}
+```
+
+### Controller
+
+```ts
+export declare class Controller {
+    readonly id: string;
+    readonly agent: Agent;
+    readonly plugins: {
+        attach: (plugin: Plugin) => Promise<void>;
+        detach: (id: string) => Promise<void>;
+    };
+    constructor(options: {
+        id: string;
+        agent: Agent;
+        plugins?: readonly Plugin[];
+    });
+    initialize(): Promise<void>;
+    createSession(options?: SessionOptions): Promise<Session>;
+    getSession(id: string, query?: StateQuery): Promise<Session | null>;
+    listSessions(query?: StateQuery & PageOptions): Promise<import("./state/schema.js").Page<SessionRecord>>;
+    dispose(): Promise<void>;
+}
+```
+
+### Session
+
+```ts
+export declare class Session {
+    readonly controller: Controller;
+    readonly agent: import("./agent.js").Agent<import("./agent.js").ModelSelection>;
+    readonly id: string;
+    metadata(): JsonObject;
+    scope(): Scope;
+    readonly model: Readonly<{
+        get: () => string;
+        name: () => string;
+        list: () => readonly SessionModelInfo[];
+        switch: (modelId: string, options?: JsonObject) => Promise<void>;
+    }>;
+    subscribe(observer: (event: StreamEvent) => unknown): () => void;
+    subscribe<N extends AnyEvent>(name: N, observer: (event: EventEnvelope<PayloadOf<N>, N>) => unknown): () => void;
+    readonly thread: {
+        create: (options?: SessionThreadOptions) => Promise<Thread>;
+        switch: (id: string) => Promise<Thread>;
+        get: (id: string) => Promise<Thread | null>;
+        getId: () => string | null;
+        list: (options?: PageOptions) => Promise<import("./state/schema.js").Page<import("./state/schema.js").ThreadInfo>>;
+        rename: (title: string, target?: ThreadTarget) => Promise<void>;
+        fork: (options?: ForkOptions & ThreadTarget) => Promise<Thread>;
+        delete: (target?: ThreadTarget) => Promise<void>;
+        purge: (target?: ThreadTarget) => Promise<void>;
+        getHistory: (options?: HistoryOptions & ThreadTarget) => Promise<import("./state/queries.js").HistoryPage>;
+    };
+    followUp(input: MessageData | readonly MessageData[]): Promise<QueuedInputReceipt>;
+    resume(options: {
+        interruptId: string;
+        value: JsonValue;
+        model?: Model | ModelRef;
+    }): Promise<ExecutionReceipt>;
+    recover(options: {
+        streamId: string;
+        model?: Model | ModelRef;
+    }): Promise<ExecutionReceipt>;
+    abort(reason?: string): Promise<void>;
+    dispose(): Promise<void>;
+}
+```
+
+### Thread
+
+```ts
+export declare class Thread {
+    readonly id: string;
+    scope(): Scope;
+    snapshot(): Promise<{
+        id: string;
+        threadId: string;
+        parentCheckpointId: string | null;
+        revision: number;
+        schemaVersion: 1;
+        createdAt: string;
+        state: import("./state/schema.js").ThreadState;
+        execution: import("./state/schema.js").ExecutionPosition | null;
+        cause: import("./state/schema.js").CheckpointCause;
+        activeStreamId: string | null;
+        currentCheckpointId: string;
+        usage: import("./trace/usage.js").UsageSummary;
+    }>;
+    getHistory(options?: HistoryOptions): Promise<import("./state/queries.js").HistoryPage>;
+    getCheckpoint(id: string): Promise<import("./state/schema.js").Checkpoint | null>;
+    listCheckpoints(options?: PageOptions): Promise<import("./state/schema.js").Page<import("./state/schema.js").CheckpointInfo>>;
+    getStream(id: string): Promise<import("./index.js").StreamRecord | null>;
+    listStreams(options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").StreamRecord>>;
+    listTurns(streamId: string, options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").TurnRecord>>;
+    listModelAttempts(turnId: string, options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").ModelAttemptRecord>>;
+    listToolExecutions(turnId: string, options?: PageOptions): Promise<import("./state/schema.js").Page<import("./index.js").ToolExecutionRecord>>;
+    getInterrupt(id: string): Promise<import("./state/schema.js").InterruptRecord | null>;
+    listInterrupts(options?: PageOptions & {
+        status?: "pending" | "resolved" | "cancelled";
+    }): Promise<import("./state/schema.js").Page<import("./state/schema.js").InterruptRecord>>;
+    dispose(): Promise<void>;
+}
+```
+
+### Message
+
+```ts
+export declare abstract class Message implements MessageData {
+    readonly role: MessageRole;
+    readonly schemaVersion: 1;
+    readonly id: string;
+    readonly content: readonly ContentPart[];
+    readonly metadata?: JsonObject;
+    readonly providerState?: JsonValue;
+    readonly toolCallId?: string;
+}
+```
+
+### HumanMessage
+
+```ts
+export declare class HumanMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions);
+}
+```
+
+### SystemMessage
+
+```ts
+export declare class SystemMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions);
+}
+```
+
+### AssistantMessage
+
+```ts
+export declare class AssistantMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions);
+}
+```
+
+### ToolMessage
+
+```ts
+export declare class ToolMessage extends Message {
+    constructor(content: string | readonly ContentPart[], options?: MessageOptions & {
+        toolCallId?: string;
+    });
+}
+```
+
+### Tool
+
+```ts
+export declare class Tool<I = any, R = any, O extends ToolReturn = ToolReturn> {
+    readonly name: string;
+    readonly description: string;
+    readonly schema: z.ZodType<I>;
+    readonly jsonSchema: JsonObject;
+    readonly execute: (input: I, context: ToolExecutionContext) => Promise<Normalized<Awaited<O>>>;
+    readonly resumeSchema?: z.ZodType<R>;
+    readonly resumeJsonSchema: JsonObject;
+    readonly resume?: (response: R, input: I, context: ToolExecutionContext) => ToolResult | Promise<ToolResult>;
+    readonly configurationId: string;
+    readonly recovery?: ToolRecovery<I>;
+    constructor(definition: ToolDefinition<I, R, O>);
+}
+```
+
+### ToolSuspension
+
+```ts
+export declare class ToolSuspension {
+    readonly payload: JsonValue;
+    constructor(payload: JsonValue);
+}
+```
+
+### EventEnvelope
+
+```ts
+export declare class EventEnvelope<P = any, N extends string = string> implements EventContext {
+    readonly type: N;
+    readonly payload: P;
+    readonly controllerId?: string;
+    readonly agentId?: string;
+    readonly sessionId?: string;
+    readonly scope?: JsonObject;
+    readonly threadId?: string;
+    readonly streamId?: string | null;
+    readonly handleId?: string;
+    readonly sequence?: number;
+    readonly timestamp?: string;
+    readonly checkpointRevision?: number;
+    constructor(type: N, payload: P, context?: EventContext);
+    is<E extends AnyEvent>(name: E): this is EventEnvelope<PayloadOf<E>, E> & this;
+}
+```
+
+### ProfileResolver
+
+```ts
+export declare class ProfileResolver {
+    constructor(options?: {
+        catalog?: CatalogSnapshot;
+        clock?: Clock;
+    });
+    needsRefresh(ref: ModelRef, provider: ModelProviderRegistration): boolean;
+    current(ref: ModelRef, provider: ModelProviderRegistration): ModelProfile;
+    resolve(ref: ModelRef, provider: ModelProviderRegistration, signal?: AbortSignal): Promise<ModelProfile>;
+    clear(): void;
+}
+```
+
+### OpenAIProvider
+
+```ts
+export declare class OpenAIProvider<A extends OpenAIAPI = "responses"> {
+    readonly ref: ModelRef;
+    readonly connection?: ModelConnectionDescriptor;
+    readonly options: Readonly<OptionsFor<A>>;
+    readonly api: A;
+    constructor(configuration: OpenAIProviderOptions<A> & {
+        api?: A;
+    });
+    withModel(modelId: string): OpenAIProvider<A>;
+    validate(request: ModelRequest): void;
+    stream(request: ModelRequest, context: ModelCallContext): AsyncIterable<ModelChunk>;
+    profile(): Readonly<ModelProfile>;
+    refreshProfile(options?: {
+        signal?: AbortSignal;
+    }): Promise<ModelProfile>;
+}
+```
+
+### OpenAIPlugin
+
+```ts
+export declare class OpenAIPlugin implements Plugin {
+    readonly id: string;
+    constructor(options: OpenAIOptions);
+    setup(tessar: PluginContext): void;
+}
+```
+
+### PluginManager
+
+```ts
+export declare class PluginManager {
+    readonly directory: string;
+    constructor(options: PluginManagerOptions);
+    discover(): Promise<string[]>;
+    load(sources?: readonly string[]): Promise<Plugin[]>;
+    install(source: string, options?: {
+        name?: string;
+    }): Promise<string>;
+    update(name?: string): Promise<void>;
+    remove(name: string): Promise<void>;
+    dispose(): void;
+}
+```
+
+### LoggerPlugin
+
+```ts
+export declare class LoggerPlugin implements Plugin {
+    readonly id = "logger";
+    constructor(options?: LoggerOptions);
+    setup(tessar: PluginContext): void;
+}
+```
+
+### SqliteStoragePlugin
+
+```ts
+export declare class SqliteStoragePlugin implements Plugin {
+    readonly id = "storage.sqlite";
+    constructor(options: SqliteStorageOptions);
+    setup(tessar: PluginContext): Promise<void>;
+}
+```
+
+### PostgresqlStoragePlugin
+
+```ts
+export declare class PostgresqlStoragePlugin implements Plugin {
+    readonly id = "storage.postgresql";
+    constructor(options: PostgresqlStorageOptions);
+    setup(tessar: PluginContext): Promise<void>;
+}
+```
+
+### MongoDBStoragePlugin
+
+```ts
+export declare class MongoDBStoragePlugin implements Plugin {
+    readonly id = "storage.mongodb";
+    constructor(options: MongoDBStorageOptions);
+    setup(tessar: PluginContext): Promise<void>;
+}
+```
+
+### Testing
+
+```ts
+export declare class ScriptedProvider implements ModelAdapter {
+    readonly ref: ModelRef;
+    readonly calls: ModelRequest[];
+    constructor(scripts: readonly ModelScript[]);
+    withModel(modelId: string): ModelAdapter;
+    validate(request: ModelRequest): void;
+    stream(request: ModelRequest, context: ModelCallContext): AsyncIterable<ModelChunk>;
+}
+```
+
+### AgentHarness
+
+```ts
+export declare class AgentHarness {
+    readonly agent: Agent;
+    readonly controller: Controller;
+    readonly provider: ScriptedProvider;
+    readonly backend: StorageBackend;
+    static create(options?: {
+        modelScripts?: readonly ModelScript[];
+        plugins?: readonly Plugin[];
+        backend?: StorageBackend;
+        instructions?: string;
+        limits?: Partial<StreamLimits>;
+        tools?: AgentTools;
+    }): Promise<AgentHarness>;
+    admit(request: ExecutionRequest, target?: DeliveryTarget): Stream;
+    createThread(options?: CreateThreadOptions): Promise<import("../state/schema.js").ThreadInfo>;
+    collect(stream: Stream): Promise<StreamEvent[]>;
+    records(streamId: string): Promise<{
+        stream: import("../index.js").StreamRecord;
+        turns: import("../index.js").TurnRecord[];
+        attempts: import("../index.js").ModelAttemptRecord[];
+        tools: import("../index.js").ToolExecutionRecord[];
+        messages: readonly import("../index.js").MessageData[];
+    }>;
+    checkpoint(threadId: string): Promise<import("../state/schema.js").Checkpoint>;
+    dispose(): Promise<void>;
+}
+```
+
+## Các type và hàm public
 
 ### Kiểu tham số và kết quả Agent
 
@@ -716,6 +1117,74 @@ export interface ThreadTarget {
     threadId?: string;
 }
 ```
+
+### Stream và delivery target cho harness
+
+Nguồn: [packages/core/src/engine/delivery.ts](packages/core/src/engine/delivery.ts).
+
+```ts
+export interface Stream extends AsyncIterable<StreamEvent> {
+    readonly id: string | null;
+    readonly threadId: string;
+    readonly handleId: string;
+    readonly signal: AbortSignal;
+    abort(reason?: string): void;
+}
+
+export type DeliveryTarget = {
+    kind: "iterator";
+} | {
+    kind: "observer";
+    observe: (event: StreamEvent) => void;
+    admitted?: (receipt: {
+        streamId: string;
+        threadId: string;
+    }) => void;
+    rejected?: (error: ErrorInfo) => void;
+    closed?: () => void;
+};
+```
+
+### Execution request cho harness
+
+Nguồn: [packages/core/src/engine/frame.ts](packages/core/src/engine/frame.ts).
+
+```ts
+export interface ExecutionOrigin {
+    parentStreamId: string;
+    parentToolExecutionId?: string;
+    dispatchId: string;
+}
+
+export type ExecutionRequest = ({
+    kind: "input";
+    threadId: string;
+    input: readonly MessageData[];
+    model: ModelRef;
+    origin?: ExecutionOrigin;
+    context?: JsonObject;
+    limits?: Partial<StreamLimits>;
+} | {
+    kind: "resume";
+    threadId: string;
+    interruptId: string;
+    value: JsonValue;
+    model?: ModelRef;
+} | {
+    kind: "recover";
+    threadId: string;
+    streamId: string;
+    model?: ModelRef;
+}) & {
+    signal?: AbortSignal;
+    adapter?: ModelAdapter;
+    modelOptions?: JsonObject;
+    session?: SessionHookHandle;
+    thread?: ThreadHookHandle;
+};
+```
+
+`DeliveryTarget`, `ExecutionOrigin` và `ExecutionRequest` mô tả tham số testing của AgentHarness; không phải tên import từ root `@tessar/core`.
 
 ### Message và content parts
 
@@ -1593,7 +2062,7 @@ export interface ModelProfile extends ModelRef {
 
 export interface Model {
     readonly ref: Readonly<ModelRef>;
-    readonly profile: Readonly<ModelProfile>;
+    profile(): Readonly<ModelProfile>;
     refreshProfile(options?: {
         signal?: AbortSignal;
     }): Promise<ModelProfile>;

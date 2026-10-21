@@ -126,7 +126,8 @@ const agent = new Agent({
 });
 let controller: Controller | undefined;
 try {
-  controller = new Controller({ id: "my-cli", agent, plugins: await manager.load() });
+  const userPlugins = await manager.load();
+  controller = new Controller({ id: "my-cli", agent, plugins: userPlugins });
   await controller.initialize();
   console.log((await agent.generate("Hello")).output);
 } finally {
@@ -171,3 +172,26 @@ For distributed plugin packages, expose `manager.install(source)`,
 Installation records entries in `plugins.json`; `load()` discovers custom files
 and loads configured packages, without installing missing dependencies. Tessar
 does not impose a CLI command name. See [PluginManager](../../packages/plugins/README.md).
+
+## Change active plugins without a manager
+
+Controller accepts plugin instances. PluginManager only discovers/imports external
+modules and manages npm packages; it does not run plugin setup or cleanup.
+
+On an initialized Controller, an application can enable a logger for future
+executions and later disable it, using an ordinary imported plugin:
+
+```ts
+await controller.plugins.attach(new LoggerPlugin());
+// Execute work with logging enabled.
+await controller.plugins.detach("logger");
+```
+
+These operations need no PluginManager. Existing executions keep their captured
+plugin registrations until they release them; cleanup can therefore occur after
+`detach()` resolves. Storage must be configured before initialization.
+
+Applications with a fixed plugin list only need the constructor's `plugins` array
+and `controller.dispose()` at shutdown. External plugins can use the same runtime
+operations after a separate `manager.load()` call. Loading does not watch files,
+activate plugins or filter IDs already attached to the Controller.

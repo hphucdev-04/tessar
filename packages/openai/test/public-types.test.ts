@@ -12,7 +12,7 @@ class OtherModel implements ModelAdapter {
 it("infers native model options for defaults, model-ID overrides and other adapters", () => {
   const model = new OpenAIProvider({ apiKey: "test", model: "fixture" });
   const agent = new Agent({ id: "test", model });
-  expect(agent.model).toBe(model);
+  expect(agent.getModel()).toBe(model);
   if (false) {
     const configuration: OpenAIProviderOptions = { api: "chat-completions", apiKey: "test", model: "fixture", reasoning_effort: "high" };
     new OpenAIProvider(configuration);

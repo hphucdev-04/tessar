@@ -52,19 +52,43 @@ export function validateRequest(
   api: "responses" | "chat-completions",
 ): void {
   const chat = api === "chat-completions";
-  if (request.model.providerId !== ref.providerId || request.model.modelId !== ref.modelId)
-    fail("UnsupportedContext", chat ? "Chat model or connection identity mismatch" : "Model identity mismatch");
+  if (
+    request.model.providerId !== ref.providerId ||
+    request.model.modelId !== ref.modelId
+  )
+    fail(
+      "UnsupportedContext",
+      chat
+        ? "Chat model or connection identity mismatch"
+        : "Model identity mismatch",
+    );
   if (request.model.connectionId !== ref.connectionId)
-    fail("UnsupportedContext", chat ? "Chat model or connection identity mismatch" : "Model connection mismatch");
+    fail(
+      "UnsupportedContext",
+      chat
+        ? "Chat model or connection identity mismatch"
+        : "Model connection mismatch",
+    );
   for (const key of [
-    "connectionId", "api", "model", "input", "messages", "instructions", "tools", "stream",
+    "connectionId",
+    "api",
+    "model",
+    "input",
+    "messages",
+    "instructions",
+    "tools",
+    "stream",
     ...(chat ? ["functions", "function_call"] : []),
     ...clientKeys,
   ])
     if (request.options && key in request.options)
-      fail("UnsupportedOption", key + (chat
-        ? " is owned by the connection or Agent runtime"
-        : " is owned by the model connection or Agent runtime"));
+      fail(
+        "UnsupportedOption",
+        key +
+          (chat
+            ? " is owned by the connection or Agent runtime"
+            : " is owned by the model connection or Agent runtime"),
+      );
 }
 function usage(value: ResponseUsage | null | undefined) {
   return normalizeUsage(

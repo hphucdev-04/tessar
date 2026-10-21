@@ -11,7 +11,7 @@ it("persists independent Sessions and restores a selection with stale-writer pro
     const first = await a.thread.create({ title: "first" });
     const restored = (await h.controller.getSession(a.id, { scope: { user: "one" } }))!;
     expect(restored.thread.getId()).toBe(first.id);
-    expect(restored.metadata).toEqual({ label: "work" });
+    expect(restored.metadata()).toEqual({ label: "work" });
     expect(await h.controller.getSession(a.id, { scope: { user: "other" } })).toBeNull();
     const other = await createThread(h.controller, { scope: { user: "one" } });
     await a.thread.switch(other.id);

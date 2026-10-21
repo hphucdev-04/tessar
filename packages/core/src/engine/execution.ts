@@ -168,7 +168,7 @@ export async function execute(
       phase: "BeforeTurn",
       modelRef: request.model,
       ...(request.modelOptions ? { modelOptions: request.modelOptions } : {}),
-      baseInstructions: execution.agent.instructions,
+      baseInstructions: execution.agent.getInstruction(),
       pendingToolExecutionIds: [],
       pendingInterruptId: null,
       handlerCursor: null,
@@ -176,7 +176,7 @@ export async function execute(
         turns: 0,
         modelAttempts: 0,
         toolCalls: 0,
-        limits: { ...execution.agent.limits, ...request.limits },
+        limits: { ...execution.agent.limits(), ...request.limits },
       },
       registryManifest: [
         ...registry.values.map((r) => ({
