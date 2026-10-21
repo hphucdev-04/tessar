@@ -6,12 +6,31 @@ export { MessageCodec } from "./messages/codec.js";
 export * from "./instructions/instruction.js";
 export * from "./events/definition.js";
 export {
-  ready, shutdown, diagnostic, thread, session, input, stream, turn,
-  context, tools, model, message, tool, checkpoint,
-  ToolDecision, TurnDecision, InputDecision,
-  type OperationDecision, type OperationEvent, type QueuedInputReceipt,
-  type ExecutionReceipt, type ControlDecision, type InputPreparation,
-  type ToolPreparation, type StreamOutcome,
+  ready,
+  shutdown,
+  diagnostic,
+  thread,
+  session,
+  input,
+  stream,
+  turn,
+  context,
+  tools,
+  model,
+  message,
+  tool,
+  checkpoint,
+  ToolDecision,
+  TurnDecision,
+  InputDecision,
+  type OperationDecision,
+  type OperationEvent,
+  type QueuedInputReceipt,
+  type ExecutionReceipt,
+  type ControlDecision,
+  type InputPreparation,
+  type ToolPreparation,
+  type StreamOutcome,
 } from "./events/type.js";
 export * from "./plugins/context.js";
 export * from "./models/contract.js";
@@ -20,33 +39,62 @@ export * from "./tools/input-definition.js";
 export * from "./tools/index.js";
 export * from "./trace/usage.js";
 export type {
-  StreamStatus, StreamRecord, TurnRecord, ModelAttemptRecord, ToolExecutionRecord,
+  StreamStatus,
+  StreamRecord,
+  TurnRecord,
+  ModelAttemptRecord,
+  ToolExecutionRecord,
 } from "./trace/records.js";
 export * from "./state/schema.js";
 export * from "./state/storage-ports.js";
 export * from "./state/memory-backend.js";
 export {
-  buildThreadInfo, canonicalJson, commitFingerprint, validateBatch,
+  buildThreadInfo,
+  canonicalJson,
+  commitFingerprint,
+  validateBatch,
 } from "./state/commit.js";
 export * from "./state/scope.js";
 export {
-  checkpointSafety, limitOf, encodeCursor, decodeCursor, compareOrdinal,
-  pageAfter, pageRows, recordBinding, historyCursor,
+  checkpointSafety,
+  limitOf,
+  encodeCursor,
+  decodeCursor,
+  compareOrdinal,
+  pageAfter,
+  pageRows,
+  recordBinding,
+  historyCursor,
   type HistoryPage,
 } from "./state/queries.js";
 export type { CreateThreadOptions } from "./state/threads.js";
 export type { ForkOptions } from "./state/fork.js";
-export { definePluginState, type PluginStateDefinition } from "./state/plugin-state.js";
 export {
-  defineInterruption, type InterruptionDefinition, type DecisionHookContext,
+  definePluginState,
+  type PluginStateDefinition,
+} from "./state/plugin-state.js";
+export {
+  defineInterruption,
+  type InterruptionDefinition,
+  type DecisionHookContext,
 } from "./engine/interrupt.js";
 export {
-  defineEffect, type EffectContext, type EffectDefinition, type ChildReservation,
-  type TrackedServices, type ExecutionHookContext,
+  defineEffect,
+  type EffectContext,
+  type EffectDefinition,
+  type ChildReservation,
+  type TrackedServices,
+  type ExecutionHookContext,
 } from "./engine/tracked-effects.js";
 export {
-  Agent, type ModelSelection, type AgentInput, type AgentOptions, type AgentTools,
-  type AgentExecutionOptions, type GenerateOutcome, type AgentResumeOptions,
+  Agent,
+  type ModelSelection,
+  type AgentInput,
+  type AgentOptions,
+  type AgentTools,
+  type AgentExecutionOptions,
+  type GenerateOutcome,
+  type AgentResumeOptions,
   type Stream,
 } from "./agent.js";
 export * from "./controller.js";

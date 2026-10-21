@@ -210,7 +210,8 @@ export class Agent<M extends ModelSelection = ModelSelection> {
   ): Promise<GenerateOutcome> {
     const stream = this.stream(input, options);
     for await (const event of stream)
-      if (event.type === streamHooks.error) throw errorFromInfo(event.payload.error);
+      if (event.type === streamHooks.error)
+        throw errorFromInfo(event.payload.error);
     return this.outcomes.get(stream)!;
   }
   resume(options: AgentResumeOptions): Stream {

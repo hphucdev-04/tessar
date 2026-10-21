@@ -11,18 +11,24 @@ import type { PageOptions, StateQuery, ThreadInfo } from "./schema.js";
 import type { PluginStateDefinition } from "./plugin-state.js";
 import type { SessionHookHandle } from "../plugins/context.js";
 
-export async function prepareThread(controller: Controller,
+export async function prepareThread(
+  controller: Controller,
   options: CreateThreadOptions = {},
   reservedId?: string,
   session?: SessionHookHandle,
 ): Promise<ThreadInfo> {
   controller.requireReady();
-  const prepared = await controller.hooks.dispatch(threadHooks.prepare, options, {
-    session, sessionId: session?.id,
-    controllerId: controller.id,
-    agentId: controller.agent.id,
-    scope: options.scope,
-  });
+  const prepared = await controller.hooks.dispatch(
+    threadHooks.prepare,
+    options,
+    {
+      session,
+      sessionId: session?.id,
+      controllerId: controller.id,
+      agentId: controller.agent.id,
+      scope: options.scope,
+    },
+  );
   if (
     canonicalJson(prepared.scope ?? {}) !== canonicalJson(options.scope ?? {})
   )
@@ -33,9 +39,12 @@ export async function prepareThread(controller: Controller,
           kind === "thread" ? reservedId : randomIds.next(kind),
       }
     : randomIds;
-  const info = await new ThreadService(controller.backend, ids).create(prepared);
+  const info = await new ThreadService(controller.backend, ids).create(
+    prepared,
+  );
   await controller.hooks.dispatch(threadHooks.started, info, {
-    session, sessionId: session?.id,
+    session,
+    sessionId: session?.id,
     controllerId: controller.id,
     agentId: controller.agent.id,
     threadId: info.id,
@@ -44,25 +53,48 @@ export async function prepareThread(controller: Controller,
   return info;
 }
 
-export async function createThread(controller: Controller, options: CreateThreadOptions = {}, session?: SessionHookHandle): Promise<Thread> {
-  return new Thread(controller, await prepareThread(controller, options, undefined, session));
+export async function createThread(
+  controller: Controller,
+  options: CreateThreadOptions = {},
+  session?: SessionHookHandle,
+): Promise<Thread> {
+  return new Thread(
+    controller,
+    await prepareThread(controller, options, undefined, session),
+  );
 }
 
-export async function getThread(controller: Controller, id: string, query: StateQuery = {}): Promise<Thread | null> {
+export async function getThread(
+  controller: Controller,
+  id: string,
+  query: StateQuery = {},
+): Promise<Thread | null> {
   controller.requireReady();
   const info = await controller.queries.getThread(id, query);
   return info ? new Thread(controller, info) : null;
 }
 
-export function listThreads(controller: Controller, query: StateQuery & PageOptions = {}) {
+export function listThreads(
+  controller: Controller,
+  query: StateQuery & PageOptions = {},
+) {
   controller.requireReady();
   return controller.queries.listThreads(query);
 }
 
-export async function deleteThread(controller: Controller, id: string, query: StateQuery = {}, session?: SessionHookHandle): Promise<void> {
+export async function deleteThread(
+  controller: Controller,
+  id: string,
+  query: StateQuery = {},
+  session?: SessionHookHandle,
+): Promise<void> {
   controller.requireReady();
   query = immutable(query);
-  const context = { ...await threadContext(controller, id, query), session, sessionId: session?.id };
+  const context = {
+    ...(await threadContext(controller, id, query)),
+    session,
+    sessionId: session?.id,
+  };
   await controller.hooks.authorize(
     threadHooks.beforeDelete,
     immutable({ threadId: id }),
@@ -70,17 +102,29 @@ export async function deleteThread(controller: Controller, id: string, query: St
   );
   controller.requireReady();
   await new ThreadService(controller.backend).delete(id, query);
-  await controller.hooks.dispatch(threadHooks.deleted, { threadId: id }, context);
+  await controller.hooks.dispatch(
+    threadHooks.deleted,
+    { threadId: id },
+    context,
+  );
 }
 
-export async function purgeThread(controller: Controller, id: string, query: StateQuery = {}, session?: SessionHookHandle): Promise<void> {
+export async function purgeThread(
+  controller: Controller,
+  id: string,
+  query: StateQuery = {},
+  session?: SessionHookHandle,
+): Promise<void> {
   controller.requireReady();
   query = immutable(query);
-  const info = await controller.backend.threads.get(id, { includeDeleted: true });
+  const info = await controller.backend.threads.get(id, {
+    includeDeleted: true,
+  });
   if (!info || !matchesScope(info.scope, query.scope))
     fail("ThreadNotFound", "Thread does not match query");
   const context = {
-    session, sessionId: session?.id,
+    session,
+    sessionId: session?.id,
     controllerId: controller.id,
     agentId: controller.agent.id,
     threadId: id,
@@ -94,7 +138,8 @@ export async function purgeThread(controller: Controller, id: string, query: Sta
   await controller.hooks.dispatch(threadHooks.deleted, payload, context);
 }
 
-export async function renameThread(controller: Controller,
+export async function renameThread(
+  controller: Controller,
   id: string,
   title: string,
   query: StateQuery = {},
@@ -104,7 +149,11 @@ export async function renameThread(controller: Controller,
   if (typeof title !== "string")
     fail("InvalidConfiguration", "Title must be text");
   query = immutable(query);
-  const context = { ...await threadContext(controller, id, query), session, sessionId: session?.id };
+  const context = {
+    ...(await threadContext(controller, id, query)),
+    session,
+    sessionId: session?.id,
+  };
   const payload = immutable({ threadId: id, title });
   await controller.hooks.authorize(threadHooks.beforeRename, payload, context);
   controller.requireReady();
@@ -112,14 +161,19 @@ export async function renameThread(controller: Controller,
   await controller.hooks.dispatch(threadHooks.renamed, payload, context);
 }
 
-export async function forkThread(controller: Controller,
+export async function forkThread(
+  controller: Controller,
   id: string,
   options: ForkOptions & StateQuery = {},
   session?: SessionHookHandle,
 ): Promise<Thread> {
   controller.requireReady();
   options = immutable(options);
-  const context = { ...await threadContext(controller, id, options), session, sessionId: session?.id };
+  const context = {
+    ...(await threadContext(controller, id, options)),
+    session,
+    sessionId: session?.id,
+  };
   const { scope: _scope, ...forkOptions } = options;
   await controller.hooks.authorize(
     threadHooks.beforeFork,
@@ -131,7 +185,10 @@ export async function forkThread(controller: Controller,
     .registrations()
     .filter((r) => r.kind === "state")
     .map((r) => r.value as PluginStateDefinition<any>);
-  const info = await new ForkService(controller.backend, defs).fork(id, options);
+  const info = await new ForkService(controller.backend, defs).fork(
+    id,
+    options,
+  );
   await controller.hooks.dispatch(
     threadHooks.forked,
     { threadId: id, forkedThreadId: info.id },
@@ -140,7 +197,11 @@ export async function forkThread(controller: Controller,
   return new Thread(controller, info);
 }
 
-async function threadContext(controller: Controller, id: string, query: StateQuery) {
+async function threadContext(
+  controller: Controller,
+  id: string,
+  query: StateQuery,
+) {
   const info = await controller.queries.requireThread(id, query);
   return {
     controllerId: controller.id,
@@ -150,4 +211,3 @@ async function threadContext(controller: Controller, id: string, query: StateQue
     thread: new Thread(controller, info),
   };
 }
-

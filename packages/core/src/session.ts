@@ -16,7 +16,13 @@ import {
   type ExecutionReceipt,
   type QueuedInputReceipt,
 } from "./events/type.js";
-import { errorInfo, errorFromInfo, fail, requireId, type ErrorInfo } from "./errors.js";
+import {
+  errorInfo,
+  errorFromInfo,
+  fail,
+  requireId,
+  type ErrorInfo,
+} from "./errors.js";
 import {
   immutable,
   randomIds,
@@ -35,13 +41,24 @@ import type { CreateThreadOptions } from "./state/threads.js";
 import type { ForkOptions } from "./state/fork.js";
 import type { HistoryOptions } from "./state/queries.js";
 import type { Stream } from "./engine/delivery.js";
-import { createThread, getThread, listThreads, renameThread, forkThread, deleteThread, purgeThread } from "./state/thread-operations.js";
+import {
+  createThread,
+  getThread,
+  listThreads,
+  renameThread,
+  forkThread,
+  deleteThread,
+  purgeThread,
+} from "./state/thread-operations.js";
 export interface SessionOptions {
   scope?: Scope;
   model?: Model | ModelRef;
   metadata?: JsonObject;
 }
-export type SessionThreadOptions = Pick<CreateThreadOptions, "title" | "messages" | "metadata">;
+export type SessionThreadOptions = Pick<
+  CreateThreadOptions,
+  "title" | "messages" | "metadata"
+>;
 export interface SessionModelInfo {
   readonly id: string;
   readonly name: string;
@@ -154,14 +171,21 @@ export class Session {
     list: (): readonly SessionModelInfo[] => {
       this.check();
       const models = new Map(
-        this.modelCatalog.list().map(model => [this.modelId(model.ref), model]),
+        this.modelCatalog
+          .list()
+          .map((model) => [this.modelId(model.ref), model]),
       );
       models.set(this.model.get(), this.selectedModel);
-      return immutable([...models].map(([id, model]) => ({
-        id, name: model.ref.modelId, profile: model.profile,
-      })));
+      return immutable(
+        [...models].map(([id, model]) => ({
+          id,
+          name: model.ref.modelId,
+          profile: model.profile,
+        })),
+      );
     },
-    switch: (modelId: string, options?: JsonObject): Promise<void> => this.switchModel(modelId, options),
+    switch: (modelId: string, options?: JsonObject): Promise<void> =>
+      this.switchModel(modelId, options),
   });
   private modelId(ref: ModelRef): string {
     return ref.providerId + "/" + ref.modelId;
@@ -197,30 +221,51 @@ export class Session {
   private switchModel(modelId: string, options?: JsonObject): Promise<void> {
     return this.control(async () => {
       requireId(modelId, "model id");
-      if (options !== undefined &&
-          (!options || typeof options !== "object" || Array.isArray(options)))
+      if (
+        options !== undefined &&
+        (!options || typeof options !== "object" || Array.isArray(options))
+      )
         fail("InvalidConfiguration", "Model options must be an object");
       for (const key of [
-        "api", "model", "input", "messages", "instructions", "tools", "stream",
-        "apiKey", "baseURL", "defaultHeaders", "maxRetries", "timeout", "connectionId",
+        "api",
+        "model",
+        "input",
+        "messages",
+        "instructions",
+        "tools",
+        "stream",
+        "apiKey",
+        "baseURL",
+        "defaultHeaders",
+        "maxRetries",
+        "timeout",
+        "connectionId",
       ])
         if (options && key in options)
           fail("UnsupportedOption", key + " is not a model option");
       const previous = this.selectedModel.ref;
       const slash = modelId.indexOf("/");
-      const ref = slash < 0
-        ? { ...previous, modelId }
-        : modelId.slice(0, slash) === previous.providerId
-          ? { ...previous, modelId: modelId.slice(slash + 1) }
-          : { providerId: modelId.slice(0, slash), modelId: modelId.slice(slash + 1) };
+      const ref =
+        slash < 0
+          ? { ...previous, modelId }
+          : modelId.slice(0, slash) === previous.providerId
+            ? { ...previous, modelId: modelId.slice(slash + 1) }
+            : {
+                providerId: modelId.slice(0, slash),
+                modelId: modelId.slice(slash + 1),
+              };
       const selected = this.controller.sessionModel(ref),
         next = selected.model;
-      const effective = options === undefined
-        ? selected.stored.options
-        : snapshotModelOptions({ ...selected.stored.options, ...options });
+      const effective =
+        options === undefined
+          ? selected.stored.options
+          : snapshotModelOptions({ ...selected.stored.options, ...options });
       const payload = immutable({
-        previous, model: next.ref,
-        ...(this.record.selectedModel.options !== undefined ? { previousOptions: this.record.selectedModel.options } : {}),
+        previous,
+        model: next.ref,
+        ...(this.record.selectedModel.options !== undefined
+          ? { previousOptions: this.record.selectedModel.options }
+          : {}),
         ...(effective !== undefined ? { options: effective } : {}),
       });
       await this.controller.hooks.authorize(
@@ -229,10 +274,12 @@ export class Session {
         this.context(),
       );
       this.check();
-      await this.persist({ selectedModel: {
-        ...selected.stored,
-        ...(effective !== undefined ? { options: effective } : {}),
-      } });
+      await this.persist({
+        selectedModel: {
+          ...selected.stored,
+          ...(effective !== undefined ? { options: effective } : {}),
+        },
+      });
       this.selectedModel = next;
       this.notify(sessionHooks.modelChanged, payload);
     });
@@ -285,12 +332,23 @@ export class Session {
     create: (options: SessionThreadOptions = {}): Promise<Thread> =>
       this.control(async () => {
         this.checkThreadSelectionChange();
-        if (Object.keys(options).some(key => !["title", "messages", "metadata"].includes(key)))
-          fail("InvalidConfiguration", "Thread creation accepts title, messages and metadata only");
-        const thread = await createThread(this.controller, {
-          ...options,
-          scope: this.scope,
-        }, this);
+        if (
+          Object.keys(options).some(
+            (key) => !["title", "messages", "metadata"].includes(key),
+          )
+        )
+          fail(
+            "InvalidConfiguration",
+            "Thread creation accepts title, messages and metadata only",
+          );
+        const thread = await createThread(
+          this.controller,
+          {
+            ...options,
+            scope: this.scope,
+          },
+          this,
+        );
         this.checkThreadSelectionChange();
         await this.persist({ selectedThreadId: thread.id });
         this.selection = thread;
@@ -334,36 +392,55 @@ export class Session {
       this.control(async () => {
         this.check();
         const id = this.selected(target.threadId);
-        await renameThread(this.controller, id, title, { scope: this.scope }, this);
+        await renameThread(
+          this.controller,
+          id,
+          title,
+          { scope: this.scope },
+          this,
+        );
         this.notify(sessionHooks.threadRenamed, { threadId: id, title });
       }),
     fork: (options: ForkOptions & ThreadTarget = {}): Promise<Thread> =>
       this.control(async () => {
         this.check();
         const sourceThreadId = this.selected(options.threadId),
-          thread = await forkThread(this.controller, sourceThreadId, {
-            ...options,
-            scope: this.scope,
-          }, this);
+          thread = await forkThread(
+            this.controller,
+            sourceThreadId,
+            {
+              ...options,
+              scope: this.scope,
+            },
+            this,
+          );
         this.notify(sessionHooks.threadForked, {
           sourceThreadId,
           threadId: thread.id,
         });
         return thread;
       }),
-    delete: (target: ThreadTarget = {}): Promise<void> => this.removeThread(target, false),
-    purge: (target: ThreadTarget = {}): Promise<void> => this.removeThread(target, true),
+    delete: (target: ThreadTarget = {}): Promise<void> =>
+      this.removeThread(target, false),
+    purge: (target: ThreadTarget = {}): Promise<void> =>
+      this.removeThread(target, true),
     getHistory: async (options: HistoryOptions & ThreadTarget = {}) => {
       this.check();
       return (await this.target(options.threadId)).getHistory(options);
     },
   };
-  private removeThread(target: ThreadTarget, permanent: boolean): Promise<void> {
+  private removeThread(
+    target: ThreadTarget,
+    permanent: boolean,
+  ): Promise<void> {
     return this.control(async () => {
       this.check();
       const id = this.selected(target.threadId);
       await (permanent ? purgeThread : deleteThread)(
-        this.controller, id, { scope: this.scope }, this,
+        this.controller,
+        id,
+        { scope: this.scope },
+        this,
       );
       const stored = await this.controller.backend.sessions.get(this.id, {
         scope: this.scope,
@@ -375,8 +452,7 @@ export class Session {
             ? null
             : this.record.selectedThreadId,
         revision:
-          this.record.revision +
-          (this.record.selectedThreadId === id ? 1 : 0),
+          this.record.revision + (this.record.selectedThreadId === id ? 1 : 0),
         updatedAt: stored?.updatedAt,
       };
       if (!stored || canonicalJson(stored) !== canonicalJson(expected))

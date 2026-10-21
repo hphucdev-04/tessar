@@ -130,8 +130,9 @@ export function callAgent(
       : retainStandalone(agent, threadId, runtime);
     const prepare = controller
       ? () =>
-          prepareThread(controller, { scope: options.scope }, threadId)
-            .then(() => {})
+          prepareThread(controller, { scope: options.scope }, threadId).then(
+            () => {},
+          )
       : () =>
           new ThreadService(runtime.backend, {
             next: (kind) =>

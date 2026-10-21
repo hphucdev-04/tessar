@@ -209,7 +209,10 @@ export class Controller {
       }
     for (const provider of current)
       if (!this.providers.has(provider))
-        this.providers.set(provider, this.modelRegistry.registerProvider(provider));
+        this.providers.set(
+          provider,
+          this.modelRegistry.registerProvider(provider),
+        );
   }
   /** @internal */ resolveModel(value: ModelSelection | undefined): Model {
     this.requireReady();
@@ -234,7 +237,9 @@ export class Controller {
     stored: StoredModelSelection;
   } {
     const ref = "ref" in value ? value.ref : value;
-    const adapter = isModelAdapter(value) ? value : this.modelRegistry.resolve(ref);
+    const adapter = isModelAdapter(value)
+      ? value
+      : this.modelRegistry.resolve(ref);
     const stored = immutable({
       ref: adapter.ref,
       ...(adapter.options
@@ -261,7 +266,12 @@ export class Controller {
     });
     await this.backend.sessions.compareAndSet(record, 0);
     this.requireReady();
-    const session = new Session(this, record, selected.model, this.modelRegistry);
+    const session = new Session(
+      this,
+      record,
+      selected.model,
+      this.modelRegistry,
+    );
     session.created();
     return session;
   }
@@ -287,7 +297,13 @@ export class Controller {
     if (record.selectedThreadId && !thread)
       fail("ThreadNotFound", "Session selection is unavailable");
     this.requireReady();
-    return new Session(this, record, selected.model, this.modelRegistry, thread);
+    return new Session(
+      this,
+      record,
+      selected.model,
+      this.modelRegistry,
+      thread,
+    );
   }
   listSessions(query: StateQuery & PageOptions = {}) {
     this.requireReady();
