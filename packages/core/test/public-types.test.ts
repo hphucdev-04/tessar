@@ -87,8 +87,7 @@ it("infers the public plugin type map and discriminated event union", () => {
     // @ts-expect-error Plugins are configured on Controller
     new Agent({ id: "a", plugins: [plugin] });
     // @ts-expect-error Agent does not own plugin configuration or management
-    new Agent({ id: "a", model: { providerId: "test", modelId: "test" } })
-      .plugins;
+    agent.plugins;
     // @ts-expect-error Agent requires a developer ID
     new Agent({});
     // @ts-expect-error Controller requires a developer ID
@@ -99,9 +98,6 @@ it("infers the public plugin type map and discriminated event union", () => {
       }),
     });
     // @ts-expect-error Agent initialization is owned by Controller
-    new Agent({
-      id: "a",
-      model: { providerId: "test", modelId: "test" },
-    }).initialize();
+    agent.initialize();
   }
 });

@@ -40,20 +40,20 @@ it("infers native model options for defaults, model-ID overrides and other adapt
     agent.generate("hi", { model: chat, modelOptions: { max_tokens: 100 } });
     // @ts-expect-error Chat request fields are not Responses fields
     chatAgent.stream("hi", { modelOptions: { max_output_tokens: 100 } });
-    // @ts-expect-error Responses reasoning is not Chat reasoning_effort
     new OpenAIProvider({
       api: "chat-completions",
       apiKey: "test",
       model: "fixture",
+      // @ts-expect-error Responses reasoning is not Chat reasoning_effort
       reasoning: { effort: "high" },
     });
     // @ts-expect-error API belongs to the connection, not execution request overrides
     chatAgent.stream("hi", { modelOptions: { api: "responses" } });
-    // @ts-expect-error Only one choice can be consumed by an Agent loop
     new OpenAIProvider({
       api: "chat-completions",
       apiKey: "test",
       model: "fixture",
+      // @ts-expect-error Only one choice can be consumed by an Agent loop
       n: 2,
     });
     agent.stream("hi", {
@@ -76,19 +76,19 @@ it("infers native model options for defaults, model-ID overrides and other adapt
       model: new OtherModel(),
       modelOptions: { max_tokens: 100 },
     });
-    // @ts-expect-error Model override determines the option type, not the Agent default
     agent.stream("hi", {
       model: new OtherModel(),
+      // @ts-expect-error Model override determines the option type, not the Agent default
       modelOptions: { max_output_tokens: 100 },
     });
     // @ts-expect-error model is required by the Agent constructor
     new Agent({ id: "missing" });
     // @ts-expect-error Provider input is derived by Agent
     new OpenAIProvider({ apiKey: "test", model: "fixture", input: "bypass" });
-    // @ts-expect-error Provider-managed compaction requires a supported continuity codec
     new OpenAIProvider({
       apiKey: "test",
       model: "fixture",
+      // @ts-expect-error Provider-managed compaction requires a supported continuity codec
       context_management: [{ type: "compaction" }],
     });
   }
