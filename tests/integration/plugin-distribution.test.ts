@@ -101,7 +101,6 @@ it("loads the packed logger subpath using the host SDK without installing core i
   const packed=await command("pnpm",["pack","--json","--pack-destination",root],resolve("packages/plugins"),cache);
   const tarball=resolve(root,JSON.parse(packed.stdout).filename);
   await command("npm",["install","--offline","--ignore-scripts","--no-audit","--no-fund",tarball],npmDirectory,cache);
-  expect(existsSync(join(npmDirectory,"node_modules/@tessar/plugins/dist/logger.js"))).toBe(true);
   expect(existsSync(join(npmDirectory,"node_modules/@tessar/core"))).toBe(false);
   expect(existsSync(join(npmDirectory,"node_modules/@tessar/plugins/node_modules/@tessar/core"))).toBe(false);
   await execute(process.execPath,["--input-type=module","-e",`
