@@ -238,6 +238,10 @@ async function callModel(
   await context.hook(frame, modelHooks.start, {
     attemptId: attempt.id,
     model: position.modelRef,
+    request: immutable(request),
+    purpose: attempt.purpose,
+    turnId: attempt.turnId,
+    parentToolExecutionId: attempt.parentToolExecutionId,
   });
   const attemptStartedAt = performance.now();
   let response: ModelResponse | undefined;
@@ -263,6 +267,7 @@ async function callModel(
         await context.hook(frame, modelHooks.usage, {
           attemptId: attempt.id,
           usage: chunk.usage,
+          purpose: attempt.purpose,
         });
       }
       if (chunk.type === "response") response = chunk.response;
@@ -312,6 +317,7 @@ async function callModel(
     await context.hook(frame, modelHooks.end, {
       attemptId: attempt.id,
       response,
+      purpose: attempt.purpose,
     });
     return true;
   } catch (error) {
@@ -326,6 +332,7 @@ async function callModel(
     await context.hook(frame, modelHooks.error, {
       attemptId: attempt.id,
       error: attempt.error,
+      purpose: attempt.purpose,
     });
     const recovery = await context.hook(frame, modelHooks.recover, {
       attemptId: attempt.id,

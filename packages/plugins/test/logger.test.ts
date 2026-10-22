@@ -20,9 +20,13 @@ it("logs provider errors with execution identity and persists their source", asy
     status: 429,
   });
   const logger = new LoggerPlugin({
-    write: (entry) => {
-      entries.push(entry);
-    },
+    transports: [
+      {
+        write: (entry) => {
+          entries.push(entry);
+        },
+      },
+    ],
   });
   expect(logger).toBeInstanceOf(LoggerPlugin);
   const harness = await AgentHarness.create({
@@ -74,9 +78,13 @@ it("reports observer and plugin notification failures without recursive logger e
     modelScripts: [{ text: "ok" }],
     plugins: [
       new LoggerPlugin({
-        write: (entry) => {
-          entries.push(entry);
-        },
+        transports: [
+          {
+            write: (entry) => {
+              entries.push(entry);
+            },
+          },
+        ],
       }),
       broken,
     ],
@@ -127,7 +135,7 @@ it.each([false, true])(
     });
     const silent = await AgentHarness.create({
       modelScripts: [{ text: "ok" }],
-      plugins: [new LoggerPlugin({ write })],
+      plugins: [new LoggerPlugin({ transports: [{ write }] })],
     });
     try {
       const result = await silent.agent.generate(new HumanMessage("hi"), {
@@ -148,9 +156,13 @@ it("logs storage failures and rethrows the original exception", async () => {
     backend,
     plugins: [
       new LoggerPlugin({
-        write: (entry) => {
-          entries.push(entry);
-        },
+        transports: [
+          {
+            write: (entry) => {
+              entries.push(entry);
+            },
+          },
+        ],
       }),
     ],
   });
@@ -192,9 +204,13 @@ it("logs decision hook failures without exposing mutable services to diagnostics
   const harness = await AgentHarness.create({
     plugins: [
       new LoggerPlugin({
-        write: (entry) => {
-          entries.push(entry);
-        },
+        transports: [
+          {
+            write: (entry) => {
+              entries.push(entry);
+            },
+          },
+        ],
       }),
       {
         id: "policy",

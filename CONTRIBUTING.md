@@ -56,22 +56,45 @@ changing the design. Do not silently redefine the contract to match existing cod
 
 ## Releases
 
-All six public packages share one release version. Update `version` in
-`packages/{core,openai,plugins,sqlite,postgresql,mongodb}/package.json` together.
-The private workspace root's version is not used for publishing. Commit all
-release changes to `release` before creating the matching tag:
+Public packages are versioned and released independently. Update only the
+package being released and any dependency that also needs a new version. The
+private workspace root's version is not used for publishing. Commit the changes
+to `release`, then create a tag using the package's unscoped name and version:
 
 ```sh
 git push origin release
-git tag v0.1.1
-git push origin v0.1.1
+git tag langfuse@0.1.0
+git push origin langfuse@0.1.0
 ```
 
 Use the next unpublished version, rather than copying the example version.
-Pushes to `release` and pull requests run CI. Tag pushes matching `v*` trigger
-`.github/workflows/release.yml`, which calls the reusable CI, checks versions,
-builds and packs the packages, validates the archives and publishes them.
-Stable tags use npm `latest`; prerelease tags such as `v0.2.0-beta.1` use `next`.
+Pushes to `release` and pull requests run CI. Wait for the `release` branch's CI
+to succeed before pushing a package tag for that commit. Package tags trigger
+`.github/workflows/release.yml`, which checks the latest push CI run for the
+exact tagged commit on `release` instead of running the test suite again. A
+missing, pending or unsuccessful CI run blocks publication; after CI succeeds,
+re-run the failed release workflow without moving the tag.
+
+The release workflow discovers the selected package under
+`packages/*/package.json`, validates its version, builds the workspace, and
+packs/publishes only that package. Adding a package does not require editing a
+publish list. Legacy `v*` tags no longer trigger publication.
+Stable tags use npm `latest`; prereleases such as `plugins@0.2.0-beta.1` use `next`.
+
+Versions of other packages do not need to match. For example, Langfuse `0.1.0`
+can depend on Core `0.1.4`. pnpm rewrites `workspace:*` to the dependency's own
+version when packing; `workspace:^` becomes a compatible range. The workflow
+checks the actual archive and rejects unresolved or incorrectly rewritten
+dependencies. It also checks npm for an already published target version and
+compatible published internal dependencies before attempting publication.
+
+Publish changed dependencies first and wait for their release to succeed before
+tagging dependents. The current Langfuse implementation requires the new Core
+hook payloads, so release `core@0.1.4` before `langfuse@0.1.0`. The logger API
+changes also require releasing `plugins@0.1.4`, after Core. OpenAI and storage
+packages do not need a new release for these changes. When releasing
+multiple versions of the same package, finish the earlier release first so
+the `latest` npm tag cannot race backwards.
 
 Each package needs npm Trusted Publishing configured for GitHub owner
 `tessar-ai`, repository `tessar`, workflow `release.yml`, no environment and
@@ -85,14 +108,15 @@ workflow does not attempt to republish an existing version.
 To inspect a release locally without publishing, use PowerShell:
 
 ```powershell
-$env:RELEASE_TAG = 'v0.1.1'
-node scripts/release.mjs check
+$env:RELEASE_TAG = 'langfuse@0.1.0'
+$plan = node scripts/release.mjs check | ConvertFrom-Json
 pnpm build
-pnpm --filter './packages/*' -r pack --pack-destination "$PWD/dist/release"
+pnpm --filter $plan.package pack --pack-destination "$PWD/dist/release"
 node scripts/release.mjs verify
+node scripts/release.mjs registry
 ```
 
-Publication is sequential and is not atomic. If a package fails after earlier
-packages succeed, inspect the registry and use the saved workflow archives to
-publish only missing packages. The current workflow does not skip existing
-versions. Re-running an old tag uses its original commit, including its workflow.
+Each tag publishes one artifact, named with that package and version. A failed
+publish can be retried after checking npm; an existing version fails preflight
+rather than being silently replaced or republished. Re-running an old tag uses
+its original commit, including its workflow. Never move a published release tag.

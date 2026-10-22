@@ -77,9 +77,98 @@ try {
 the existing request and instructions, then adds an ordered section. This affects
 the prepared request; it does not rewrite stored conversation history. Section
 order controls instruction placement independently of plugin discovery order.
-The logger writes JSON entries to stderr by default.
+The logger writes JSON entries to stderr by default. Configure transports to
+write files or connect your application's logging system.
+
+## Configure logging
+
+```ts
+import {
+  LoggerPlugin, FileTransport, logGroup,
+} from "@tessar/plugins/logger";
+
+const logger = new LoggerPlugin({
+  level: "info",
+  transports: [new FileTransport({
+    path: "./logs/my-app.jsonl",
+    groupBy: logGroup.session,
+  })],
+});
+// Use logger in new Controller({ id, agent, plugins: [logger] }).
+```
+
+`level` is the minimum severity (`debug < info < warn < error`), defaulting to
+`info`. Use `debug` to include input messages, text/reasoning deltas, tool progress
+and model usage. Lifecycle events are info, suspension is warn and events with
+errors are error. Filtering happens before any transport writes.
+
+`FileTransport.path` names the fallback file. Omitting `groupBy` writes all
+entries to that file. Grouping uses its parent directory and extension:
+
+| Group | Destination for `path: "./logs/my-app.jsonl"` |
+| --- | --- |
+| `logGroup.none` | `logs/my-app.jsonl` |
+| `logGroup.thread` | `logs/threads/<threadId>.jsonl` |
+| `logGroup.session` | `logs/sessions/<sessionId>/<threadId>.jsonl` |
+| `logGroup.stream` | `logs/streams/<streamId>.jsonl` |
+
+Entries missing the required IDs go into `my-app.jsonl`; no extra Session-level
+file is created. Choosing `.log` in `path` changes the extension for all these
+files; their contents remain JSON Lines. Caller-supplied IDs are encoded for
+portable filenames; IDs in the entries are unchanged. File creation is lazy.
+Await `controller.dispose()` at shutdown so pending log entries are written.
+
+To also print logs, add `new ConsoleTransport()` to the transports array. Omitting
+`transports` uses ConsoleTransport writing to stderr; an empty array disables
+output. Each LoggerPlugin owns its transport instances and closes them on cleanup.
+
+## Custom log transports
+
+Use the public `LogTransport` contract to integrate another logging service.
+The following class belongs to the consuming application; Tessar does not
+provide a built-in HTTP transport:
+
+```ts
+import { LoggerPlugin, type LogEntry, type LogTransport } from "@tessar/plugins/logger";
+
+class HttpTransport implements LogTransport {
+  readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
+  }
+
+  async write(entry: LogEntry): Promise<void> {
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error(`Log endpoint returned HTTP ${response.status}`);
+  }
+}
+
+const logger = new LoggerPlugin({
+  transports: [new HttpTransport("https://logs.example.com/ingest")],
+});
+```
+
+The application decides credentials and the destination's expected payload. A
+transport can optionally implement `close(): void | Promise<void>` to flush its
+buffers or release resources. Transport failures are reported as diagnostics;
+other destinations still receive the entry. Replace the former
+`new LoggerPlugin({ write })` API with `transports: [yourTransport]`.
 
 ## Hook and registration APIs
+
+`model.start`, `model.usage`, `model.end` and `model.error` cover primary and
+auxiliary model attempts. Their `purpose` distinguishes the two. A hook that
+launches an auxiliary model in response to model completion should filter for
+primary completion to avoid calling itself recursively. `model.start` also
+includes the effective `request`, `turnId` and `parentToolExecutionId`; tool start
+includes the effective name, arguments and turn ID. These are shared runtime
+events available to every plugin.
 
 | API | Purpose |
 | --- | --- |

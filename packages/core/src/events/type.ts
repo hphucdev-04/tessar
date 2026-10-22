@@ -297,11 +297,18 @@ declare module "./definition.js" {
     "tools.select": Transform<readonly ToolDescription[]>;
     "model.select": Decision<{ model: ModelRef }>;
     "model.request": Transform<ModelRequest>;
-    "model.start": HookSpec<{ attemptId: string; model: ModelRef }>;
-    "model.end": HookSpec<{ attemptId: string; response: ModelResponse }>;
+    "model.start": HookSpec<{
+      attemptId: string;
+      model: ModelRef;
+      request?: ModelRequest;
+      purpose?: "primary" | "auxiliary";
+      turnId?: string;
+      parentToolExecutionId?: string | null;
+    }>;
+    "model.end": HookSpec<{ attemptId: string; response: ModelResponse; purpose?: "primary" | "auxiliary" }>;
     "model.response": Transform<ModelResponse>;
-    "model.usage": HookSpec<{ attemptId: string; usage: ModelUsage }>;
-    "model.error": HookSpec<{ attemptId: string; error: ErrorInfo }>;
+    "model.usage": HookSpec<{ attemptId: string; usage: ModelUsage; purpose?: "primary" | "auxiliary" }>;
+    "model.error": HookSpec<{ attemptId: string; error: ErrorInfo; purpose?: "primary" | "auxiliary" }>;
     "model.recover": Decision<{ attemptId: string; error: ErrorInfo }>;
     "message.prepare": Transform<MessageData>;
     "message.before-commit": HookSpec<{ message: MessageData }>;
@@ -318,7 +325,13 @@ declare module "./definition.js" {
     }>;
     "tool.prepare": Transform<ToolPreparation>;
     "tool.before": Decision<ToolPreparation>;
-    "tool.start": HookSpec<{ toolExecutionId: string; toolCallId: string }>;
+    "tool.start": HookSpec<{
+      toolExecutionId: string;
+      toolCallId: string;
+      turnId?: string;
+      name?: string;
+      arguments?: JsonObject;
+    }>;
     "tool.update": HookSpec<{ toolExecutionId: string; progress: JsonValue }>;
     "tool.end": HookSpec<{
       toolExecutionId: string;

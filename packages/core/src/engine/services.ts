@@ -2,7 +2,7 @@ import { model as modelHooks } from "../events/type.js";
 import { errorInfo, fail } from "../errors.js";
 import { immutable } from "../json.js";
 
-import type { ModelChunk, ModelRef, ModelRequest } from "../models/contract.js";
+import type { ModelChunk, ModelRef, ModelRequest, ModelResponse } from "../models/contract.js";
 import { providerCall, selectAdapter, streamModel } from "../models/stream.js";
 import { createModelAttempt } from "../trace/records.js";
 import {
@@ -103,6 +103,12 @@ async function* auxiliary(
   execution.put(frame, "model_attempts", attempt);
   await execution.commit(frame, "ExecutionTransition");
   const attemptStartedAt = performance.now();
+  let response: ModelResponse | undefined;
+  await execution.hook(frame, modelHooks.start, {
+    attemptId: attempt.id, model: options.model, request: immutable(request),
+    purpose: attempt.purpose, turnId: attempt.turnId,
+    parentToolExecutionId: attempt.parentToolExecutionId,
+  }, toolExecutionId);
   try {
     for await (const chunk of streamModel(adapter, request, {
       signal: frame.sink.controller.signal,
@@ -114,23 +120,32 @@ async function* auxiliary(
           performance.now() - attemptStartedAt,
         );
       }
-      if (chunk.type === "usage") attempt.usage = chunk.usage;
+      if (chunk.type === "usage") {
+        attempt.usage = chunk.usage;
+        await execution.hook(frame, modelHooks.usage, { attemptId: attempt.id, usage: chunk.usage, purpose: attempt.purpose }, toolExecutionId);
+      }
       if (chunk.type === "response") {
         attempt.usage = chunk.response.usage ?? attempt.usage;
         attempt.status = "succeeded";
         attempt.finishReason = chunk.response.finishReason ?? null;
         attempt.providerRequestId = chunk.response.providerRequestId ?? null;
+        response = chunk.response;
       }
       yield chunk;
     }
   } catch (error) {
     attempt.status = "failed";
     attempt.error = errorInfo(error);
+    await execution.hook(frame, modelHooks.error, {
+      attemptId: attempt.id, error: attempt.error, purpose: attempt.purpose,
+    }, toolExecutionId);
     throw error;
   } finally {
     if (attempt.status === "running") attempt.status = "interrupted";
     attempt.endedAt = execution.clock.now();
     attempt.durationMs = Math.max(0, performance.now() - attemptStartedAt);
     await execution.commit(frame, "ExecutionTransition");
+    if (attempt.status === "succeeded" && response)
+      await execution.hook(frame, modelHooks.end, { attemptId: attempt.id, response, purpose: attempt.purpose }, toolExecutionId);
   }
 }

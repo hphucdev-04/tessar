@@ -1,25 +1,34 @@
 name: release
 on:
   push:
-    tags: ['v*']
+    tags: ['*@*']
 permissions:
   contents: read
 concurrency:
-  group: npm-release
+  group: npm-release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  verify:
-    uses: ./.github/workflows/ci.yml
   publish:
-    needs: verify
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+      - name: Require successful CI for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+            --branch release --event push --commit "$GITHUB_SHA" --limit 1 \
+            --json conclusion --jq '.[0].conclusion // ""')
+          if [ "$conclusion" != success ]; then
+            echo "::error::Commit $GITHUB_SHA must pass CI on release before publishing. Wait for CI or fix it, then re-run this release."
+            exit 1
+          fi
       - uses: pnpm/action-setup@v4
         with:
           version: 11.5.3
@@ -27,23 +36,25 @@ jobs:
         with:
           node-version: 24.14.0
           registry-url: https://registry.npmjs.org/
-      - name: Validate release versions
+      - run: pnpm install --frozen-lockfile
+      - name: Select package and validate its version
         id: release
         run: node scripts/release.mjs check
-      - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm --filter './packages/*' -r pack --pack-destination "$GITHUB_WORKSPACE/dist/release"
+      - name: Pack the selected package
+        env:
+          RELEASE_PACKAGE: ${{ steps.release.outputs.package }}
+        run: pnpm --filter "$RELEASE_PACKAGE" pack --pack-destination "$GITHUB_WORKSPACE/dist/release"
       - run: node scripts/release.mjs verify
+      - name: Check npm version and internal dependencies
+        run: node scripts/release.mjs registry
       - uses: actions/upload-artifact@v4
         with:
-          name: npm-${{ steps.release.outputs.version }}
-          path: dist/release/*.tgz
+          name: npm-${{ steps.release.outputs.shortName }}-${{ steps.release.outputs.version }}
+          path: ${{ steps.release.outputs.archive }}
           if-no-files-found: error
       - name: Publish with npm trusted publishing
         env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_ARCHIVE: ${{ steps.release.outputs.archive }}
           NPM_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          for package in core openai plugins sqlite postgresql mongodb; do
-            npm publish "dist/release/tessar-${package}-${RELEASE_VERSION}.tgz" --access public --tag "$NPM_TAG"
-          done
+        run: npm publish "$RELEASE_ARCHIVE" --access public --tag "$NPM_TAG"

@@ -36,4 +36,4 @@ Follow existing Conventional Commit patterns: `feat(plugin): ...`, `fix(ci): ...
 
 ## Security & Configuration
 
-Keep credentials in ignored environment files. Storage tests read `TESSAR_TEST_POSTGRES_URL` and `TESSAR_TEST_MONGODB_URL`, optionally from `.env.storage`; MongoDB requires transaction support through a replica set or sharded deployment. Never commit credentials, database files or generated output. All six public packages share a release version; see `CONTRIBUTING.md` for publication steps.
+Keep credentials in ignored environment files. Storage tests read `TESSAR_TEST_POSTGRES_URL` and `TESSAR_TEST_MONGODB_URL`, optionally from `.env.storage`; MongoDB requires transaction support through a replica set or sharded deployment. Never commit credentials, database files or generated output. Public packages have independent versions and package-specific release tags; see `CONTRIBUTING.md` for publication steps.

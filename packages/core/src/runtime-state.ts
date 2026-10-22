@@ -79,6 +79,7 @@ export class StateView {
         return this.update({ messages });
       }
       case "model.start": {
+        if (event.payload.purpose === "auxiliary") return null;
         const draft = this.value.currentMessage;
         this.parts.clear();
         return this.update({
@@ -186,6 +187,7 @@ export class StateView {
           ),
         });
       case "model.error":
+        if (event.payload.purpose === "auxiliary") return null;
         return this.update({ error: event.payload.error });
       case "stream.suspended":
         return this.update({

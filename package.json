@@ -18,13 +18,15 @@
   },
   "devDependencies": {
     "@tessar/core": "workspace:*",
+    "@tessar/langfuse": "workspace:*",
+    "@tessar/mongodb": "workspace:*",
     "@tessar/plugins": "workspace:*",
+    "@tessar/postgresql": "workspace:*",
     "@tessar/sqlite": "workspace:*",
     "@types/node": "^24.0.0",
+    "semver": "^7.8.5",
     "typescript": "7.0.2",
     "vitest": "5.0.4",
-    "zod": "^4.6.7",
-    "@tessar/postgresql": "workspace:*",
-    "@tessar/mongodb": "workspace:*"
+    "zod": "^4.6.7"
   }
 }

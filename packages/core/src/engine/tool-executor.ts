@@ -296,7 +296,10 @@ export async function callTools(
         await context.hook(
           frame,
           toolHooks.start,
-          { toolExecutionId: record.id, toolCallId: record.toolCallId },
+          {
+            toolExecutionId: record.id, toolCallId: record.toolCallId,
+            turnId: record.turnId, name: record.toolName, arguments: record.arguments,
+          },
           record.id,
         );
         if (frame.sink.controller.signal.aborted)

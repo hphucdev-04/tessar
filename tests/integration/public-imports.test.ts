@@ -19,8 +19,10 @@ it("loads built core without product startup I/O and runs the public APIs",()=>{
   const {PluginManager}=await import('@tessar/plugins');
   const manager=new PluginManager({directory:process.cwd(),hostUrl:import.meta.url});
   try{const [logger]=await manager.load(['@tessar/plugins/logger']);assert.equal(logger.id,'logger');assert.equal(typeof logger.setup,'function');}finally{manager.dispose();}
-  const {LoggerPlugin}=await import('@tessar/plugins/logger');const logs=[];
-  const logger=new LoggerPlugin({write:entry=>{logs.push(entry);}});assert.ok(logger instanceof LoggerPlugin);
+  const {LoggerPlugin,FileTransport,ConsoleTransport,logGroup}=await import('@tessar/plugins/logger');const logs=[];
+  assert.equal(typeof FileTransport,'function');assert.equal(typeof ConsoleTransport,'function');assert.equal(logGroup.thread,'thread');
+  const {LangfusePlugin}=await import('@tessar/langfuse');assert.equal(new LangfusePlugin().id,'langfuse');
+  const logger=new LoggerPlugin({transports:[{write:entry=>{logs.push(entry);}}]});assert.ok(logger instanceof LoggerPlugin);assert.ok(!('write' in logger));
   const agent=new Agent({id:'consumer',model:{providerId:'scripted',modelId:'test'}});
   const controller=new Controller({id:'consumer-runtime',agent,plugins:[logger,{id:'fixture',setup(tessar){tessar.models.register({id:'scripted',create:()=>provider});}}]});
   await controller.initialize();
@@ -38,6 +40,13 @@ it("composes independent agents through a plugin using built public APIs", () =>
 
 it("delivers signals through built public Stream and Session APIs", () => {
  const result = spawnSync(process.execPath, ["tests/fixtures/signal-consumer.ts"], { encoding: "utf8" });
+ expect(result.error).toBeUndefined();
+ expect(result.status, result.stderr).toBe(0);
+ expect(result.stdout).toBe("");
+});
+
+it("exports traces through the built Langfuse package using a local OTLP collector", () => {
+ const result = spawnSync(process.execPath, ["tests/fixtures/langfuse-consumer.ts"], { encoding: "utf8" });
  expect(result.error).toBeUndefined();
  expect(result.status, result.stderr).toBe(0);
  expect(result.stdout).toBe("");
