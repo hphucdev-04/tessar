@@ -111,7 +111,7 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query(
-            `SELECT id,version FROM "${f.schema}".schema_metadata`,
+            `SELECT id,version FROM "${f.schema}".tessar_schema_metadata`,
           )
         ).rows,
       ).toEqual([{ id: "postgresql", version: 1 }]);
@@ -123,7 +123,7 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query(
-            `SELECT version FROM "${f.schema}".schema_metadata`,
+            `SELECT version FROM "${f.schema}".tessar_schema_metadata`,
           )
         ).rows,
       ).toEqual([{ version: 1 }]);
@@ -139,7 +139,7 @@ describe.skipIf(!connectionString)(
       });
       await new CommitCoordinator(f.backend).commit(batch, lease);
       await f.backend.close();
-      await f.admin.query(`DROP TABLE "${f.schema}".schema_metadata`);
+      await f.admin.query(`DROP TABLE "${f.schema}".tessar_schema_metadata`);
       const reopened = await f.connect();
       expect(await reopened.checkpoints.get(batch.checkpoint.id)).toEqual(
         batch.checkpoint,
@@ -147,7 +147,7 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query(
-            `SELECT version FROM "${f.schema}".schema_metadata`,
+            `SELECT version FROM "${f.schema}".tessar_schema_metadata`,
           )
         ).rows,
       ).toEqual([{ version: 1 }]);
@@ -167,7 +167,7 @@ describe.skipIf(!connectionString)(
       await new CommitCoordinator(f.backend).commit(batch, lease);
       await f.backend.close();
       await f.admin.query(
-        `UPDATE "${f.schema}".schema_metadata SET version=2; DROP INDEX "${f.schema}".messages_history`,
+        `UPDATE "${f.schema}".tessar_schema_metadata SET version=2; DROP INDEX "${f.schema}".tessar_messages_history`,
       );
       await expect(f.connect()).rejects.toMatchObject({
         code: "InvalidConfiguration",
@@ -175,26 +175,26 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query("SELECT to_regclass($1) AS name", [
-            `"${f.schema}".messages_history`,
+            `"${f.schema}".tessar_messages_history`,
           ])
         ).rows[0].name,
       ).toBeNull();
       expect(
         (
           await f.admin.query(
-            `SELECT version FROM "${f.schema}".schema_metadata`,
+            `SELECT version FROM "${f.schema}".tessar_schema_metadata`,
           )
         ).rows,
       ).toEqual([{ version: 2 }]);
       expect(
         (
           await f.admin.query(
-            `SELECT body FROM "${f.schema}".threads WHERE id=$1`,
+            `SELECT body FROM "${f.schema}".tessar_threads WHERE id=$1`,
             [batch.threadId],
           )
         ).rows[0].body.revision,
       ).toBe(1);
-      await f.admin.query(`UPDATE "${f.schema}".schema_metadata SET version=1`);
+      await f.admin.query(`UPDATE "${f.schema}".tessar_schema_metadata SET version=1`);
       const reopened = await f.connect();
       expect(await reopened.checkpoints.get(batch.checkpoint.id)).toEqual(
         batch.checkpoint,
@@ -202,7 +202,7 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query("SELECT to_regclass($1) AS name", [
-            `"${f.schema}".messages_history`,
+            `"${f.schema}".tessar_messages_history`,
           ])
         ).rows[0].name,
       ).not.toBeNull();
@@ -357,14 +357,14 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query(
-            `SELECT count(*)::int AS n FROM "${f.schema}".messages`,
+            `SELECT count(*)::int AS n FROM "${f.schema}".tessar_messages`,
           )
         ).rows[0].n,
       ).toBe(4);
       expect(
         (
           await f.admin.query(
-            `SELECT count(*)::int AS n FROM "${f.schema}".checkpoints WHERE body->'state' ? 'messages'`,
+            `SELECT count(*)::int AS n FROM "${f.schema}".tessar_checkpoints WHERE body->'state' ? 'messages'`,
           )
         ).rows[0].n,
       ).toBe(0);
@@ -487,7 +487,7 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query(
-            `SELECT count(*)::int AS n FROM "${f.schema}".tool_executions`,
+            `SELECT count(*)::int AS n FROM "${f.schema}".tessar_tool_executions`,
           )
         ).rows[0].n,
       ).toBe(3);
@@ -629,7 +629,7 @@ describe.skipIf(!connectionString)(
       expect(
         (
           await f.admin.query(
-            `SELECT count(*)::int AS n FROM "${f.schema}".messages`,
+            `SELECT count(*)::int AS n FROM "${f.schema}".tessar_messages`,
           )
         ).rows[0].n,
       ).toBe(0);
@@ -644,7 +644,7 @@ describe.skipIf(!connectionString)(
         ttlMs: 60000,
       });
       await f.admin.query(
-        `UPDATE "${f.schema}".leases SET expires_at=clock_timestamp()-interval '1 second' WHERE thread_id=$1`,
+        `UPDATE "${f.schema}".tessar_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE thread_id=$1`,
         ["t1"],
       );
       await expect(f.backend.ownership.renew(old, 60000)).rejects.toMatchObject(
@@ -727,7 +727,7 @@ describe.skipIf(!connectionString)(
     it("rolls back a publication whose lease expires while SQL is running", async () => {
       const f = await fixture();
       await f.admin.query(
-        `CREATE FUNCTION "${f.schema}".slow_checkpoint() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.2); RETURN NEW; END $$; CREATE TRIGGER slow_checkpoint BEFORE INSERT ON "${f.schema}".checkpoints FOR EACH ROW EXECUTE FUNCTION "${f.schema}".slow_checkpoint()`,
+        `CREATE FUNCTION "${f.schema}".slow_checkpoint() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.2); RETURN NEW; END $$; CREATE TRIGGER slow_checkpoint BEFORE INSERT ON "${f.schema}".tessar_checkpoints FOR EACH ROW EXECUTE FUNCTION "${f.schema}".slow_checkpoint()`,
       );
       const lease = await f.backend.ownership.acquire({
         threadId: "t1",

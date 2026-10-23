@@ -23,7 +23,7 @@ Start with an Agent, a model and your own tools. Add a Controller when you need 
 
 ## Install
 
-Requires Node.js **24.14 or newer**. Examples use TypeScript and ES modules.
+Requires Node.js **24.22.1 or newer**. Examples use TypeScript and ES modules.
 
 ```sh
 npm install @tessar/core @tessar/openai zod

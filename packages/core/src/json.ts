@@ -58,5 +58,5 @@ export interface IdGenerator {
 }
 export const systemClock: Clock = { now: () => new Date().toISOString() };
 export const randomIds: IdGenerator = {
-  next: (kind) => kind + "_" + globalThis.crypto.randomUUID(),
+  next: () => globalThis.crypto.randomUUID(),
 };

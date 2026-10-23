@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import { Agent, Controller, HumanMessage } from "../src/index.js";
 import { ScriptedProvider } from "../src/testing/scripted-provider.js";
 
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 it("accepts explicit session, thread and fork IDs and rejects collisions", async () => {
   const agent = new Agent({
     id: "identity-agent",
@@ -43,8 +45,8 @@ it("accepts explicit session, thread and fork IDs and rejects collisions", async
       racingThreads.filter((result) => result.status === "fulfilled"),
     ).toHaveLength(1);
     expect((await session.thread.get(thread.id))!.id).toBe(thread.id);
-    expect((await controller.createSession()).id).toBeTruthy();
-    expect((await session.thread.create()).id).toBeTruthy();
+    expect((await controller.createSession()).id).toMatch(uuid);
+    expect((await session.thread.create()).id).toMatch(uuid);
   } finally {
     await controller.dispose();
   }
@@ -63,12 +65,14 @@ it("exposes Stream.id immediately and preserves existing result and event fields
     const stream = agent.stream("hello", { id: "run-a" });
     expect(stream.id).toBe("run-a");
     for await (const event of stream) expect(event.streamId).toBe("run-a");
-    const result = await agent.generate(new HumanMessage("next"));
-    expect(result.streamId).toBeTruthy();
+    const input = new HumanMessage("next");
+    expect(input.id).toMatch(uuid);
+    const result = await agent.generate(input);
+    expect(result.streamId).toMatch(uuid);
     expect(result).not.toHaveProperty("runId");
     expect(result.status).toBe("completed");
     const automatic = agent.stream("auto");
-    expect(automatic.id).toBeTruthy();
+    expect(automatic.id).toMatch(uuid);
     expect(automatic.id).not.toBe(result.streamId);
     for await (const _event of automatic) {
     }

@@ -6,6 +6,16 @@ Core manages state, history, checkpoints and execution records. A storage plugin
 chooses where they live. In-memory storage is the default; select one durable
 backend for a Controller before initializing it.
 
+Automatically generated IDs are plain UUIDs, without prefixes such as `session_`
+or `thread_`. Explicit IDs supplied by applications and IDs already stored are
+preserved.
+
+Physical storage names use the `tessar_` prefix, for example `tessar_sessions`,
+`tessar_threads`, `tessar_checkpoints` and `tessar_messages`. PostgreSQL keeps
+these tables inside the configured schema; MongoDB collections already use this
+prefix. Public API names such as `threads` and `model_attempts` are unchanged.
+The current physical layouts are the initial schema v1 for each backend.
+
 ## SQLite: restore a Session after restart
 
 ```sh

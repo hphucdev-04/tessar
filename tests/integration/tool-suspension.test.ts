@@ -16,7 +16,7 @@ async function run(command: string, filename: string) {
 function expireLease(filename: string) {
   const db = new DatabaseSync(filename);
   try {
-    db.exec("UPDATE leases SET expires_at=0");
+    db.exec("UPDATE tessar_leases SET expires_at=0");
   } finally {
     db.close();
   }

@@ -5,7 +5,7 @@ Tessar in an application, start with the [developer guides](examples/guide/READM
 
 ## Local development
 
-Requires Node.js >=24.14.0 and pnpm 11.5.3.
+Requires Node.js >=24.22.1 and pnpm 11.5.3.
 
 ```sh
 pnpm install --frozen-lockfile

@@ -16,7 +16,7 @@
     "./logger": {"types": "./dist/build-in/logger.d.ts", "import": "./dist/build-in/logger.js"}
   },
   "files": ["dist"],
-  "engines": {"node": ">=24.14.0"},
+  "engines": {"node": ">=24.22.1"},
   "peerDependencies": {"@tessar/core": "workspace:^"},
   "peerDependenciesMeta": {"@tessar/core": {"optional": true}},
   "devDependencies": {"@tessar/core": "workspace:*"},

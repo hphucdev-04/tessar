@@ -60,10 +60,12 @@ export async function createSqliteBackend(
     return row ? (immutable(JSON.parse(row.body)) as T) : null;
   };
   const head = (id: string) =>
-    getJson<ThreadInfo>("SELECT body FROM threads WHERE id=?", id);
+    getJson<ThreadInfo>("SELECT body FROM tessar_threads WHERE id=?", id);
   const checkpointRow = (id: string) =>
     db
-      .prepare("SELECT thread_id,revision,body FROM checkpoints WHERE id=?")
+      .prepare(
+        "SELECT thread_id,revision,body FROM tessar_checkpoints WHERE id=?",
+      )
       .get(id) as
       | { thread_id: string; revision: number; body: string }
       | undefined;
@@ -83,7 +85,7 @@ export async function createSqliteBackend(
     sessions: {
       get: async (id, query = {}) => {
         const row = getJson<SessionRecord>(
-          "SELECT body FROM sessions WHERE id=?",
+          "SELECT body FROM tessar_sessions WHERE id=?",
           id,
         );
         return row && matchesScope(row.scope, query.scope) ? row : null;
@@ -103,7 +105,7 @@ export async function createSqliteBackend(
       compareAndSet: async (value, expected) =>
         transaction(db, () => {
           const old = getJson<SessionRecord>(
-            "SELECT body FROM sessions WHERE id=?",
+            "SELECT body FROM tessar_sessions WHERE id=?",
             value.id,
           );
           validateSession(
@@ -113,7 +115,7 @@ export async function createSqliteBackend(
             value.selectedThreadId ? head(value.selectedThreadId) : null,
           );
           db.prepare(
-            "INSERT INTO sessions VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET selected_thread_id=excluded.selected_thread_id,revision=excluded.revision,updated_at=excluded.updated_at,body=excluded.body",
+            "INSERT INTO tessar_sessions VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET selected_thread_id=excluded.selected_thread_id,revision=excluded.revision,updated_at=excluded.updated_at,body=excluded.body",
           ).run(
             value.id,
             value.agentId,
@@ -143,7 +145,7 @@ export async function createSqliteBackend(
             info.activeStreamId ||
             db
               .prepare(
-                "SELECT 1 FROM leases WHERE thread_id=? AND expires_at>?",
+                "SELECT 1 FROM tessar_leases WHERE thread_id=? AND expires_at>?",
               )
               .get(id, databaseNow(db))
           )
@@ -151,7 +153,7 @@ export async function createSqliteBackend(
           if (
             db
               .prepare(
-                "SELECT 1 FROM threads WHERE json_extract(body,'$.parentThreadId')=? OR json_extract(body,'$.sourceCheckpointId') IN (SELECT id FROM checkpoints WHERE thread_id=?) LIMIT 1",
+                "SELECT 1 FROM tessar_threads WHERE json_extract(body,'$.parentThreadId')=? OR json_extract(body,'$.sourceCheckpointId') IN (SELECT id FROM tessar_checkpoints WHERE thread_id=?) LIMIT 1",
               )
               .get(id, id)
           )
@@ -162,11 +164,13 @@ export async function createSqliteBackend(
             "checkpoints",
             "commits",
           ])
-            db.prepare("DELETE FROM " + table + " WHERE thread_id=?").run(id);
+            db.prepare(
+              "DELETE FROM tessar_" + table + " WHERE thread_id=?",
+            ).run(id);
           db.prepare(
-            "DELETE FROM staging WHERE json_extract(body,'$.threadId')=?",
+            "DELETE FROM tessar_staging WHERE json_extract(body,'$.threadId')=?",
           ).run(id);
-          db.prepare("DELETE FROM threads WHERE id=?").run(id);
+          db.prepare("DELETE FROM tessar_threads WHERE id=?").run(id);
         }),
       page: async (query) => {
         const scope = scopePredicate(query.scope);
@@ -187,7 +191,11 @@ export async function createSqliteBackend(
           : null;
       },
       list: async (query) =>
-        (db.prepare("SELECT body FROM threads").all() as { body: string }[])
+        (
+          db.prepare("SELECT body FROM tessar_threads").all() as {
+            body: string;
+          }[]
+        )
           .map((r) => immutable(JSON.parse(r.body)) as ThreadInfo)
           .filter((r) => !r.deleted && matchesScope(r.scope, query?.scope)),
     },
@@ -203,7 +211,7 @@ export async function createSqliteBackend(
         (
           db
             .prepare(
-              "SELECT body FROM checkpoints WHERE thread_id=? ORDER BY revision",
+              "SELECT body FROM tessar_checkpoints WHERE thread_id=? ORDER BY revision",
             )
             .all(threadId) as { body: string }[]
         ).map((r) => hydrateCheckpoint(db, r.body)),
@@ -265,9 +273,9 @@ export async function createSqliteBackend(
           ) as RecordTypes[K] | null;
         }
         return getJson<RecordTypes[K]>(
-          "SELECT r.body FROM " +
+          "SELECT r.body FROM tessar_" +
             kind +
-            " r JOIN threads t ON r.thread_id=t.id WHERE r.id=? AND r.to_revision IS NULL AND t.deleted=0",
+            " r JOIN tessar_threads t ON r.thread_id=t.id WHERE r.id=? AND r.to_revision IS NULL AND t.deleted=0",
           id,
         );
       },
@@ -280,7 +288,7 @@ export async function createSqliteBackend(
     ownedState: {
       get: async (key) =>
         getJson<PluginStateSnapshot>(
-          "SELECT body FROM owned_states WHERE owner_key=?",
+          "SELECT body FROM tessar_owned_states WHERE owner_key=?",
           ownerKey(key),
         ),
       compareAndSet: async (state, expected) =>
@@ -292,7 +300,7 @@ export async function createSqliteBackend(
             );
           const key = ownerKey(state),
             old = getJson<PluginStateSnapshot>(
-              "SELECT body FROM owned_states WHERE owner_key=?",
+              "SELECT body FROM tessar_owned_states WHERE owner_key=?",
               key,
             );
           if (
@@ -301,7 +309,7 @@ export async function createSqliteBackend(
           )
             fail("CommitConflict", "Owned state revision changed");
           db.prepare(
-            "INSERT INTO owned_states VALUES(?,?,?) ON CONFLICT(owner_key) DO UPDATE SET revision=excluded.revision,body=excluded.body",
+            "INSERT INTO tessar_owned_states VALUES(?,?,?) ON CONFLICT(owner_key) DO UPDATE SET revision=excluded.revision,body=excluded.body",
           ).run(key, state.revision, canonicalJson(state));
         }),
     },
@@ -312,7 +320,7 @@ export async function createSqliteBackend(
         const fingerprint = await commitFingerprint(batch);
         transaction(db, () => {
           const published = db
-            .prepare("SELECT fingerprint FROM commits WHERE id=?")
+            .prepare("SELECT fingerprint FROM tessar_commits WHERE id=?")
             .get(batch.commitId);
           if (published) {
             if (published.fingerprint !== fingerprint)
@@ -320,13 +328,13 @@ export async function createSqliteBackend(
             return;
           }
           const old = getJson<CommitBatch>(
-            "SELECT body FROM staging WHERE id=?",
+            "SELECT body FROM tessar_staging WHERE id=?",
             batch.commitId,
           );
           if (old && canonicalJson(old) !== canonicalJson(batch))
             fail("CommitConflict", "commitId payload mismatch");
           if (!old)
-            db.prepare("INSERT INTO staging VALUES(?,?,?)").run(
+            db.prepare("INSERT INTO tessar_staging VALUES(?,?,?)").run(
               batch.commitId,
               canonicalJson(batch),
               fingerprint,
@@ -334,11 +342,14 @@ export async function createSqliteBackend(
         });
       },
       lookupCommit: async (id) =>
-        getJson<CommitReceipt>("SELECT body FROM commits WHERE id=?", id),
+        getJson<CommitReceipt>(
+          "SELECT body FROM tessar_commits WHERE id=?",
+          id,
+        ),
       publish: async (request) =>
         transaction(db, () => {
           const prior = getJson<CommitReceipt>(
-            "SELECT body FROM commits WHERE id=?",
+            "SELECT body FROM tessar_commits WHERE id=?",
             request.commitId,
           );
           if (prior) {
@@ -353,7 +364,7 @@ export async function createSqliteBackend(
             fail("OwnershipLost", "Lease belongs to another thread");
           assertOwnership(db, request.lease);
           const batch = getJson<CommitBatch>(
-            "SELECT body FROM staging WHERE id=?",
+            "SELECT body FROM tessar_staging WHERE id=?",
             request.commitId,
           );
           if (
@@ -420,7 +431,7 @@ export async function createSqliteBackend(
             : null;
           const info = buildThreadInfo(batch, old, stream);
           db.prepare(
-            "INSERT INTO threads VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,created_at=excluded.created_at,deleted=excluded.deleted",
+            "INSERT INTO tessar_threads VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,created_at=excluded.created_at,deleted=excluded.deleted",
           ).run(
             info.id,
             canonicalJson(info),
@@ -429,7 +440,9 @@ export async function createSqliteBackend(
           );
           if (info.deleted) {
             const selections = db
-              .prepare("SELECT body FROM sessions WHERE selected_thread_id=?")
+              .prepare(
+                "SELECT body FROM tessar_sessions WHERE selected_thread_id=?",
+              )
               .all(info.id);
             for (const row of selections) {
               const session = JSON.parse(String(row.body)) as SessionRecord;
@@ -440,7 +453,7 @@ export async function createSqliteBackend(
                 updatedAt: cp.createdAt,
               };
               db.prepare(
-                "UPDATE sessions SET selected_thread_id=NULL,revision=?,updated_at=?,body=? WHERE id=?",
+                "UPDATE tessar_sessions SET selected_thread_id=NULL,revision=?,updated_at=?,body=? WHERE id=?",
               ).run(
                 next.revision,
                 next.updatedAt,
@@ -455,17 +468,19 @@ export async function createSqliteBackend(
             revision: cp.revision,
             checkpointId: cp.id,
           };
-          db.prepare("INSERT INTO commits VALUES(?,?,?,?)").run(
+          db.prepare("INSERT INTO tessar_commits VALUES(?,?,?,?)").run(
             batch.commitId,
             canonicalJson(receipt),
             String(
               db
-                .prepare("SELECT fingerprint FROM staging WHERE id=?")
+                .prepare("SELECT fingerprint FROM tessar_staging WHERE id=?")
                 .get(batch.commitId)!.fingerprint,
             ),
             cp.threadId,
           );
-          db.prepare("DELETE FROM staging WHERE id=?").run(batch.commitId);
+          db.prepare("DELETE FROM tessar_staging WHERE id=?").run(
+            batch.commitId,
+          );
           assertOwnership(db, request.lease);
           return receipt;
         }),

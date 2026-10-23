@@ -1,7 +1,7 @@
 # @tessar/langfuse
 
 Optional Langfuse tracing for Tessar, using the official Langfuse SDK and
-OpenTelemetry. Requires Node 24.14 or newer. Langfuse Cloud and self-hosted
+OpenTelemetry. Requires Node 24.22.1 or newer. Langfuse Cloud and self-hosted
 Langfuse use the same configuration; choose the appropriate `baseUrl`.
 
 ```sh

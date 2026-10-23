@@ -156,13 +156,13 @@ it("has indexed history-position and parent-record query plans", async () => {
     await initializeSchema(db);
     const history = db
       .prepare(
-        "EXPLAIN QUERY PLAN SELECT body FROM messages WHERE thread_id=? AND position>=? AND position<? AND from_revision<=? AND (to_revision IS NULL OR ?<to_revision) ORDER BY position LIMIT ?",
+        "EXPLAIN QUERY PLAN SELECT body FROM tessar_messages WHERE thread_id=? AND position>=? AND position<? AND from_revision<=? AND (to_revision IS NULL OR ?<to_revision) ORDER BY position LIMIT ?",
       )
       .all("thread", 0, 10, 1, 1, 10);
-    expect(JSON.stringify(history)).toContain("messages_history");
+    expect(JSON.stringify(history)).toContain("tessar_messages_history");
     const attempts = db
       .prepare(
-        "EXPLAIN QUERY PLAN SELECT body FROM model_attempts WHERE thread_id=? AND turn_id=? AND from_revision<=? AND (to_revision IS NULL OR ?<to_revision) ORDER BY sort_date,id LIMIT ?",
+        "EXPLAIN QUERY PLAN SELECT body FROM tessar_model_attempts WHERE thread_id=? AND turn_id=? AND from_revision<=? AND (to_revision IS NULL OR ?<to_revision) ORDER BY sort_date,id LIMIT ?",
       )
       .all("thread", "turn", 1, 1, 10);
     expect(JSON.stringify(attempts)).toContain("model_attempts_turn");
