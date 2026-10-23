@@ -31,7 +31,7 @@ it("rolls back publication when a lease expires during SQLite writes", async () 
   const slow = vi
     .spyOn(DatabaseSync.prototype, "prepare")
     .mockImplementation(function (this: DatabaseSync, sql) {
-      if (sql.startsWith("INSERT INTO threads")) {
+      if (sql.startsWith("INSERT INTO tessar_threads")) {
         reachedHeadWrite = true;
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
       }

@@ -34,7 +34,7 @@ jobs:
           version: 11.5.3
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.14.0
+          node-version: 24.22.1
           registry-url: https://registry.npmjs.org/
       - run: pnpm install --frozen-lockfile
       - name: Select package and validate its version

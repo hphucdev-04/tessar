@@ -120,8 +120,8 @@ it("reopens a suspended Session with summary state and does not replay its compl
       try {
         const tables = ["sessions","threads","checkpoints","messages","streams","turns","model_attempts","tool_executions","interrupts","staging","commits","leases","owned_states"];
         const sample = Object.fromEntries(tables.map(table => [table, {
-          count: Number(db.prepare("SELECT count(*) n FROM " + table).get()!.n),
-          rows: db.prepare("SELECT * FROM " + table + ( ["messages","streams","turns","model_attempts","tool_executions","interrupts"].includes(table) ? " WHERE to_revision IS NULL" : "") + " LIMIT 2").all().map(row => row.body ? {...row,body:JSON.parse(String(row.body))} : row),
+          count: Number(db.prepare("SELECT count(*) n FROM tessar_" + table).get()!.n),
+          rows: db.prepare("SELECT * FROM tessar_" + table + ( ["messages","streams","turns","model_attempts","tool_executions","interrupts"].includes(table) ? " WHERE to_revision IS NULL" : "") + " LIMIT 2").all().map(row => row.body ? {...row,body:JSON.parse(String(row.body))} : row),
         }]));
         await writeFile(process.env.TESSAR_SAMPLE_PATH, JSON.stringify(sample,null,2));
       } finally { db.close(); }

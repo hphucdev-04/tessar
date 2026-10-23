@@ -5,7 +5,7 @@
   "description": "OpenAI Responses and Chat Completions provider with model metadata integration for Tessar.",
   "keywords": ["tessar","openai","ai-agent","llm","typescript","responses-api","chat-completions","streaming","tool-calling"],
   "type": "module",
-  "engines": { "node": ">=24.14.0" },
+  "engines": { "node": ">=24.22.1" },
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "files": ["dist"],
   "repository": {

@@ -12,7 +12,7 @@ export function openDatabase(options: PostgresqlStorageOptions) {
   const schema = options.schema ?? "tessar";
   if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/.test(schema))
     fail("InvalidConfiguration", "Invalid PostgreSQL schema name");
-  const table = (name: string) => `"${schema}"."${name}"`;
+  const table = (name: string) => `"${schema}"."tessar_${name}"`;
   const pool = new Pool({
     ...options.driverOptions,
     connectionString: options.connectionString,

@@ -71,7 +71,7 @@ it.skipIf(!supportsSpawn).each(["crash-model-result", "crash-tool-dispatch"])(
         await readFile(filename + ".execution", "utf8"),
       );
       const db = new DatabaseSync(filename);
-      db.prepare("UPDATE leases SET expires_at=0 WHERE thread_id=?").run(
+      db.prepare("UPDATE tessar_leases SET expires_at=0 WHERE thread_id=?").run(
         identity.threadId,
       );
       db.close();

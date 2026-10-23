@@ -218,7 +218,7 @@ bare package imports can also resolve from the managed `npm/` environment, with
 the original import/require conditions. Dispose
 the manager after runtime shutdown to deregister those hooks.
 
-Node 24.14+ directly executes local erasable TypeScript. It does not process
+Node 24.22.1+ directly executes local erasable TypeScript. It does not process
 tsconfig aliases, TSX, enums or parameter-property transforms. npm packages must
 publish JavaScript and declare a compatible `@tessar/core` peer dependency.
 Mark that peer optional to avoid npm installing a separate SDK copy; use a

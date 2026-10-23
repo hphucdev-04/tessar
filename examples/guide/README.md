@@ -6,7 +6,7 @@ private source files.
 
 ## Set up an application
 
-Use Node.js **24.14 or newer**. In a new application directory:
+Use Node.js **24.22.1 or newer**. In a new application directory:
 
 ```sh
 npm init -y

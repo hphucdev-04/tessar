@@ -1,7 +1,7 @@
 # @tessar/core
 
 Tessar's TypeScript API for Agent, Controller, Session, Thread, messages,
-tools, hooks, state and checkpoints. Requires Node 24.14 or newer.
+tools, hooks, state and checkpoints. Requires Node 24.22.1 or newer.
 
 ```sh
 npm install @tessar/core @tessar/openai zod

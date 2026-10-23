@@ -1,7 +1,7 @@
 # @tessar/plugins
 
 Optional Node host utilities for loading plugins after an application is packaged,
-managing npm plugin packages, and structured logging. Requires Node 24.14 or newer.
+managing npm plugin packages, and structured logging. Requires Node 24.22.1 or newer.
 
 ```sh
 npm install @tessar/core @tessar/plugins
