@@ -1,7 +1,7 @@
 # @tessar/openai
 
 OpenAI Responses and Chat Completions provider with model metadata integration.
-Requires Node 24.14 or newer and uses the official OpenAI SDK.
+Requires Node 24.22.1 or newer and uses the official OpenAI SDK.
 
 ```sh
 npm install @tessar/core @tessar/openai

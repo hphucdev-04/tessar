@@ -28,7 +28,7 @@ export function transaction<T>(db: DatabaseSync, action: () => T): T {
 }
 export function assertOwnership(db: DatabaseSync, lease: Lease): void {
   const row = db
-    .prepare("SELECT * FROM leases WHERE thread_id=?")
+    .prepare("SELECT * FROM tessar_leases WHERE thread_id=?")
     .get(lease.threadId) as LeaseRow | undefined;
   if (
     !row ||
@@ -51,7 +51,7 @@ export function createOwnership(db: DatabaseSync): OwnershipPort {
         if (!Number.isFinite(request.ttlMs) || request.ttlMs <= 0)
           fail("InvalidConfiguration", "Invalid lease duration");
         const previous = db
-            .prepare("SELECT * FROM leases WHERE thread_id=?")
+            .prepare("SELECT * FROM tessar_leases WHERE thread_id=?")
             .get(request.threadId) as LeaseRow | undefined,
           now = databaseNow(db);
         if (previous && previous.expires_at > now)
@@ -63,7 +63,7 @@ export function createOwnership(db: DatabaseSync): OwnershipPort {
           expires_at: now + request.ttlMs,
         };
         db.prepare(
-          "INSERT INTO leases VALUES(?,?,?,?) ON CONFLICT(thread_id) DO UPDATE SET owner_token=excluded.owner_token,fencing_token=excluded.fencing_token,expires_at=excluded.expires_at",
+          "INSERT INTO tessar_leases VALUES(?,?,?,?) ON CONFLICT(thread_id) DO UPDATE SET owner_token=excluded.owner_token,fencing_token=excluded.fencing_token,expires_at=excluded.expires_at",
         ).run(
           row.thread_id,
           row.owner_token,
@@ -78,15 +78,14 @@ export function createOwnership(db: DatabaseSync): OwnershipPort {
         if (!Number.isFinite(ttlMs) || ttlMs <= 0)
           fail("InvalidConfiguration", "Invalid lease duration");
         const expires = databaseNow(db) + ttlMs;
-        db.prepare("UPDATE leases SET expires_at=? WHERE thread_id=?").run(
-          expires,
-          lease.threadId,
-        );
+        db.prepare(
+          "UPDATE tessar_leases SET expires_at=? WHERE thread_id=?",
+        ).run(expires, lease.threadId);
         return { ...lease, expiresAt: new Date(expires).toISOString() };
       }),
     release: async (lease) => {
       db.prepare(
-        "UPDATE leases SET expires_at=0 WHERE thread_id=? AND owner_token=? AND fencing_token=?",
+        "UPDATE tessar_leases SET expires_at=0 WHERE thread_id=? AND owner_token=? AND fencing_token=?",
       ).run(lease.threadId, lease.ownerToken, lease.fencingToken);
     },
   };

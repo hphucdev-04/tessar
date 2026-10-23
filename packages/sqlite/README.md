@@ -1,7 +1,7 @@
 # @tessar/sqlite
 
 SQLite persistence for Tessar's state and checkpoint contracts, using Node's
-built-in SQLite API. Requires Node 24.14 or newer.
+built-in SQLite API. Requires Node 24.22.1 or newer.
 
 ```sh
 npm install @tessar/core @tessar/sqlite
@@ -24,13 +24,11 @@ operations and is a reference implementation, not a server throughput claim.
 This is an early 0.x release. See the
 [repository](https://github.com/tessar-ai/tessar) for usage and contracts.
 
-## Schema v2
+## Schema v1
 
-Initialization transactionally migrates v1 databases, preserving checkpoint IDs,
-historical message/trace views, plugin snapshots, leases and commit receipts.
-Inconsistent source data (including nonempty legacy `plugin_states` projections
-or receipts without their original staged batches) aborts and rolls back. There
-is no automatic reset or lossy fallback. No Sessions are invented for old threads.
+The current layout is the initial schema, recorded as `PRAGMA user_version=1`.
+Initialization creates missing tables and indexes transactionally. Tables and
+explicitly named indexes use the `tessar_` prefix.
 
 Messages and trace records have revision intervals instead of one copy per
 checkpoint. Public checkpoints still hydrate complete logical history. Successful

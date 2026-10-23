@@ -37,11 +37,14 @@ environment or ignored `.env.storage`. Tests create unique `tessar_test_*` schem
 and remove only those schemas. Database tests explicitly skip without the URL;
 they require a real PostgreSQL server and schema creation privileges.
 
-The physical schema is versioned in `schema_metadata` (version 1). Initialization
-is serialized by an advisory lock. Existing unversioned tables from the initial
-adapter are adopted without resetting data; unsupported versions fail before
-application-table DDL. SQLite's version 2 and this version 1 refer to different
-physical layouts, not different Tessar state contracts.
+Tables and indexes use the `tessar_` prefix inside the configured schema, for
+example `tessar_threads` and `tessar_sessions`.
+
+The physical schema is versioned in `tessar_schema_metadata` (version 1). Initialization
+is serialized by an advisory lock. Existing unversioned `tessar_*` tables
+are adopted without resetting data; unsupported versions fail before
+application-table DDL. Each backend versions its own physical layout independently
+of the Tessar state contracts and npm package versions.
 
 Source responsibilities match the SQLite adapter: `schema.ts` initializes the
 layout, `ownership.ts` manages leases, `versions.ts` stores historical records,

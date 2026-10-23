@@ -30,7 +30,7 @@ export function writeVersions(
     (
       db
         .prepare(
-          `SELECT id,body,position FROM ${table} WHERE thread_id=? AND to_revision IS NULL`,
+          `SELECT id,body,position FROM tessar_${table} WHERE thread_id=? AND to_revision IS NULL`,
         )
         .all(threadId) as {
         id: string;
@@ -50,11 +50,11 @@ export function writeVersions(
       continue;
     if (old)
       db.prepare(
-        `UPDATE ${table} SET to_revision=? WHERE thread_id=? AND id=? AND to_revision IS NULL`,
+        `UPDATE tessar_${table} SET to_revision=? WHERE thread_id=? AND id=? AND to_revision IS NULL`,
       ).run(revision, threadId, entry.id);
     const value = JSON.parse(entry.body);
     db.prepare(
-      `INSERT INTO ${table}(thread_id,id,from_revision,to_revision,position,stream_id,turn_id,status,sort_date,body) VALUES(?,?,?,NULL,?,?,?,?,?,?)`,
+      `INSERT INTO tessar_${table}(thread_id,id,from_revision,to_revision,position,stream_id,turn_id,status,sort_date,body) VALUES(?,?,?,NULL,?,?,?,?,?,?)`,
     ).run(
       threadId,
       entry.id,
@@ -70,7 +70,7 @@ export function writeVersions(
   if (replace)
     for (const id of current.keys())
       db.prepare(
-        `UPDATE ${table} SET to_revision=? WHERE thread_id=? AND id=? AND to_revision IS NULL`,
+        `UPDATE tessar_${table} SET to_revision=? WHERE thread_id=? AND id=? AND to_revision IS NULL`,
       ).run(revision, threadId, id);
 }
 
@@ -83,7 +83,7 @@ export function readVersions<T>(
   return (
     db
       .prepare(
-        `SELECT body FROM ${table} WHERE thread_id=? AND from_revision<=? AND (to_revision IS NULL OR ?<to_revision) ORDER BY ${table === "messages" ? "position" : "sort_date,id COLLATE BINARY"}`,
+        `SELECT body FROM tessar_${table} WHERE thread_id=? AND from_revision<=? AND (to_revision IS NULL OR ?<to_revision) ORDER BY ${table === "messages" ? "position" : "sort_date,id COLLATE BINARY"}`,
       )
       .all(threadId, revision, revision) as { body: string }[]
   ).map((row) => immutable(JSON.parse(row.body)) as T);
@@ -105,7 +105,7 @@ export function writeCheckpoint(db: DatabaseSync, cp: Checkpoint): void {
   const { messages, ...state } = cp.state;
   const safety = checkpointSafety(cp);
   db.prepare(
-    "INSERT INTO checkpoints(id,thread_id,revision,created_at,cause,message_count,forkable,unsafe_reason,body) VALUES(?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO tessar_checkpoints(id,thread_id,revision,created_at,cause,message_count,forkable,unsafe_reason,body) VALUES(?,?,?,?,?,?,?,?,?)",
   ).run(
     cp.id,
     cp.threadId,

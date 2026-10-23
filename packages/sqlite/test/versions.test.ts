@@ -27,12 +27,12 @@ it("stores changed message versions once and cleans published staging without lo
     ]);
     const db = new DatabaseSync(filename);
     try {
-      expect(db.prepare("SELECT count(*) n FROM messages").get()?.n).toBe(100);
-      expect(db.prepare("SELECT count(*) n FROM staging").get()?.n).toBe(0);
+      expect(db.prepare("SELECT count(*) n FROM tessar_messages").get()?.n).toBe(100);
+      expect(db.prepare("SELECT count(*) n FROM tessar_staging").get()?.n).toBe(0);
       expect(
         JSON.parse(
           String(
-            db.prepare("SELECT body FROM checkpoints LIMIT 1").get()?.body,
+            db.prepare("SELECT body FROM tessar_checkpoints LIMIT 1").get()?.body,
           ),
         ).state,
       ).not.toHaveProperty("messages");
