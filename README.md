@@ -1,12 +1,25 @@
-# Tessar
+<div align="center">
 
-A TypeScript framework and SDK for building CLI agents and embedding agents in
-applications.
+<img src="docs\assets\logo.png" alt="Tessar" width="160" />
 
-**Anything can be a plugin.** Start with an Agent, a model and your own tools.
-Add a Controller when you need plugins, and Sessions when you need conversations.
-Core provides the agent loop, messages, hooks, state and checkpoints; you choose
-how to extend them.
+<h1>Tessar</h1>
+
+<h3>Anything can be a plugin.</h3>
+
+<p>
+A TypeScript framework and SDK for building CLI agents and embedding agents in applications.
+</p>
+
+<p>
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#your-first-agent"><b>Quick start</b></a> ·
+  <a href="examples/guide/README.md"><b>Guides</b></a> ·
+  <a href="#packages"><b>Packages</b></a>
+</p>
+
+</div>
+
+Start with an Agent, a model and your own tools. Add a Controller when you need plugins, and Sessions when you need conversations. Core provides the agent loop, messages, hooks, state and checkpoints; you choose how to extend them.
 
 ## Install
 
@@ -97,12 +110,12 @@ call automatically. Tools can also be registered by plugins.
 
 ## Build up as you need
 
-| API | Use it for |
-| --- | --- |
-| `Agent` | Model configuration, instructions, tools, `generate()` and `stream()` |
-| `Controller` | Plugin registration, shared services and storage lifecycle |
-| `Session` | Queued follow-ups, subscriptions, model selection and thread selection |
-| `Thread` | Conversation history, checkpoints, forks and execution records |
+| API          | Use it for                                                             |
+| ------------ | ---------------------------------------------------------------------- |
+| `Agent`      | Model configuration, instructions, tools, `generate()` and `stream()`  |
+| `Controller` | Plugin registration, shared services and storage lifecycle             |
+| `Session`    | Queued follow-ups, subscriptions, model selection and thread selection |
+| `Thread`     | Conversation history, checkpoints, forks and execution records         |
 
 Plugins can register tools, model providers, storage backends and custom
 capabilities, and participate through typed hooks. Skills, long-term memory,
@@ -114,29 +127,29 @@ extension APIs to suit your application.
 Start with the [developer guide](examples/guide/README.md). Examples use the
 public SDK and credentials you supply.
 
-| Guide | What it covers |
-| --- | --- |
-| [Agent](examples/guide/agent.md) | Generate, messages, instructions and model overrides |
-| [Streaming](examples/guide/stream.md) | Text/reasoning deltas, tools and token usage |
-| [Tools and messages](examples/guide/tools.md) | Zod schemas, tool context and `ToolMessage` |
-| [Controller and Session](examples/guide/sessions.md) | Conversations, queues, subscriptions and threads |
-| [Plugins](examples/guide/plugins.md) | Custom plugins, hooks, logging and loading plugins after packaging |
-| [Langfuse](examples/guide/langfuse.md) | Trace model calls, tools, retries and resumed executions |
-| [Storage](examples/guide/storage.md) | SQLite, PostgreSQL, MongoDB and restoring conversations |
+| Guide                                                | What it covers                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
+| [Agent](examples/guide/agent.md)                     | Generate, messages, instructions and model overrides               |
+| [Streaming](examples/guide/stream.md)                | Text/reasoning deltas, tools and token usage                       |
+| [Tools and messages](examples/guide/tools.md)        | Zod schemas, tool context and `ToolMessage`                        |
+| [Controller and Session](examples/guide/sessions.md) | Conversations, queues, subscriptions and threads                   |
+| [Plugins](examples/guide/plugins.md)                 | Custom plugins, hooks, logging and loading plugins after packaging |
+| [Langfuse](examples/guide/langfuse.md)               | Trace model calls, tools, retries and resumed executions           |
+| [Storage](examples/guide/storage.md)                 | SQLite, PostgreSQL, MongoDB and restoring conversations            |
 
 ## Packages
 
 Install the packages your application uses:
 
-| Package | Provides |
-| --- | --- |
-| [`@tessar/core`](packages/core/README.md) | Agent execution, sessions, messages, tools, hooks, state and in-memory storage |
-| [`@tessar/openai`](packages/openai/README.md) | OpenAI Responses and Chat Completions adapters, including compatible endpoints |
-| [`@tessar/plugins`](packages/plugins/README.md) | Plugin discovery/loading, npm plugin management and the `/logger` plugin |
-| [`@tessar/langfuse`](packages/langfuse/README.md) | Optional Langfuse tracing through the official SDK and OpenTelemetry |
-| [`@tessar/sqlite`](packages/sqlite/README.md) | SQLite persistence using Node's built-in SQLite API |
-| [`@tessar/postgresql`](packages/postgresql/README.md) | PostgreSQL persistence |
-| [`@tessar/mongodb`](packages/mongodb/README.md) | MongoDB persistence |
+| Package                                               | Provides                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [`@tessar/core`](packages/core/README.md)             | Agent execution, sessions, messages, tools, hooks, state and in-memory storage |
+| [`@tessar/openai`](packages/openai/README.md)         | OpenAI Responses and Chat Completions adapters, including compatible endpoints |
+| [`@tessar/plugins`](packages/plugins/README.md)       | Plugin discovery/loading, npm plugin management and the `/logger` plugin       |
+| [`@tessar/langfuse`](packages/langfuse/README.md)     | Optional Langfuse tracing through the official SDK and OpenTelemetry           |
+| [`@tessar/sqlite`](packages/sqlite/README.md)         | SQLite persistence using Node's built-in SQLite API                            |
+| [`@tessar/postgresql`](packages/postgresql/README.md) | PostgreSQL persistence                                                         |
+| [`@tessar/mongodb`](packages/mongodb/README.md)       | MongoDB persistence                                                            |
 
 Tessar is an early **0.x** SDK; APIs can change between releases. To work on Tessar
 itself, see [Contributing](CONTRIBUTING.md).
