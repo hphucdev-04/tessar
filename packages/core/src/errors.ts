@@ -1,13 +1,96 @@
-export interface ErrorInfo { code: string; message: string; retryable: boolean; details?: Record<string, unknown> }
-export class TesseractError extends Error {
-  constructor(readonly code: string, message: string, readonly details?: Record<string, unknown>) { super(message); this.name = "TesseractError"; }
-  toJSON(): ErrorInfo { return { code: this.code, message: this.message, retryable: false, ...(this.details ? { details: this.details } : {}) }; }
+export interface ErrorOrigin {
+  source: "tessar" | "provider" | "plugin" | "tool" | "storage" | "application";
+  providerId?: string;
+  modelId?: string;
+  pluginId?: string;
+  eventId?: string;
+  toolName?: string;
+  backendId?: string;
 }
-export function fail(code: string, message: string): never { throw new TesseractError(code, message); }
+export interface ErrorInfo extends ErrorOrigin {
+  name: string;
+  code: string;
+  message: string;
+  retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
+// Associate provenance without modifying exceptions owned by SDKs or plugins.
+const origins = new WeakMap<object, ErrorOrigin>();
+const causes = new WeakMap<ErrorInfo, unknown>();
+
+export class TessarError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "TessarError";
+  }
+  toJSON(): ErrorInfo {
+    return errorInfo(this);
+  }
+}
+export function fail(code: string, message: string): never {
+  throw new TessarError(code, message);
+}
 export function requireId(id: string, name = "id"): string {
-  if (typeof id !== "string" || !id.trim()) fail("InvalidConfiguration", name + " must be a nonempty string");
+  if (typeof id !== "string" || !id.trim())
+    fail("InvalidConfiguration", name + " must be a nonempty string");
   return id;
 }
-export function errorInfo(error: unknown): ErrorInfo {
-  return error instanceof TesseractError ? error.toJSON() : { code: "InternalError", message: error instanceof Error ? error.message : String(error), retryable: false };
+export function errorInfo(error: unknown, origin?: ErrorOrigin): ErrorInfo {
+  const object =
+    error !== null && (typeof error === "object" || typeof error === "function")
+      ? error
+      : undefined;
+  const previous = object && origins.get(object);
+  if (object && origin && !previous) origins.set(object, origin);
+  const value = object as Record<string, unknown> | undefined;
+  const details =
+    error instanceof TessarError
+      ? error.details
+      : Object.fromEntries(
+          ["status", "requestID", "request_id", "type", "param"].flatMap(
+            (key) => {
+              const field = value?.[key];
+              return typeof field === "string" ||
+                typeof field === "boolean" ||
+                (typeof field === "number" && Number.isFinite(field))
+                ? [[key, field]]
+                : [];
+            },
+          ),
+        );
+  const name =
+    error instanceof Error
+      ? error.name === "Error"
+        ? error.constructor.name
+        : error.name
+      : "Error";
+  const info: ErrorInfo = {
+    ...(previous ?? origin ?? { source: "tessar" as const }),
+    name,
+    code: typeof value?.code === "string" ? value.code : name,
+    message: error instanceof Error ? error.message : String(error),
+    retryable: false,
+    ...(details && Object.keys(details).length ? { details } : {}),
+  };
+  causes.set(info, error);
+  return info;
+}
+/** Retain the original exception in-process; persisted errors retain their source. */
+export function errorFromInfo(info: ErrorInfo): unknown {
+  if (causes.has(info)) return causes.get(info);
+  const error =
+    info.source === "tessar"
+      ? new TessarError(info.code, info.message, info.details)
+      : Object.assign(new Error(info.message), {
+          name: info.name,
+          code: info.code,
+          ...info.details,
+        });
+  origins.set(error, info);
+  return error;
 }

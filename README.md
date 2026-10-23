@@ -1,123 +1,159 @@
-# Tesseract
+<div align="center">
 
-An independent TypeScript framework and SDK for CLI agents and agents embedded
-in applications. The core runs an agent; plugins supply capabilities and policy.
+<img src="docs\assets\logo.png" alt="Tessar" width="160" />
 
-This repository contains workspace packages under development. They have not
-been published to npm, and Cube has not been migrated.
+<h1>Tessar</h1>
 
-| Package | Responsibility |
-| --- | --- |
-| `@tesseract/core` | Agent, Controller, Session, Thread, messages, tools, hooks, state, checkpoints and default memory storage |
-| `@tesseract/openai` | OpenAI Responses adapter and provider metadata integration |
-| `@tesseract/storage-sqlite` | Reference SQLite backend with atomic checkpoints and process fencing |
+<h3>Anything can be a plugin.</h3>
 
-## Public API
+<p>
+A TypeScript framework and SDK for building CLI agents and embedding agents in applications.
+</p>
+
+<p>
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#your-first-agent"><b>Quick start</b></a> ·
+  <a href="examples/guide/README.md"><b>Guides</b></a> ·
+  <a href="#packages"><b>Packages</b></a>
+</p>
+
+</div>
+
+Start with an Agent, a model and your own tools. Add a Controller when you need plugins, and Sessions when you need conversations. Core provides the agent loop, messages, hooks, state and checkpoints; you choose how to extend them.
+
+## Install
+
+Requires Node.js **24.14 or newer**. Examples use TypeScript and ES modules.
+
+```sh
+npm install @tessar/core @tessar/openai zod
+```
+
+## Your first agent
+
+Create `.env` with your credentials and a model available to your account:
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=your-model-id
+```
+
+Save this as `agent.ts` in a project with `"type": "module"` in `package.json`:
 
 ```ts
-import { Agent, Controller, HumanMessage } from "@tesseract/core";
-import { OpenAIPlugin } from "@tesseract/openai";
+import { Agent } from "@tessar/core";
+import { OpenAIProvider } from "@tessar/openai";
 
 const agent = new Agent({
   id: "assistant",
-  model: { providerId: "openai", modelId: process.env.OPENAI_MODEL! },
-  plugins: [OpenAIPlugin({ apiKey: process.env.OPENAI_API_KEY! })],
+  model: new OpenAIProvider({
+    apiKey: process.env.OPENAI_API_KEY!,
+    model: process.env.OPENAI_MODEL!,
+  }),
+  instructions: "Be concise and helpful.",
 });
-const controller = new Controller({ id: "application", agent });
-await controller.initialize();
 
-try {
-  const result = await agent.generate({ input: new HumanMessage("Hello") });
-  console.log(result.status, result.output);
-} finally {
-  await controller.dispose();
+const result = await agent.generate("What can an agent do with tools?");
+for (const message of result.output) {
+  for (const part of message.content) {
+    if (part.type === "text") console.log(part.text);
+  }
 }
 ```
 
-`generate` aggregates the same execution as `stream`; it may involve tools and
-multiple model requests. It returns on completion or suspension. Alternatively,
-consume `agent.stream(...)` with `for await`.
-
-For a conversation, use a Session on the initialized Controller:
-
-```ts
-const session = controller.createSession({ scope: { userId: "u1" } });
-await session.thread.create();
-session.subscribe(event => console.log(event.type, event.payload));
-await session.followUp(new HumanMessage("Hello"));
-```
-
-The receipt acknowledges queued input, not a final answer. Results arrive through
-subscribe. Unadmitted queued input is in memory. Scope is a state filter; the host
-owns authentication and authorization. Session has no public ID or initialize,
-send or stream method. Controller and Agent require developer-assigned IDs.
-
-## Plugins
-
-```ts
-import { AgentEvents, type Plugin } from "@tesseract/core";
-
-const blockWrite: Plugin = {
-  id: "block-write",
-  setup(tesseract) {
-    tesseract.hook(AgentEvents.BeforeTool, event => {
-      if (event.payload.tool.name === "write") {
-        return { decision: "deny", reason: "Write tool disabled" };
-      }
-    });
-  },
-};
-```
-
-Event constants are strings, such as `AgentEvents.BeforeTool === "tool.before"`.
-Types provide autocomplete and inferred payloads/results. Plugins do not declare
-apiVersion. Add imported plugin instances to Agent options or use
-`controller.plugins.attach(plugin)` / `detach(id)` while ready.
-
-[Plugin authoring](docs/plugin-authoring.md) describes tools, state, cleanup and
-durability boundaries. Discovering/loading/installing plugin code after packaging
-is deferred as TD-001. Core does not scan root directories or install dependencies.
-
-## Storage, models and recovery
-
-Core always manages state and checkpoints. Memory storage is the default; pass
-`new SqliteStoragePlugin({ filename })` as a plugin for persistence. SQLite uses
-Node's experimental synchronous SQLite API and is a reference implementation,
-not a server throughput claim. Only the OpenAI adapter is shipped in this phase.
-
-`controller.models.get(ref).profile` returns an automatic immutable snapshot.
-Metadata may be incomplete/stale; unknown fields are null. Reading the getter
-does not issue a network request. Provider metadata and bundled catalog fallbacks
-use exact identities and preserve pricing provenance.
-
-Suspension persists a request and cursor. Resume consumes a valid response once,
-with the same stream ID and a new attachment. Unknown tool/effect outcomes require
-reconciliation; checkpoints do not make arbitrary external I/O exactly-once.
-Skills, long-term memory, commands, compression, subagent strategies and telemetry
-export remain plugin/application concerns. Core supplies generic extension APIs.
-
-## Development
-
-Requires Node >=24.14.0 and pnpm 11.5.3.
-
 ```sh
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build
-pnpm test
-pnpm test:integration
-pnpm check:boundaries
-
-node examples/headless/dist/main.js
-node examples/cli/dist/main.js hello
-node examples/cli/dist/main.js hello --db ./state.db --approval
+node --env-file=.env agent.ts
 ```
 
-The last command prints a suspended execution with Thread/interrupt IDs. Resume
-in a new process with `--db ./state.db --thread <id> --resume <interrupt-id> --approval`.
-CLI uses a scripted provider by default; `--openai` requires OPENAI_API_KEY and
-OPENAI_MODEL. No live API is required by the default checks.
+Agent runs directly, without Controller initialization. `generate()` returns the
+result when execution completes or suspends; it can include multiple model requests
+and tool calls. Use `stream()` to consume events as they arrive:
 
-Current authority: [English spec](docs/superpowers/specs/2026-10-15-tesseract-minimal-core-design.md)
-and [English plan](docs/superpowers/plans/2026-10-15-tesseract-minimal-core-plan.md).
-Earlier design documents are historical and are superseded by these documents.
+```ts
+import { message, stream } from "@tessar/core";
+
+for await (const event of agent.stream("Explain agent tools briefly.")) {
+  if (event.type === message.delta && event.payload.partKind === "text") {
+    process.stdout.write(event.payload.delta);
+  }
+  if (event.type === stream.error) throw Error(event.payload.error.message);
+}
+```
+
+Separate direct calls have independent context. Use a Session for a continuing
+conversation, or pass the messages you want each call to receive.
+
+## Add your own tools
+
+```ts
+import { createTool } from "@tessar/core/tool";
+import { z } from "zod";
+
+const add = createTool({
+  name: "add",
+  description: "Add two numbers.",
+  schema: z.object({ a: z.number(), b: z.number() }),
+  execute: ({ a, b }) => ({ sum: a + b }),
+});
+
+const calculator = new Agent({
+  id: "calculator",
+  model: agent.getModel(),
+  tools: { add },
+});
+
+await calculator.generate("Use add to calculate 27 + 15.");
+```
+
+Return text, JSON or a `ToolMessage`. Tessar binds the result to the model's tool
+call automatically. Tools can also be registered by plugins.
+
+## Build up as you need
+
+| API          | Use it for                                                             |
+| ------------ | ---------------------------------------------------------------------- |
+| `Agent`      | Model configuration, instructions, tools, `generate()` and `stream()`  |
+| `Controller` | Plugin registration, shared services and storage lifecycle             |
+| `Session`    | Queued follow-ups, subscriptions, model selection and thread selection |
+| `Thread`     | Conversation history, checkpoints, forks and execution records         |
+
+Plugins can register tools, model providers, storage backends and custom
+capabilities, and participate through typed hooks. Skills, long-term memory,
+commands, compaction and delegation strategies can be implemented with these
+extension APIs to suit your application.
+
+## Guides
+
+Start with the [developer guide](examples/guide/README.md). Examples use the
+public SDK and credentials you supply.
+
+| Guide                                                | What it covers                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
+| [Agent](examples/guide/agent.md)                     | Generate, messages, instructions and model overrides               |
+| [Streaming](examples/guide/stream.md)                | Text/reasoning deltas, tools and token usage                       |
+| [Tools and messages](examples/guide/tools.md)        | Zod schemas, tool context and `ToolMessage`                        |
+| [Controller and Session](examples/guide/sessions.md) | Conversations, queues, subscriptions and threads                   |
+| [Plugins](examples/guide/plugins.md)                 | Custom plugins, hooks, logging and loading plugins after packaging |
+| [Langfuse](examples/guide/langfuse.md)               | Trace model calls, tools, retries and resumed executions           |
+| [Storage](examples/guide/storage.md)                 | SQLite, PostgreSQL, MongoDB and restoring conversations            |
+
+## Packages
+
+Install the packages your application uses:
+
+| Package                                               | Provides                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [`@tessar/core`](packages/core/README.md)             | Agent execution, sessions, messages, tools, hooks, state and in-memory storage |
+| [`@tessar/openai`](packages/openai/README.md)         | OpenAI Responses and Chat Completions adapters, including compatible endpoints |
+| [`@tessar/plugins`](packages/plugins/README.md)       | Plugin discovery/loading, npm plugin management and the `/logger` plugin       |
+| [`@tessar/langfuse`](packages/langfuse/README.md)     | Optional Langfuse tracing through the official SDK and OpenTelemetry           |
+| [`@tessar/sqlite`](packages/sqlite/README.md)         | SQLite persistence using Node's built-in SQLite API                            |
+| [`@tessar/postgresql`](packages/postgresql/README.md) | PostgreSQL persistence                                                         |
+| [`@tessar/mongodb`](packages/mongodb/README.md)       | MongoDB persistence                                                            |
+
+Tessar is an early **0.x** SDK; APIs can change between releases. To work on Tessar
+itself, see [Contributing](CONTRIBUTING.md).
+
+## License
+
+[Apache-2.0](LICENSE).

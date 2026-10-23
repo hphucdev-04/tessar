@@ -36,7 +36,7 @@ export interface ModelProfile extends ModelRef {
 }
 export interface Model {
   readonly ref: Readonly<ModelRef>;
-  readonly profile: Readonly<ModelProfile>;
+  profile(): Readonly<ModelProfile>;
   refreshProfile(options?: { signal?: AbortSignal }): Promise<ModelProfile>;
 }
 export type ProfilePatch = Partial<

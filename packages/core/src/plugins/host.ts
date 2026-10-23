@@ -1,7 +1,13 @@
-import { TesseractError, fail, requireId, type ErrorInfo } from "../errors.js";
+import { diagnostic as diagnosticHooks } from "../events/type.js";
+import {
+  TessarError,
+  errorInfo,
+  fail,
+  requireId,
+  type ErrorInfo,
+} from "../errors.js";
 import { dispatch } from "../events/dispatcher.js";
-import { AgentEvents, hookKinds } from "../events/catalog.js";
-import { SessionEvents } from "../session-events.js";
+import { hookKinds, type OperationEvent } from "../events/type.js";
 import type {
   AnyEvent,
   EventContext,
@@ -18,13 +24,25 @@ import {
 import { definePluginState } from "../state/plugin-state.js";
 export class PluginHost {
   private slots: PluginSlot[] = [];
-  private generation = 0;
   private definitions = new Map<string, { kind: EventKind; version: number }>(
-    [...Object.values(AgentEvents), ...Object.values(SessionEvents)].map(
-      (name) => [name, { kind: hookKinds[name] ?? "notification", version: 1 }],
-    ),
+    Object.entries(hookKinds).map(([name, kind]) => [
+      name,
+      { kind, version: 1 },
+    ]),
   );
   private storageSealed = false;
+  async authorize<D extends OperationEvent>(
+    name: D,
+    payload: PayloadOf<D>,
+    context: Partial<HookContext> & EventContext,
+  ): Promise<void> {
+    const decision = await this.dispatch(name, payload, context);
+    if (decision?.decision === "deny")
+      fail(
+        "OperationDenied",
+        decision.reason ?? "Operation denied by plugin policy",
+      );
+  }
   sealStorage(): void {
     this.storageSealed = true;
   }
@@ -36,9 +54,19 @@ export class PluginHost {
   private mutation: Promise<void> = Promise.resolve();
   private closed = false;
   private disposal?: Promise<void>;
-  private readonly diagnostics: (error: ErrorInfo) => void;
-  constructor(options: { diagnostics?: (error: ErrorInfo) => void } = {}) {
+  private readonly diagnostics: (
+    error: ErrorInfo,
+    context?: EventContext,
+  ) => void;
+  private readonly values: readonly ValueRegistration[];
+  constructor(
+    options: {
+      diagnostics?: (error: ErrorInfo, context?: EventContext) => void;
+      values?: readonly ValueRegistration[];
+    } = {},
+  ) {
     this.diagnostics = options.diagnostics ?? (() => {});
+    this.values = options.values ?? [];
   }
   async initialize(plugins: readonly Plugin[]): Promise<void> {
     try {
@@ -74,6 +102,7 @@ export class PluginHost {
         id: string,
         value: unknown,
         version = 1,
+        configurationId: string | null = plugin.configurationId ?? null,
       ) => {
         requireId(id);
         if (kind === "storage" && this.storageSealed)
@@ -83,6 +112,7 @@ export class PluginHost {
           );
         if (
           [
+            ...this.values,
             ...this.slots.filter((s) => !s.detached).flatMap((s) => s.values),
             ...slot.values,
           ].some((v) => v.kind === kind && v.id === id)
@@ -95,11 +125,17 @@ export class PluginHost {
           version,
           pluginId: plugin.id,
           pluginVersion: plugin.version ?? 1,
-          configurationId: plugin.configurationId ?? null,
+          configurationId,
         });
       };
-      const tesseract: PluginContext = {
+      const tessar: PluginContext = {
         registry: { register },
+        agent: {
+          register: (agent) => {
+            register("agent", agent.id, agent);
+            tessar.defer(() => agent.shutdown());
+          },
+        },
         effects: {
           register: (definition) => {
             const stateDefinition = definePluginState({
@@ -145,15 +181,28 @@ export class PluginHost {
             return state;
           },
         },
-        tools: { register: (tool) => register("tool", tool.name, tool) },
+        tools: {
+          register: (tool) =>
+            register(
+              "tool",
+              tool.name,
+              tool,
+              1,
+              tool.resumeSchema || tool.resume
+                ? JSON.stringify([
+                    plugin.configurationId ?? null,
+                    tool.configurationId,
+                  ])
+                : (plugin.configurationId ?? null),
+            ),
+        },
         models: {
-          registerProvider: (provider) =>
-            register("provider", provider.id, provider),
+          register: (provider) => register("provider", provider.id, provider),
         },
         storage: {
-          registerBackend: (backend) => {
+          register: (backend) => {
             register("storage", "primary", backend);
-            tesseract.defer(() => backend.close());
+            tessar.defer(() => backend.close());
           },
         },
         defer: (disposer) => {
@@ -189,12 +238,19 @@ export class PluginHost {
         emit: (definition, payload) => this.dispatch(definition, payload),
       };
       try {
-        const disposer = await plugin.setup(tesseract);
+        const disposer = await plugin.setup(tessar);
         if (disposer) slot.disposers.push(disposer);
         this.slots.push(slot);
         this.definitions = definitions;
-        this.generation++;
       } catch (error) {
+        this.diagnostics(
+          errorInfo(
+            error,
+            error instanceof TessarError
+              ? undefined
+              : { source: "plugin", pluginId: plugin.id },
+          ),
+        );
         slot.detached = true;
         await this.releaseSlot(slot);
         throw error;
@@ -206,7 +262,6 @@ export class PluginHost {
       const slot = this.slots.find((s) => s.plugin.id === id && !s.detached);
       if (!slot) return;
       slot.detached = true;
-      this.generation++;
       await this.releaseSlot(slot);
     });
   }
@@ -216,26 +271,24 @@ export class PluginHost {
     for (const dispose of slot.disposers.slice().reverse()) {
       try {
         await dispose();
-      } catch {
-        this.diagnostics({
-          code: "PluginDisposeError",
-          message: "Plugin cleanup failed",
-          retryable: false,
-        });
+      } catch (error) {
+        this.diagnostics(
+          errorInfo(error, { source: "plugin", pluginId: slot.plugin.id }),
+        );
       }
     }
   }
   capture(): RegistryLease {
     return new RegistryLease(
-      this.generation,
       this.slots.filter((s) => !s.detached),
       (slot) => this.releaseSlot(slot),
+      this.values,
     );
   }
   async dispatch<D extends AnyEvent>(
     definition: D,
     payload: PayloadOf<D>,
-    context: HookContext & EventContext = {},
+    context: Partial<HookContext> & EventContext = {},
     captured?: RegistryLease,
   ): Promise<ResultOf<D>> {
     const lease = captured ?? this.capture();
@@ -245,15 +298,22 @@ export class PluginHost {
         definition,
         payload,
         context,
-        this.diagnostics,
+        definition === diagnosticHooks ? () => {} : this.diagnostics,
         this.kind(definition),
       );
+    } catch (error) {
+      if (definition !== diagnosticHooks)
+        this.diagnostics(errorInfo(error), context);
+      throw error;
     } finally {
       if (!captured) await lease.release();
     }
   }
   registrations(): readonly ValueRegistration[] {
-    return this.slots.filter((s) => !s.detached).flatMap((s) => s.values);
+    return [
+      ...this.values,
+      ...this.slots.filter((s) => !s.detached).flatMap((s) => s.values),
+    ];
   }
   dispose(): Promise<void> {
     this.closed = true;

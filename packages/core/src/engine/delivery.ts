@@ -1,23 +1,31 @@
-import { fail, errorInfo, type ErrorInfo } from "../errors.js";
+import { notifyObserver } from "../events/observer.js";
+import {
+  checkpoint as checkpointHooks,
+  stream as streamHooks,
+  stateChanged,
+} from "../events/type.js";
+import { StateView, type RuntimeState } from "../runtime-state.js";
+import { fail, type ErrorInfo } from "../errors.js";
 import type { IdGenerator } from "../json.js";
 import {
   EventEnvelope,
   type AnyEvent,
   type EventContext,
+  type PayloadOf,
+  type StreamEvent,
 } from "../events/definition.js";
-import { AgentEvents } from "../events/catalog.js";
-export interface Stream extends AsyncIterable<EventEnvelope> {
+
+export interface Stream extends AsyncIterable<StreamEvent> {
   readonly id: string | null;
   readonly threadId: string;
   readonly handleId: string;
-  readonly signal: AbortSignal;
   abort(reason?: string): void;
 }
 export type DeliveryTarget =
   | { kind: "iterator" }
   | {
       kind: "observer";
-      observe: (event: EventEnvelope) => void;
+      observe: (event: StreamEvent) => void;
       admitted?: (receipt: { streamId: string; threadId: string }) => void;
       rejected?: (error: ErrorInfo) => void;
       closed?: () => void;
@@ -26,7 +34,12 @@ export interface Attachment {
   stream: Stream;
   controller: AbortController;
   setId(id: string): void;
-  emit(definition: AnyEvent, payload: any, context: EventContext): void;
+  seedState(state: Partial<RuntimeState>): void;
+  emit<N extends AnyEvent>(
+    definition: N,
+    payload: PayloadOf<N>,
+    context: EventContext,
+  ): void;
   close(): void;
   admitted(): void;
   rejected(error: ErrorInfo): void;
@@ -36,22 +49,25 @@ export function createDelivery(
   ids: IdGenerator,
   target: DeliveryTarget,
   external?: AbortSignal,
-  diagnostics: (error: ErrorInfo) => void = () => {},
+  diagnostics: (error: ErrorInfo, context?: EventContext) => void = () => {},
   limits = { maxEvents: 512, maxBytes: 4 * 1024 * 1024 },
+  initialId?: string,
+  changed: (state: RuntimeState, context: EventContext) => void = () => {},
 ): Attachment {
+  const view = new StateView();
   const controller = new AbortController(),
     handleId = ids.next("handle");
-  let id: string | null = null,
+  let id: string | null = initialId ?? null,
     closed = false,
     consumerEnded = false,
     iterated = false,
     bytes = 0,
     lastCheckpoint: string | null = null;
-  const queue: { event: EventEnvelope; bytes: number }[] = [],
-    waiting: ((value: IteratorResult<EventEnvelope>) => void)[] = [];
-  const report = (error: ErrorInfo) => {
+  const queue: { event: StreamEvent; bytes: number }[] = [],
+    waiting: ((value: IteratorResult<StreamEvent>) => void)[] = [];
+  const report = (error: ErrorInfo, context?: EventContext) => {
     try {
-      diagnostics(error);
+      diagnostics(error, context);
     } catch {
       /* diagnostics cannot control execution */
     }
@@ -72,7 +88,6 @@ export function createDelivery(
     },
     threadId,
     handleId,
-    signal: controller.signal,
     abort(reason) {
       if (!closed) controller.abort(reason);
     },
@@ -104,73 +119,73 @@ export function createDelivery(
       };
     },
   };
+  const deliver = (event: StreamEvent) => {
+    const context: EventContext = event;
+    if (event.type === checkpointHooks.committed)
+      lastCheckpoint = event.payload.checkpointId;
+    if (target.kind === "observer") {
+      notifyObserver((event) => target.observe(event), event, report);
+      return;
+    }
+    if (consumerEnded) return;
+    const resolve = waiting.shift();
+    if (resolve) {
+      resolve({ value: event, done: false });
+      return;
+    }
+    const size = new TextEncoder().encode(JSON.stringify(event)).byteLength;
+    if (queue.length + 1 > limits.maxEvents || bytes + size > limits.maxBytes) {
+      const error: ErrorInfo = {
+        source: "tessar",
+        name: "TessarError",
+        code: "ConsumerTooSlow",
+        message: "Stream consumer exceeded its buffer",
+        retryable: false,
+      };
+      queue.length = 0;
+      bytes = 0;
+      consumerEnded = true;
+      queue.push({
+        event: new EventEnvelope(
+          streamHooks.error,
+          {
+            error,
+            lastKnownCheckpointId: lastCheckpoint,
+            persistedStatus: null,
+          },
+          { ...context, streamId: id, threadId, handleId },
+        ),
+        bytes: 0,
+      });
+      report(error, { ...context, streamId: id, threadId, handleId });
+      return;
+    }
+    queue.push({ event, bytes: size });
+    bytes += size;
+  };
   return {
     stream,
     controller,
+    seedState(state) {
+      view.update(state);
+    },
     setId(value) {
       id = value;
     },
     emit(definition, payload, context) {
       if (closed) return;
-      if (definition === AgentEvents.CheckpointCommitted)
-        lastCheckpoint = payload.checkpointId;
-      const event = new EventEnvelope(definition, payload, {
-        ...context,
-        streamId: id,
-        threadId,
-        handleId,
-      });
-      if (target.kind === "observer") {
-        try {
-          const result = target.observe(event) as unknown;
-          if (
-            result &&
-            typeof (result as PromiseLike<unknown>).then === "function"
-          )
-            void Promise.resolve(result).catch((error) =>
-              report(errorInfo(error)),
-            );
-        } catch (error) {
-          report(errorInfo(error));
-        }
-        return;
+      const identity = { ...context, streamId: id, threadId, handleId };
+      const event = new EventEnvelope(
+        definition,
+        payload,
+        identity,
+      ) as StreamEvent;
+      const state = view.consume(event);
+      deliver(event);
+      if (state) {
+        deliver(new EventEnvelope(stateChanged, { state }, identity));
+        changed(state, identity);
       }
-      if (consumerEnded) return;
-      const resolve = waiting.shift();
-      if (resolve) {
-        resolve({ value: event, done: false });
-        return;
-      }
-      const size = new TextEncoder().encode(JSON.stringify(event)).byteLength;
-      if (
-        queue.length + 1 > limits.maxEvents ||
-        bytes + size > limits.maxBytes
-      ) {
-        const error: ErrorInfo = {
-          code: "ConsumerTooSlow",
-          message: "Stream consumer exceeded its buffer",
-          retryable: false,
-        };
-        queue.length = 0;
-        bytes = 0;
-        consumerEnded = true;
-        queue.push({
-          event: new EventEnvelope(
-            AgentEvents.StreamError,
-            {
-              error,
-              lastKnownCheckpointId: lastCheckpoint,
-              persistedStatus: null,
-            },
-            { ...context, streamId: id, threadId, handleId },
-          ),
-          bytes: 0,
-        });
-        report(error);
-        return;
-      }
-      queue.push({ event, bytes: size });
-      bytes += size;
     },
     close() {
       if (closed) return;

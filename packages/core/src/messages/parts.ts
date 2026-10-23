@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "../json.js";
-export type ContentPart =
+export type ContentPart = (
   | { readonly type: "text"; readonly text: string }
   | {
       readonly type: "reasoning";
@@ -17,4 +17,5 @@ export type ContentPart =
       readonly mediaType: string;
       readonly data: string;
     }
-  | { readonly type: "data"; readonly data: JsonValue };
+  | { readonly type: "data"; readonly data: JsonValue }
+) & { readonly metadata?: JsonObject };

@@ -1,4 +1,11 @@
-import { fail, requireId, TesseractError, errorInfo } from "../errors.js";
+import {
+  fail,
+  requireId,
+  TessarError,
+  errorInfo,
+  errorFromInfo,
+  type ErrorInfo,
+} from "../errors.js";
 import {
   assertJson,
   immutable,
@@ -11,12 +18,10 @@ import type { AnyEvent, PayloadOf } from "../events/definition.js";
 import type { HookContext } from "../plugins/context.js";
 import {
   PluginStateAccess,
-  definePluginState,
   type PluginStateDefinition,
 } from "../state/plugin-state.js";
 import { canonicalJson } from "../state/commit.js";
 import { abortable } from "./abort.js";
-import type { ExecutionOrigin } from "../agent.js";
 export interface EffectContext {
   signal: AbortSignal;
   threadId: string;
@@ -55,17 +60,6 @@ export interface EffectBinding {
   pluginId: string;
   stateDefinition: PluginStateDefinition<JsonObject>;
 }
-export interface ChildReservation {
-  streamId: string;
-  threadId: string;
-  origin: ExecutionOrigin;
-}
-export const childStateDefinition = definePluginState<JsonObject>({
-  pluginId: "core",
-  namespace: "execution.children",
-  schemaVersion: 1,
-  initial: {},
-});
 export interface TrackedServices {
   models: {
     stream(options: {
@@ -80,12 +74,6 @@ export interface TrackedServices {
       input: I,
       options: { key: string },
     ): Promise<O>;
-  };
-  executions: {
-    reserveChild(options: {
-      threadId: string;
-      dispatchKey: string;
-    }): Promise<ChildReservation>;
   };
   events: {
     emit<D extends AnyEvent>(
@@ -173,8 +161,7 @@ export class EffectService {
     if (prior?.status === "completed")
       return immutable(definition.output.parse(prior.output)) as O;
     if (prior?.status === "failed") {
-      const error = prior.error as unknown as { code: string; message: string };
-      throw new TesseractError(error.code, error.message);
+      throw errorFromInfo(prior.error as unknown as ErrorInfo);
     }
     const operationId = prior?.operationId ?? this.nextId();
     if (prior) {
@@ -214,7 +201,7 @@ export class EffectService {
           definition.execute(input, { ...this.context, key, operationId }),
           this.context.signal,
           () =>
-            new TesseractError(
+            new TessarError(
               "RecoveryRequired",
               "Effect cancelled with unknown external outcome",
             ),
@@ -230,12 +217,14 @@ export class EffectService {
       });
       return immutable(output) as O;
     } catch (error) {
-      const info = errorInfo(error),
-        unknown = [
-          "StorageUnavailable",
-          "OwnershipLost",
-          "RecoveryRequired",
-        ].includes(info.code);
+      const info = errorInfo(error, {
+          source: "plugin",
+          pluginId: binding.pluginId,
+        }),
+        unknown =
+          ["StorageUnavailable", "OwnershipLost", "RecoveryRequired"].includes(
+            info.code,
+          ) || info.source === "storage";
       await save({
         digest,
         status: unknown ? "unknown" : "failed",

@@ -1,5 +1,7 @@
 {
-  "name": "tesseract-workspace",
+  "name": "tessar-workspace",
+  "version": "0.1.1",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.5.3",
@@ -11,14 +13,20 @@
     "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run --configLoader native --pool threads --exclude tests/integration/**",
     "test:integration": "vitest run --configLoader native --pool threads tests/integration",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "test:storage": "node --env-file-if-exists=.env.storage node_modules/vitest/vitest.mjs run packages/postgresql/test packages/mongodb/test --configLoader native --pool threads"
   },
   "devDependencies": {
-    "@tesseract/core": "workspace:*",
-    "@tesseract/storage-sqlite": "workspace:*",
+    "@tessar/core": "workspace:*",
+    "@tessar/langfuse": "workspace:*",
+    "@tessar/mongodb": "workspace:*",
+    "@tessar/plugins": "workspace:*",
+    "@tessar/postgresql": "workspace:*",
+    "@tessar/sqlite": "workspace:*",
     "@types/node": "^24.0.0",
+    "semver": "^7.8.5",
     "typescript": "7.0.2",
-    "vitest": "5.0.4"
+    "vitest": "5.0.4",
+    "zod": "^4.6.7"
   }
 }
-

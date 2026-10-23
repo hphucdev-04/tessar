@@ -6,25 +6,42 @@
       "node"
     ],
     "paths": {
-      "@tesseract/core": [
+      "@tessar/plugins/logger": [
+        "./packages/plugins/src/build-in/logger.ts"
+      ],
+      "@tessar/langfuse": ["./packages/langfuse/src/index.ts"],
+      "@tessar/plugins": [
+        "./packages/plugins/src/index.ts"
+      ],
+      "@tessar/core": [
         "./packages/core/src/index.ts"
       ],
-      "@tesseract/core/testing": [
+      "@tessar/core/tool": [
+        "./packages/core/src/tools/index.ts"
+      ],
+      "@tessar/core/testing": [
         "./packages/core/src/testing/index.ts"
       ],
-      "@tesseract/storage-sqlite": [
-        "./packages/storage-sqlite/src/index.ts"
+      "@tessar/sqlite": [
+        "./packages/sqlite/src/index.ts"
       ],
-      "@tesseract/openai": [
+      "@tessar/openai": [
         "./packages/openai/src/index.ts"
       ],
-      "@tesseract/core/testing/storage-conformance": [
+      "@tessar/core/testing/storage-conformance": [
         "./packages/core/src/testing/storage-conformance.ts"
+      ],
+      "@tessar/postgresql": [
+        "./packages/postgresql/src/index.ts"
+      ],
+      "@tessar/mongodb": [
+        "./packages/mongodb/src/index.ts"
       ]
     }
   },
   "include": [
-    "packages/**/*.ts",
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
     "tests/**/*.ts",
     "examples/**/*.ts",
     "vitest.config.ts"

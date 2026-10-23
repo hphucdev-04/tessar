@@ -1,0 +1,131 @@
+import { expect, it } from "vitest";
+import {
+  Agent,
+  Controller,
+  createMemoryBackend,
+  type Plugin,
+} from "../src/index.js";
+it("requires explicit IDs and binds an Agent to exactly one Controller", async () => {
+  expect(
+    () => new Agent({ id: "", model: { providerId: "test", modelId: "test" } }),
+  ).toThrow();
+  const agent = new Agent({
+    id: "a",
+    model: { providerId: "test", modelId: "test" },
+  });
+  expect(() => new Controller({ id: "", agent })).toThrow();
+  const controller = new Controller({ id: "r", agent });
+  try {
+    expect(() => new Controller({ id: "other", agent })).toThrow();
+  } finally {
+    await controller.dispose();
+  }
+});
+it("initializes once and rolls back failed setup in reverse order", async () => {
+  const log: string[] = [];
+  const plugin = (id: string): Plugin => ({
+    id,
+    setup(tessar) {
+      log.push(id);
+      tessar.defer(() => {
+        log.push("close:" + id);
+      });
+    },
+  });
+  const plugins = [plugin("a"), plugin("b")];
+  const controller = new Controller({
+    id: "r",
+    agent: new Agent({
+      id: "a",
+      model: { providerId: "test", modelId: "test" },
+    }),
+    plugins,
+  });
+  plugins.push(plugin("not-initial"));
+  const one = controller.initialize(),
+    two = controller.initialize();
+  expect(one).toBe(two);
+  await Promise.all([one, two]);
+  expect(log).toEqual(["a", "b"]);
+  await controller.dispose();
+  await controller.dispose();
+  expect(log).toEqual(["a", "b", "close:b", "close:a"]);
+  const broken = new Controller({
+    id: "r",
+    agent: new Agent({
+      id: "a",
+      model: { providerId: "test", modelId: "test" },
+    }),
+    plugins: [
+      plugin("c"),
+      {
+        id: "bad",
+        setup() {
+          throw Error("setup");
+        },
+      },
+    ],
+  });
+  await expect(broken.initialize()).rejects.toThrow("setup");
+  expect(log.at(-1)).toBe("close:c");
+  await expect(broken.initialize()).rejects.toThrow();
+  await broken.dispose();
+});
+it("rejects conflicting backends and backend attachment after initialization", async () => {
+  const storage = (id: string): Plugin => ({
+    id,
+    setup(tessar) {
+      tessar.storage.register(createMemoryBackend());
+    },
+  });
+  const broken = new Controller({
+    id: "r",
+    agent: new Agent({
+      id: "a",
+      model: { providerId: "test", modelId: "test" },
+    }),
+    plugins: [storage("one"), storage("two")],
+  });
+  await expect(broken.initialize()).rejects.toMatchObject({
+    code: "RegistrationConflict",
+  });
+  await broken.dispose();
+  const ready = new Controller({
+    id: "r",
+    agent: new Agent({
+      id: "a",
+      model: { providerId: "test", modelId: "test" },
+    }),
+  });
+  await ready.initialize();
+  await expect(ready.plugins.attach(storage("late"))).rejects.toMatchObject({
+    code: "InvalidTransition",
+  });
+  await ready.dispose();
+});
+it("rejects initialization once disposal has started, including before first initialize", async () => {
+  const ready = new Controller({
+    id: "r",
+    agent: new Agent({
+      id: "a",
+      model: { providerId: "test", modelId: "test" },
+    }),
+  });
+  await ready.initialize();
+  const closing = ready.dispose();
+  await expect(ready.initialize()).rejects.toMatchObject({ code: "Disposed" });
+  await expect(ready.createSession()).rejects.toMatchObject({
+    code: "Disposed",
+  });
+  await closing;
+  await expect(ready.initialize()).rejects.toMatchObject({ code: "Disposed" });
+  const unused = new Controller({
+    id: "unused",
+    agent: new Agent({
+      id: "unused",
+      model: { providerId: "test", modelId: "test" },
+    }),
+  });
+  await unused.dispose();
+  await expect(unused.initialize()).rejects.toMatchObject({ code: "Disposed" });
+});

@@ -1,7 +1,43 @@
 import type { ErrorInfo } from "../errors.js";
-import type { JsonObject } from "../json.js";
-import type { ToolResult } from "../tools/tool.js";
-import type { ModelUsage, UsageSummary } from "./usage.js";
+import type { JsonObject, JsonValue, Clock, IdGenerator } from "../json.js";
+import type { MessageData } from "../messages/message.js";
+import { normalizeUsage, type ModelUsage, type UsageSummary } from "./usage.js";
+import type { Checkpoint } from "../state/schema.js";
+import type { ModelRef } from "../models/contract.js";
+
+/** @internal Creates a record only within an active turn. */
+export function createModelAttempt(
+  context: { ids: IdGenerator; clock: Clock },
+  checkpoint: Checkpoint,
+  model: ModelRef,
+  purpose: ModelAttemptRecord["purpose"],
+  parentToolExecutionId: string | null = null,
+): ModelAttemptRecord {
+  return {
+    id: context.ids.next("attempt"),
+    turnId: checkpoint.execution!.turnId!,
+    streamId: checkpoint.execution!.streamId,
+    scope: checkpoint.state.scope,
+    callId: context.ids.next("call"),
+    attemptIndex: 0,
+    purpose,
+    parentToolExecutionId,
+    providerId: model.providerId,
+    modelId: model.modelId,
+    providerRequestId: null,
+    responseMessageId: null,
+    contextRevision: checkpoint.revision,
+    startedAt: context.clock.now(),
+    firstOutputAt: null,
+    endedAt: null,
+    durationMs: null,
+    timeToFirstOutputMs: null,
+    status: "running",
+    finishReason: null,
+    error: null,
+    usage: normalizeUsage({}),
+  };
+}
 export type StreamStatus =
   | "pending"
   | "running"
@@ -16,8 +52,6 @@ export interface StreamRecord {
   id: string;
   threadId: string;
   scope: JsonObject;
-  parentStreamId: string | null;
-  parentToolExecutionId: string | null;
   triggerMessageId: string | null;
   status: StreamStatus;
   stopReason: string | null;
@@ -26,7 +60,6 @@ export interface StreamRecord {
   durationMs: number | null;
   error: ErrorInfo | null;
   directUsage: UsageSummary;
-  inclusiveUsage: UsageSummary;
 }
 export interface TurnRecord {
   id: string;
@@ -57,7 +90,6 @@ export interface ModelAttemptRecord {
   providerRequestId: string | null;
   responseMessageId: string | null;
   contextRevision: number;
-  requestSnapshotRef: string | null;
   startedAt: string;
   firstOutputAt: string | null;
   endedAt: string | null;
@@ -69,6 +101,7 @@ export interface ModelAttemptRecord {
   usage: ModelUsage;
 }
 export interface ToolExecutionRecord {
+  resume?: { interruptId: string; value: JsonValue };
   id: string;
   turnId: string;
   streamId: string;
@@ -80,6 +113,8 @@ export interface ToolExecutionRecord {
   policyDecision: { decision: "allowed" | "denied"; reason?: string } | null;
   status:
     | "pending"
+    | "suspended"
+    | "resuming"
     | "running"
     | "succeeded"
     | "failed"
@@ -90,8 +125,7 @@ export interface ToolExecutionRecord {
   endedAt: string | null;
   durationMs: number | null;
   resultMessageId: string | null;
-  resultRef: string | null;
-  result: ToolResult | null;
+  result: MessageData | null;
   error: ErrorInfo | null;
   idempotencyKey: string | null;
 }

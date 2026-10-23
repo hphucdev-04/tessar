@@ -1,0 +1,60 @@
+name: release
+on:
+  push:
+    tags: ['*@*']
+permissions:
+  contents: read
+concurrency:
+  group: npm-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful CI for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+            --branch release --event push --commit "$GITHUB_SHA" --limit 1 \
+            --json conclusion --jq '.[0].conclusion // ""')
+          if [ "$conclusion" != success ]; then
+            echo "::error::Commit $GITHUB_SHA must pass CI on release before publishing. Wait for CI or fix it, then re-run this release."
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          registry-url: https://registry.npmjs.org/
+      - run: pnpm install --frozen-lockfile
+      - name: Select package and validate its version
+        id: release
+        run: node scripts/release.mjs check
+      - run: pnpm build
+      - name: Pack the selected package
+        env:
+          RELEASE_PACKAGE: ${{ steps.release.outputs.package }}
+        run: pnpm --filter "$RELEASE_PACKAGE" pack --pack-destination "$GITHUB_WORKSPACE/dist/release"
+      - run: node scripts/release.mjs verify
+      - name: Check npm version and internal dependencies
+        run: node scripts/release.mjs registry
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ steps.release.outputs.shortName }}-${{ steps.release.outputs.version }}
+          path: ${{ steps.release.outputs.archive }}
+          if-no-files-found: error
+      - name: Publish with npm trusted publishing
+        env:
+          RELEASE_ARCHIVE: ${{ steps.release.outputs.archive }}
+          NPM_TAG: ${{ steps.release.outputs.tag }}
+        run: npm publish "$RELEASE_ARCHIVE" --access public --tag "$NPM_TAG"

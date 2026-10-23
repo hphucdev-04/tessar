@@ -1,8 +1,7 @@
 import { fail, requireId } from "../errors.js";
-import { immutable, type JsonValue } from "../json.js";
+import type { JsonValue } from "../json.js";
 import type { InputDefinition } from "../tools/input-definition.js";
-import type { ControlDecision } from "../events/catalog.js";
-import type { HookContext } from "../plugins/context.js";
+import type { ControlDecision } from "../events/type.js";
 import type { PluginStateAccess } from "../state/plugin-state.js";
 import type { ExecutionHookContext } from "./tracked-effects.js";
 export interface InterruptionDefinition<

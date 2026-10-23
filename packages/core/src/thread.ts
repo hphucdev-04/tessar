@@ -1,6 +1,7 @@
+import { thread as threadHooks } from "./events/type.js";
 import { fail } from "./errors.js";
 import { immutable, type JsonObject, type JsonValue } from "./json.js";
-import { inputMessages, type ExecutionOrigin } from "./agent.js";
+import { inputMessages } from "./messages/codec.js";
 import type { Controller } from "./controller.js";
 import type { Model } from "./models/profile.js";
 import type { ModelRef } from "./models/contract.js";
@@ -12,18 +13,21 @@ import type {
   ThreadInfo,
 } from "./state/schema.js";
 import type { HistoryOptions } from "./state/queries.js";
-import { AgentEvents } from "./events/catalog.js";
+
 import type { DeliveryTarget, Stream } from "./engine/delivery.js";
 import { aggregateUsage } from "./trace/usage.js";
+import type { SessionHookHandle } from "./plugins/context.js";
+/** @internal */
 export type ThreadStreamOptions = {
   signal?: AbortSignal;
   context?: JsonObject;
+  modelOptions?: JsonObject;
   limits?: Partial<StreamLimits>;
 } & (
   | {
       input: MessageData | readonly MessageData[];
       model: Model | ModelRef;
-      origin?: ExecutionOrigin;
+      initialSignal?: { persist: boolean };
       resume?: never;
       recover?: never;
     }
@@ -42,14 +46,21 @@ export type ThreadStreamOptions = {
 );
 export class Thread {
   readonly id: string;
-  readonly scope: Scope;
+  private readonly threadScope: Scope;
   private disposed = false;
-  constructor(
+  /** @internal */
+  static create(controller: Controller, info: ThreadInfo): Thread {
+    return new Thread(controller, info);
+  }
+  private constructor(
     private readonly controller: Controller,
     info: ThreadInfo,
   ) {
     this.id = info.id;
-    this.scope = immutable(info.scope);
+    this.threadScope = immutable(info.scope);
+  }
+  scope(): Scope {
+    return this.threadScope;
   }
   private check(): void {
     this.controller.requireReady();
@@ -60,7 +71,7 @@ export class Thread {
     return this.controller.queries;
   }
   private get filter() {
-    return { scope: this.scope };
+    return { scope: this.scope() };
   }
   async snapshot() {
     const cp = await this.query.snapshot(this.id, this.filter),
@@ -86,43 +97,64 @@ export class Thread {
     return this.query.listCheckpoints(this.id, options, this.filter);
   }
   getStream(id: string) {
-    return this.query.getStream(this.id, id, this.filter);
+    return this.query.getRecord("streams", this.id, id, this.filter);
   }
   listStreams(options: PageOptions = {}) {
-    return this.query.listStreams(this.id, options, this.filter);
+    return this.query.listRecords("streams", this.id, options, this.filter);
   }
   listTurns(streamId: string, options: PageOptions = {}) {
-    return this.query.listTurns(this.id, streamId, options, this.filter);
+    return this.query.listRecords(
+      "turns",
+      this.id,
+      { ...options, streamId },
+      this.filter,
+    );
   }
   listModelAttempts(turnId: string, options: PageOptions = {}) {
-    return this.query.listModelAttempts(this.id, turnId, options, this.filter);
+    return this.query.listRecords(
+      "model_attempts",
+      this.id,
+      { ...options, turnId },
+      this.filter,
+    );
   }
   listToolExecutions(turnId: string, options: PageOptions = {}) {
-    return this.query.listToolExecutions(this.id, turnId, options, this.filter);
+    return this.query.listRecords(
+      "tool_executions",
+      this.id,
+      { ...options, turnId },
+      this.filter,
+    );
   }
   getInterrupt(id: string) {
-    return this.query.getInterrupt(this.id, id, this.filter);
+    return this.query.getRecord("interrupts", this.id, id, this.filter);
   }
   listInterrupts(
     options: PageOptions & {
       status?: "pending" | "resolved" | "cancelled";
     } = {},
   ) {
-    return this.query.listInterrupts(this.id, options, this.filter);
+    return this.query.listRecords("interrupts", this.id, options, this.filter);
   }
-  stream(options: ThreadStreamOptions): Stream {
+  /** @internal */ stream(options: ThreadStreamOptions): Stream {
     return this.admit(options, { kind: "iterator" });
   }
   /** @internal */ admit(
     options: ThreadStreamOptions,
     target: DeliveryTarget,
+    session?: SessionHookHandle,
   ): Stream {
     this.check();
     const controller = this.controller,
       model = options.model
         ? controller.resolveModel(options.model).ref
         : undefined;
-    const common = { threadId: this.id, signal: options.signal };
+    const common = {
+      threadId: this.id,
+      signal: options.signal,
+      thread: this,
+      session,
+    };
     const prepare = async () => {
       await controller.queries.requireThread(this.id, this.filter);
     };
@@ -136,8 +168,9 @@ export class Thread {
           input: inputMessages(options.input),
           model: controller.resolveModel(options.model).ref,
           context: options.context,
+          modelOptions: options.modelOptions,
           limits: options.limits,
-          origin: options.origin,
+          initialSignal: options.initialSignal,
         },
         target,
         prepare,
@@ -160,10 +193,15 @@ export class Thread {
       );
     return fail("InvalidConfiguration", "Choose input, resume or recover");
   }
-  async cancelStream(streamId: string, reason?: string): Promise<void> {
+  /** @internal */ async cancelStream(
+    streamId: string,
+    reason?: string,
+  ): Promise<void> {
     this.check();
     await this.query.requireThread(this.id, this.filter);
-    await this.controller.agent.cancel(this.id, streamId, reason);
+    await this.controller.agent.cancel(this.id, streamId, reason, undefined, {
+      thread: this,
+    });
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
@@ -172,16 +210,16 @@ export class Thread {
       controllerId: this.controller.id,
       agentId: this.controller.agent.id,
       threadId: this.id,
-      scope: this.scope,
+      scope: this.scope(),
     };
     await this.controller.hooks.dispatch(
-      AgentEvents.ThreadBeforeShutdown,
+      threadHooks.beforeShutdown,
       { threadId: this.id },
       context,
     );
     this.disposed = true;
     await this.controller.hooks.dispatch(
-      AgentEvents.ThreadShutdown,
+      threadHooks.shutdown,
       { threadId: this.id },
       context,
     );

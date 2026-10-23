@@ -1,6 +1,13 @@
+import { notifyObserver } from "./events/observer.js";
+import {
+  session as sessionHooks,
+  stream as streamHooks,
+  stateChanged,
+} from "./events/type.js";
+import { StateView, stateTool, type RuntimeState } from "./runtime-state.js";
 import type { Controller } from "./controller.js";
 import { Thread, type ThreadStreamOptions } from "./thread.js";
-import { AgentEvents } from "./events/catalog.js";
+
 import {
   EventEnvelope,
   type AnyEvent,
@@ -8,27 +15,59 @@ import {
   type StreamEvent,
 } from "./events/definition.js";
 import {
-  SessionEvents,
   type ExecutionReceipt,
   type QueuedInputReceipt,
-} from "./session-events.js";
-import { errorInfo, fail, TesseractError, type ErrorInfo } from "./errors.js";
-import { immutable, randomIds, type JsonValue } from "./json.js";
-import { inputMessages } from "./agent.js";
-import type { Model } from "./models/profile.js";
+} from "./events/type.js";
+import {
+  errorInfo,
+  errorFromInfo,
+  fail,
+  requireId,
+  type ErrorInfo,
+} from "./errors.js";
+import {
+  immutable,
+  randomIds,
+  type JsonValue,
+  type JsonObject,
+} from "./json.js";
+import { inputMessages } from "./messages/codec.js";
+import type { Model, ModelProfile } from "./models/profile.js";
+import type { ModelRegistry } from "./models/registry.js";
+import { snapshotModelOptions } from "./models/options.js";
 import type { ModelRef } from "./models/contract.js";
-import type { MessageData } from "./messages/message.js";
-import type { Scope, PageOptions } from "./state/schema.js";
-import { normalizeScope } from "./state/scope.js";
+import { HumanMessage, type MessageData } from "./messages/message.js";
+import type { Scope, PageOptions, SessionRecord } from "./state/schema.js";
+import { canonicalJson } from "./state/commit.js";
 import type { CreateThreadOptions } from "./state/threads.js";
 import type { ForkOptions } from "./state/fork.js";
 import type { HistoryOptions } from "./state/queries.js";
 import type { Stream } from "./engine/delivery.js";
+import {
+  createThread,
+  getThread,
+  listThreads,
+  renameThread,
+  forkThread,
+  deleteThread,
+  purgeThread,
+} from "./state/thread-operations.js";
 export interface SessionOptions {
+  id?: string;
   scope?: Scope;
   model?: Model | ModelRef;
+  metadata?: JsonObject;
+  threadId?: string;
 }
-export type SessionThreadOptions = Omit<CreateThreadOptions, "scope">;
+export type SessionThreadOptions = Pick<
+  CreateThreadOptions,
+  "id" | "title" | "messages" | "metadata"
+>;
+export interface SessionModelInfo {
+  readonly id: string;
+  readonly name: string;
+  readonly profile: Readonly<ModelProfile>;
+}
 export interface ThreadTarget {
   threadId?: string;
 }
@@ -37,6 +76,7 @@ interface QueuedInput {
   receipt: QueuedInputReceipt;
   thread: Thread;
   model: ModelRef;
+  modelOptions?: JsonObject;
   messages: readonly MessageData[];
 }
 interface Foreground {
@@ -51,8 +91,59 @@ interface Foreground {
 }
 
 export class Session {
+  private readonly view = new StateView();
+  readonly state = Object.freeze({ get: (): RuntimeState => this.view.get() });
+  isIdle(): boolean {
+    return !this.busy;
+  }
+  isDisposed(): boolean {
+    return this.disposed;
+  }
+  /** @internal Hydrate once on selection/restoration; state.get() never reads storage. */
+  async restoreState(): Promise<void> {
+    const empty = new StateView().get();
+    if (!this.selection) {
+      this.view.update(empty);
+      return;
+    }
+    const snapshot = await this.selection.snapshot();
+    const stream = snapshot.activeStreamId
+      ? await this.selection.getStream(snapshot.activeStreamId)
+      : null;
+    const interruptId = snapshot.execution?.pendingInterruptId;
+    const tools = stream
+      ? await this.controller.backend.executions.listRecords(
+          "tool_executions",
+          this.selection.id,
+        )
+      : [];
+    this.view.update({
+      ...empty,
+      messages: snapshot.state.messages,
+      status: stream?.status ?? "idle",
+      interrupt: interruptId
+        ? await this.selection.getInterrupt(interruptId)
+        : null,
+      tools: tools
+        .filter((tool) => tool.streamId === stream?.id)
+        .map(stateTool),
+      queuedInputs: this.queue.length,
+    });
+  }
+  private publishState(patch: Partial<RuntimeState> = {}): void {
+    this.notify(stateChanged, {
+      state: this.view.update({ ...patch, queuedInputs: this.queue.length }),
+    });
+  }
   readonly agent;
-  readonly scope: Scope;
+  private readonly sessionScope: Scope;
+  readonly id: string;
+  metadata(): JsonObject {
+    return this.record.metadata;
+  }
+  scope(): Scope {
+    return this.sessionScope;
+  }
   private selection: Thread | null = null;
   private selectedModel: Model;
   private readonly observers = new Set<Observer>();
@@ -60,29 +151,155 @@ export class Session {
   private readonly blocked = new Set<string>();
   private foreground?: Foreground;
   private disposed = false;
+  private closing = false;
+  private disposal?: Promise<void>;
   private sequence = 0;
+  private controlPending = false;
+  private signalAdmission?: Promise<void>;
+  /** @internal */ selectsSignalThread(threadId: string): boolean {
+    return !this.disposed && !this.closing && this.selection?.id === threadId;
+  }
+  /** @internal */ async receiveSignal(
+    threadId: string,
+    message: MessageData,
+    persist: boolean,
+    deliver: () => Promise<boolean>,
+  ): Promise<void> {
+    this.check();
+    await this.assertCurrent();
+    if (!this.selectsSignalThread(threadId))
+      fail("ThreadNotSelected", "Signal Thread is no longer selected");
+    if (await deliver()) return;
+    const admission = (this.signalAdmission ?? Promise.resolve()).then(
+      async () => {
+        if (await deliver()) return;
+        await this.foreground?.done;
+        await this.control(async () => {
+          if (!this.selectsSignalThread(threadId))
+            fail("ThreadNotSelected", "Signal Thread is no longer selected");
+          const thread = await this.target(threadId);
+          this.checkSelectionChange();
+          await this.attach(
+            thread,
+            {
+              input: [message],
+              model: this.record.selectedModel.ref,
+              modelOptions: this.record.selectedModel.options,
+              initialSignal: { persist },
+            },
+            true,
+          );
+        });
+      },
+    );
+    this.signalAdmission = admission;
+    void admission
+      .catch((error) => this.controller.report(errorInfo(error)))
+      .finally(() => {
+        if (this.signalAdmission === admission)
+          this.signalAdmission = undefined;
+      });
+  }
 
-  constructor(
+  private async control<T>(action: () => Promise<T>): Promise<T> {
+    this.check();
+    if (this.controlPending)
+      fail("SessionBusy", "Session control operation is pending");
+    this.controlPending = true;
+    try {
+      await this.assertCurrent();
+      return await action();
+    } finally {
+      this.controlPending = false;
+    }
+  }
+
+  /** @internal */
+  static create(
+    controller: Controller,
+    record: SessionRecord,
+    model: Model,
+    modelCatalog: ModelRegistry,
+    thread: Thread | null = null,
+  ): Session {
+    return new Session(controller, record, model, modelCatalog, thread);
+  }
+  private constructor(
     readonly controller: Controller,
-    options: SessionOptions = {},
+    private record: SessionRecord,
+    model: Model,
+    private readonly modelCatalog: ModelRegistry,
+    thread: Thread | null = null,
   ) {
     controller.requireReady();
     this.agent = controller.agent;
-    this.scope = normalizeScope(options.scope);
-    this.selectedModel = controller.resolveModel(
-      options.model ?? this.agent.model,
-    );
-    queueMicrotask(() => {
-      if (!this.disposed)
-        this.notify(SessionEvents.Created, { model: this.model.ref });
-    });
+    this.sessionScope = record.scope;
+    this.id = record.id;
+    this.selection = thread;
+    this.selectedModel = model;
   }
-  get model(): Model {
-    return this.selectedModel;
+  /** @internal Called only after durable creation, never on restoration. */
+  created(): void {
+    this.notify(sessionHooks.created, { model: this.selectedModel.ref });
+  }
+  private async persist(
+    patch: Partial<Pick<SessionRecord, "selectedThreadId" | "selectedModel">>,
+  ): Promise<void> {
+    const previous = this.record;
+    const next = immutable({
+      ...previous,
+      ...patch,
+      revision: previous.revision + 1,
+      updatedAt: this.agent.clock.now(),
+    });
+    await this.controller.backend.sessions.compareAndSet(
+      next,
+      previous.revision,
+    );
+    this.record = next;
+  }
+  private async assertCurrent(): Promise<void> {
+    const expected = this.record;
+    const stored = await this.controller.backend.sessions.get(this.id, {
+      scope: this.scope(),
+    });
+    this.check();
+    if (
+      !stored ||
+      stored.revision !== expected.revision ||
+      this.record !== expected
+    )
+      fail("CommitConflict", "Session changed; restore a current handle");
+  }
+  readonly model = Object.freeze({
+    get: (): string => this.modelId(this.selectedModel.ref),
+    name: (): string => this.selectedModel.ref.modelId,
+    list: (): readonly SessionModelInfo[] => {
+      this.check();
+      const models = new Map(
+        this.modelCatalog
+          .list()
+          .map((model) => [this.modelId(model.ref), model]),
+      );
+      models.set(this.model.get(), this.selectedModel);
+      return immutable(
+        [...models].map(([id, model]) => ({
+          id,
+          name: model.ref.modelId,
+          profile: model.profile(),
+        })),
+      );
+    },
+    switch: (modelId: string, options?: JsonObject): Promise<void> =>
+      this.switchModel(modelId, options),
+  });
+  private modelId(ref: ModelRef): string {
+    return ref.providerId + "/" + ref.modelId;
   }
   private check(): void {
     this.controller.requireReady();
-    if (this.disposed) fail("Disposed", "Session is disposed");
+    if (this.disposed || this.closing)
+      fail("Disposed", "Session is closing or disposed");
   }
   private get busy(): boolean {
     return this.foreground?.status === "running";
@@ -91,25 +308,86 @@ export class Session {
     this.check();
     if (this.busy) fail("SessionBusy", "Session has active work");
   }
+  private checkThreadSelectionChange(): void {
+    this.checkSelectionChange();
+    if (this.queue.length) fail("SessionBusy", "Session has queued input");
+  }
   private selected(id?: string): string {
     const value = id ?? this.selection?.id;
     if (!value) fail("ThreadNotSelected", "Select or create a Thread first");
     return value;
   }
   private async target(id?: string): Promise<Thread> {
-    const thread = await this.controller.getThread(this.selected(id), {
-      scope: this.scope,
+    const thread = await getThread(this.controller, this.selected(id), {
+      scope: this.scope(),
     });
     if (!thread) fail("ThreadNotFound", "Thread does not match Session scope");
     return thread;
   }
-  setModel(model: Model | ModelRef): void {
-    this.check();
-    const previous = this.model.ref;
-    this.selectedModel = this.controller.resolveModel(model);
-    this.notify(SessionEvents.ModelChanged, {
-      previous,
-      model: this.model.ref,
+  private switchModel(modelId: string, options?: JsonObject): Promise<void> {
+    return this.control(async () => {
+      requireId(modelId, "model id");
+      if (
+        options !== undefined &&
+        (!options || typeof options !== "object" || Array.isArray(options))
+      )
+        fail("InvalidConfiguration", "Model options must be an object");
+      for (const key of [
+        "api",
+        "model",
+        "input",
+        "messages",
+        "instructions",
+        "tools",
+        "stream",
+        "apiKey",
+        "baseURL",
+        "defaultHeaders",
+        "maxRetries",
+        "timeout",
+        "connectionId",
+      ])
+        if (options && key in options)
+          fail("UnsupportedOption", key + " is not a model option");
+      const previous = this.selectedModel.ref;
+      const slash = modelId.indexOf("/");
+      const ref =
+        slash < 0
+          ? { ...previous, modelId }
+          : modelId.slice(0, slash) === previous.providerId
+            ? { ...previous, modelId: modelId.slice(slash + 1) }
+            : {
+                providerId: modelId.slice(0, slash),
+                modelId: modelId.slice(slash + 1),
+              };
+      const selected = this.controller.sessionModel(ref),
+        next = selected.model;
+      const effective =
+        options === undefined
+          ? selected.stored.options
+          : snapshotModelOptions({ ...selected.stored.options, ...options });
+      const payload = immutable({
+        previous,
+        model: next.ref,
+        ...(this.record.selectedModel.options !== undefined
+          ? { previousOptions: this.record.selectedModel.options }
+          : {}),
+        ...(effective !== undefined ? { options: effective } : {}),
+      });
+      await this.controller.hooks.authorize(
+        sessionHooks.model.beforeChange,
+        payload,
+        this.context(),
+      );
+      this.check();
+      await this.persist({
+        selectedModel: {
+          ...selected.stored,
+          ...(effective !== undefined ? { options: effective } : {}),
+        },
+      });
+      this.selectedModel = next;
+      this.notify(sessionHooks.modelChanged, payload);
     });
   }
   subscribe(observer: Observer): () => void;
@@ -126,7 +404,7 @@ export class Session {
       typeof nameOrObserver === "function"
         ? nameOrObserver
         : (event) => {
-            if (event.type === nameOrObserver) observer!(event);
+            if (event.type === nameOrObserver) return observer!(event);
           };
     this.observers.add(handler);
     return () => {
@@ -134,26 +412,26 @@ export class Session {
     };
   }
   private emit(event: EventEnvelope): void {
-    for (const observer of [...this.observers]) {
-      try {
-        const result = observer(event as StreamEvent);
-        if (
-          result &&
-          typeof (result as PromiseLike<unknown>).then === "function"
-        )
-          void Promise.resolve(result).catch((error) =>
-            this.controller.report(errorInfo(error)),
-          );
-      } catch (error) {
-        this.controller.report(errorInfo(error));
-      }
+    if (event.type === stateChanged) {
+      const snapshot = event.payload.state as RuntimeState;
+      if (snapshot !== this.view.get())
+        this.view.update({ ...snapshot, queuedInputs: this.queue.length });
+      event = new EventEnvelope(
+        stateChanged,
+        { state: this.view.get() },
+        event,
+      );
     }
+    for (const observer of [...this.observers])
+      notifyObserver(observer, event as StreamEvent, this.controller.report);
   }
   private context() {
     return {
+      session: this,
+      sessionId: this.id,
       controllerId: this.controller.id,
       agentId: this.agent.id,
-      scope: this.scope,
+      scope: this.scope(),
       threadId: this.selection?.id,
       sequence: ++this.sequence,
       timestamp: new Date().toISOString(),
@@ -167,101 +445,193 @@ export class Session {
       .catch((error) => this.controller.report(errorInfo(error)));
   }
   readonly thread = {
-    create: async (options: SessionThreadOptions = {}): Promise<Thread> => {
-      this.checkSelectionChange();
-      const thread = await this.controller.createThread({
-        ...options,
-        scope: this.scope,
-      });
-      this.checkSelectionChange();
-      this.selection = thread;
-      this.notify(SessionEvents.ThreadCreated, { threadId: thread.id });
-      return thread;
-    },
-    switch: async (id: string): Promise<Thread> => {
-      this.checkSelectionChange();
-      const thread = await this.target(id),
-        snapshot = await thread.snapshot();
-      this.checkSelectionChange();
-      const previousThreadId = this.selection?.id ?? null;
-      this.selection = thread;
-      if (snapshot.activeStreamId) this.blocked.add(id);
-      this.notify(SessionEvents.ThreadSwitched, {
-        previousThreadId,
-        threadId: id,
-      });
-      return thread;
-    },
+    create: (options: SessionThreadOptions = {}): Promise<Thread> =>
+      this.control(async () => {
+        this.checkThreadSelectionChange();
+        if (
+          Object.keys(options).some(
+            (key) => !["id", "title", "messages", "metadata"].includes(key),
+          )
+        )
+          fail(
+            "InvalidConfiguration",
+            "Thread creation accepts id, title, messages and metadata only",
+          );
+        const thread = await createThread(
+          this.controller,
+          {
+            ...options,
+            scope: this.scope(),
+          },
+          this,
+        );
+        this.checkThreadSelectionChange();
+        await this.persist({ selectedThreadId: thread.id });
+        this.selection = thread;
+        await this.restoreState();
+        this.notify(sessionHooks.threadCreated, { threadId: thread.id });
+        this.publishState();
+        return thread;
+      }),
+    switch: (id: string): Promise<Thread> =>
+      this.control(async () => {
+        this.checkThreadSelectionChange();
+        const thread = await this.target(id);
+        this.checkThreadSelectionChange();
+        const previousThreadId = this.selection?.id ?? null;
+        await this.controller.hooks.authorize(
+          sessionHooks.thread.beforeSwitch,
+          immutable({ previousThreadId, threadId: id }),
+          this.context(),
+        );
+        this.checkThreadSelectionChange();
+        const snapshot = await thread.snapshot();
+        this.checkThreadSelectionChange();
+        await this.persist({ selectedThreadId: thread.id });
+        this.selection = thread;
+        if (snapshot.activeStreamId) this.blocked.add(id);
+        else this.blocked.delete(id);
+        await this.restoreState();
+        this.notify(sessionHooks.threadSwitched, {
+          previousThreadId,
+          threadId: id,
+        });
+        this.publishState();
+        return thread;
+      }),
     get: (id: string): Promise<Thread | null> => {
       this.check();
-      return this.controller.getThread(id, { scope: this.scope });
+      return getThread(this.controller, id, { scope: this.scope() });
     },
     getId: (): string | null => this.selection?.id ?? null,
     list: (options: PageOptions = {}) => {
       this.check();
-      return this.controller.listThreads({ ...options, scope: this.scope });
+      return listThreads(this.controller, { ...options, scope: this.scope() });
     },
-    rename: async (title: string, target: ThreadTarget = {}): Promise<void> => {
-      this.check();
-      const id = this.selected(target.threadId);
-      await this.controller.renameThread(id, title, { scope: this.scope });
-      this.notify(SessionEvents.ThreadRenamed, { threadId: id, title });
-    },
-    fork: async (options: ForkOptions & ThreadTarget = {}): Promise<Thread> => {
-      this.check();
-      const sourceThreadId = this.selected(options.threadId),
-        thread = await this.controller.forkThread(sourceThreadId, {
-          ...options,
-          scope: this.scope,
+    rename: (title: string, target: ThreadTarget = {}): Promise<void> =>
+      this.control(async () => {
+        this.check();
+        const id = this.selected(target.threadId);
+        await renameThread(
+          this.controller,
+          id,
+          title,
+          { scope: this.scope() },
+          this,
+        );
+        this.notify(sessionHooks.threadRenamed, { threadId: id, title });
+      }),
+    fork: (options: ForkOptions & ThreadTarget = {}): Promise<Thread> =>
+      this.control(async () => {
+        this.check();
+        const sourceThreadId = this.selected(options.threadId),
+          thread = await forkThread(
+            this.controller,
+            sourceThreadId,
+            {
+              ...options,
+              scope: this.scope(),
+            },
+            this,
+          );
+        this.notify(sessionHooks.threadForked, {
+          sourceThreadId,
+          threadId: thread.id,
         });
-      this.notify(SessionEvents.ThreadForked, {
-        sourceThreadId,
-        threadId: thread.id,
-      });
-      return thread;
-    },
-    delete: async (target: ThreadTarget = {}): Promise<void> => {
-      this.check();
-      const id = this.selected(target.threadId);
-      await this.controller.deleteThread(id, { scope: this.scope });
-      if (this.selection?.id === id) this.selection = null;
-      this.notify(SessionEvents.ThreadDeleted, { threadId: id });
-    },
+        return thread;
+      }),
+    delete: (target: ThreadTarget = {}): Promise<void> =>
+      this.removeThread(target, false),
+    purge: (target: ThreadTarget = {}): Promise<void> =>
+      this.removeThread(target, true),
     getHistory: async (options: HistoryOptions & ThreadTarget = {}) => {
       this.check();
       return (await this.target(options.threadId)).getHistory(options);
     },
   };
-  async followUp(
-    input: MessageData | readonly MessageData[],
-  ): Promise<QueuedInputReceipt> {
-    this.check();
-    if (!this.selection)
-      fail("ThreadNotSelected", "Select or create a Thread first");
-    const receipt = immutable({
-      id: randomIds.next("input"),
-      threadId: this.selection.id,
+  private removeThread(
+    target: ThreadTarget,
+    permanent: boolean,
+  ): Promise<void> {
+    return this.control(async () => {
+      this.check();
+      const id = this.selected(target.threadId);
+      await (permanent ? purgeThread : deleteThread)(
+        this.controller,
+        id,
+        { scope: this.scope() },
+        this,
+      );
+      const stored = await this.controller.backend.sessions.get(this.id, {
+        scope: this.scope(),
+      });
+      const expected = {
+        ...this.record,
+        selectedThreadId:
+          this.record.selectedThreadId === id
+            ? null
+            : this.record.selectedThreadId,
+        revision:
+          this.record.revision + (this.record.selectedThreadId === id ? 1 : 0),
+        updatedAt: stored?.updatedAt,
+      };
+      if (!stored || canonicalJson(stored) !== canonicalJson(expected))
+        fail(
+          "CommitConflict",
+          "Session changed during thread deletion; restore a current handle",
+        );
+      this.record = stored;
+      if (this.selection?.id === id) this.selection = null;
+      this.notify(sessionHooks.threadDeleted, { threadId: id });
+      if (!this.selection) {
+        await this.restoreState();
+        this.publishState();
+      }
     });
-    this.queue.push({
-      receipt,
-      thread: this.selection,
-      model: immutable(this.model.ref),
-      messages: inputMessages(input),
-    });
-    this.notify(SessionEvents.InputQueued, { receipt });
-    queueMicrotask(() => this.pump());
-    return receipt;
   }
+  readonly followUp = Object.assign(
+    async (
+      input: string | MessageData | readonly MessageData[],
+    ): Promise<QueuedInputReceipt> => {
+      this.check();
+      if (!this.selection)
+        fail("ThreadNotSelected", "Select or create a Thread first");
+      await this.assertCurrent();
+      const receipt = immutable({
+        id: randomIds.next("input"),
+        threadId: this.selection.id,
+      });
+      this.queue.push({
+        receipt,
+        thread: this.selection,
+        model: immutable(this.record.selectedModel.ref),
+        modelOptions: this.record.selectedModel.options,
+        messages: inputMessages(
+          typeof input === "string" ? new HumanMessage(input) : input,
+        ),
+      });
+      this.notify(sessionHooks.inputQueued, { receipt });
+      this.publishState();
+      queueMicrotask(() => this.pump());
+      return receipt;
+    },
+    {
+      count: (): number => this.queue.length,
+      isEmpty: (): boolean => this.queue.length === 0,
+    },
+  );
   private discard(cause: string): void {
     for (const entry of this.queue.splice(0))
-      this.notify(SessionEvents.InputDiscarded, {
+      this.notify(sessionHooks.inputDiscarded, {
         receipt: entry.receipt,
         cause,
       });
+    this.publishState();
   }
   private pump(): void {
     if (
       this.disposed ||
+      this.closing ||
       this.busy ||
       (this.foreground && !this.foreground.closed) ||
       !this.queue.length ||
@@ -271,7 +641,11 @@ export class Session {
     const entry = this.queue.shift()!;
     void this.attach(
       entry.thread,
-      { input: entry.messages, model: entry.model },
+      {
+        input: entry.messages,
+        model: entry.model,
+        modelOptions: entry.modelOptions,
+      },
       true,
     ).catch(() => {});
   }
@@ -291,9 +665,10 @@ export class Session {
       closed: false,
     };
     this.foreground = foreground;
+    this.publishState({ status: "running", interrupt: null, error: null });
     return new Promise((resolve, reject) => {
       const rejected = (error: ErrorInfo) => {
-        reject(new TesseractError(error.code, error.message));
+        reject(errorFromInfo(error));
       };
       const closed = () => {
         foreground.closed = true;
@@ -317,28 +692,33 @@ export class Session {
         queueMicrotask(() => this.pump());
       };
       try {
-        foreground.stream = thread.admit(options, {
-          kind: "observer",
-          admitted: (receipt) => {
-            foreground.admitted = true;
-            foreground.streamId = receipt.streamId;
-            this.blocked.delete(thread.id);
-            resolve(receipt);
+        foreground.stream = thread.admit(
+          options,
+          {
+            kind: "observer",
+            admitted: (receipt) => {
+              foreground.admitted = true;
+              foreground.streamId = receipt.streamId;
+              this.blocked.delete(thread.id);
+              resolve(receipt);
+            },
+            rejected,
+            observe: (event) => {
+              if (event.type === streamHooks.end)
+                foreground.status = event.payload.status;
+              if (event.type === streamHooks.suspended)
+                foreground.status = "suspended";
+              if (event.type === streamHooks.error)
+                foreground.status = event.payload.persistedStatus ?? "failed";
+              this.emit(event);
+            },
+            closed,
           },
-          rejected,
-          observe: (event) => {
-            if (event.is(AgentEvents.StreamEnd))
-              foreground.status = event.payload.status;
-            if (event.is(AgentEvents.StreamSuspended))
-              foreground.status = "suspended";
-            if (event.is(AgentEvents.StreamError))
-              foreground.status = event.payload.persistedStatus ?? "failed";
-            this.emit(event);
-          },
-          closed,
-        });
+          this,
+        );
       } catch (error) {
         foreground.status = "failed";
+        this.publishState({ status: "failed", error: errorInfo(error) });
         rejected(errorInfo(error));
         closed();
       }
@@ -349,6 +729,7 @@ export class Session {
   ): Promise<ExecutionReceipt> {
     this.check();
     if (this.busy) fail("SessionBusy", "Session has active work");
+    await this.assertCurrent();
     const thread = await this.target();
     if (this.busy) fail("SessionBusy", "Session has active work");
     await this.foreground?.done;
@@ -387,25 +768,48 @@ export class Session {
       snapshot = await thread.snapshot();
     if (!snapshot.activeStreamId) return;
     await foreground?.done;
-    await this.agent.cancel(thread.id, snapshot.activeStreamId, reason, {
-      kind: "observer",
-      observe: (event) => this.emit(event),
-    });
+    await this.agent.cancel(
+      thread.id,
+      snapshot.activeStreamId,
+      reason,
+      {
+        kind: "observer",
+        observe: (event) => this.emit(event),
+      },
+      { session: this, thread },
+    );
     this.blocked.delete(thread.id);
     this.foreground = undefined;
     this.discard("cancelled");
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    if (this.disposal) return this.disposal;
+    if (this.controlPending)
+      fail("SessionBusy", "Session control operation is pending");
     this.checkSelectionChange();
-    await this.controller.hooks.dispatch(
-      SessionEvents.BeforeClose,
-      {},
-      this.context(),
-    );
-    this.discard("Closed");
-    this.disposed = true;
-    this.notify(SessionEvents.Closed, {});
-    this.observers.clear();
+    this.closing = true;
+    this.disposal = (async () => {
+      try {
+        await this.controller.hooks.dispatch(
+          sessionHooks.beforeClose,
+          {},
+          this.context(),
+        );
+        await this.foreground?.done;
+        this.discard("Closed");
+        this.disposed = true;
+        this.publishState({ status: "closed" });
+        this.controller.forgetSession(this);
+        this.notify(sessionHooks.closed, {});
+        this.observers.clear();
+      } catch (error) {
+        this.closing = false;
+        this.disposal = undefined;
+        queueMicrotask(() => this.pump());
+        throw error;
+      }
+    })();
+    return this.disposal;
   }
 }

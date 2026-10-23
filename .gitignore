@@ -3,9 +3,11 @@ dist/
 .superpowers/
 .worktrees/
 .agents/
-examples
+docs/superpowers
 *.db
 *.db-shm
 *.db-wal
 .env
-
+.env.storage
+/packages/*/LICENSE
+.pnpm-store

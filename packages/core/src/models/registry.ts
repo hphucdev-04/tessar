@@ -1,6 +1,6 @@
 import { fail } from "../errors.js";
 import { immutable, type Clock } from "../json.js";
-import type { Model, ModelProfile } from "./profile.js";
+import type { Model } from "./profile.js";
 import type { ModelProviderRegistration, ModelRef } from "./contract.js";
 import { ProfileResolver } from "./resolver.js";
 import type { CatalogSnapshot } from "./catalog.js";
@@ -40,7 +40,7 @@ export class ModelRegistry {
         if (handle.ref.providerId === provider.id) this.handles.delete(key);
     };
   }
-  private schedule(key: string, model: Model): void {
+  private schedule(model: Model): void {
     queueMicrotask(() => {
       if (this.shutdown.signal.aborted) return;
       const provider = this.providers.get(model.ref.providerId);
@@ -51,43 +51,61 @@ export class ModelRegistry {
   get(ref: ModelRef): Model {
     return this.obtain(ref, true);
   }
+  /** Resolve executable code only for execution/selection, never catalog reads. */
+  resolve(ref: ModelRef) {
+    const provider = this.providers.get(ref.providerId);
+    if (!provider) fail("MissingProvider", "Provider is not registered");
+    const adapter = provider.create(ref.modelId);
+    if (
+      adapter.ref.providerId !== ref.providerId ||
+      adapter.ref.modelId !== ref.modelId ||
+      (ref.connectionId !== undefined &&
+        adapter.ref.connectionId !== ref.connectionId)
+    )
+      fail(
+        "ModelContextIncompatible",
+        "The selected connection is no longer available",
+      );
+    return adapter;
+  }
   private obtain(ref: ModelRef, schedule: boolean): Model {
     if (this.shutdown.signal.aborted) fail("Disposed", "Model registry closed");
     const provider = this.providers.get(ref.providerId);
     if (!provider) fail("MissingProvider", "Provider is not registered");
-    const key = JSON.stringify([ref.providerId, ref.modelId]);
+    const key = JSON.stringify([
+      ref.providerId,
+      ref.modelId,
+      ref.connectionId ?? null,
+    ]);
     const existing = this.handles.get(key);
     if (existing) {
       if (schedule && this.resolver.needsRefresh(ref, provider))
-        this.schedule(key, existing);
+        this.schedule(existing);
       return existing;
     }
     const identity = immutable(ref);
-    let profile = this.resolver.current(identity, provider);
     const refresh = async (options: { signal?: AbortSignal } = {}) => {
       const signals = [
         this.shutdown.signal,
         AbortSignal.timeout(3000),
         ...(options.signal ? [options.signal] : []),
       ];
-      profile = await this.resolver.resolve(
+      return this.resolver.resolve(
         identity,
         provider,
         AbortSignal.any(signals),
       );
-      return profile;
     };
     const resolver = this.resolver;
     const model: Model = Object.freeze({
       ref: identity,
-      get profile() {
-        profile = resolver.current(identity, provider);
-        return profile;
+      profile() {
+        return resolver.current(identity, provider);
       },
       refreshProfile: refresh,
     });
     this.handles.set(key, model);
-    if (schedule) this.schedule(key, model);
+    if (schedule) this.schedule(model);
     return model;
   }
   list(): readonly Model[] {

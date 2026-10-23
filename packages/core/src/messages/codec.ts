@@ -8,8 +8,17 @@ import {
   ToolMessage,
   type MessageData,
 } from "./message.js";
+export function inputMessages(
+  input: MessageData | readonly MessageData[],
+): readonly MessageData[] {
+  const values = Array.isArray(input) ? input : [input];
+  return values.map((value) =>
+    MessageCodec.encode(MessageCodec.decode(MessageCodec.encode(value))),
+  );
+}
 export const MessageCodec = {
   encode(message: Message): MessageData {
+    if (message.role === "tool") requireId(message.toolCallId!, "toolCallId");
     const {
       schemaVersion,
       id,
@@ -50,10 +59,10 @@ export const MessageCodec = {
       case "assistant":
         return new AssistantMessage(value.content, options);
       case "tool":
-        return new ToolMessage({
+        requireId(value.toolCallId!, "toolCallId");
+        return new ToolMessage(value.content, {
           ...options,
-          content: value.content,
-          toolCallId: value.toolCallId!,
+          toolCallId: value.toolCallId,
         });
       default:
         return fail("InvalidMessage", "Unknown message role");

@@ -1,4 +1,4 @@
-import { TesseractError, errorInfo } from "../errors.js";
+import { TessarError, errorInfo, fail } from "../errors.js";
 import {
   EventEnvelope,
   type AnyEvent,
@@ -9,14 +9,31 @@ import {
 } from "./definition.js";
 import type { HookContext } from "../plugins/context.js";
 import type { RegistryLease } from "../plugins/registry.js";
+const operationEvents = new Set<string>([
+  "session.model.before-change",
+  "session.thread.before-switch",
+  "thread.before-fork",
+  "thread.before-rename",
+  "thread.before-delete",
+]);
 export async function dispatch<D extends AnyEvent>(
   lease: RegistryLease,
   definition: D,
   payload: PayloadOf<D>,
-  context: HookContext & EventContext,
-  diagnostics: (error: ReturnType<typeof errorInfo>) => void,
+  context: Partial<HookContext> & EventContext,
+  diagnostics: (
+    error: ReturnType<typeof errorInfo>,
+    context?: EventContext,
+  ) => void,
   kind: EventKind = "notification",
 ): Promise<ResultOf<D>> {
+  const hookContext: HookContext & EventContext = {
+    ...context,
+    registry: Object.freeze({
+      get: <T = unknown>(kind: string, id: string) => lease.find<T>(kind, id),
+      list: <T = unknown>(kind: string) => Object.freeze(lease.list<T>(kind)),
+    }),
+  };
   let current: unknown =
     kind === "transformation" ? payload : context.initialDecision;
   let handlerIndex = -1;
@@ -35,14 +52,30 @@ export async function dispatch<D extends AnyEvent>(
       kind !== "notification" &&
       kind !== "barrier"
     )
-      throw new TesseractError("Cancelled", "Execution cancelled");
+      throw new TessarError("Cancelled", "Execution cancelled");
     try {
       const event = new EventEnvelope(
         definition,
         kind === "transformation" ? current : payload,
         context,
       );
-      const result = await registration.handler(event, context);
+      const result = await registration.handler(event, hookContext);
+      if (operationEvents.has(definition) && result !== undefined) {
+        if (
+          !result ||
+          typeof result !== "object" ||
+          Array.isArray(result) ||
+          !["allow", "deny"].includes(
+            (result as { decision: string }).decision,
+          ) ||
+          ((result as { reason?: unknown }).reason !== undefined &&
+            typeof (result as { reason: unknown }).reason !== "string")
+        )
+          fail(
+            "InvalidHookResult",
+            "Operation hooks must return allow, deny or undefined",
+          );
+      }
       if (kind === "transformation" && result !== undefined) current = result;
       if (kind === "decision" && result !== undefined) {
         const previous = current as { decision?: string } | undefined;
@@ -69,20 +102,29 @@ export async function dispatch<D extends AnyEvent>(
       }
     } catch (cause) {
       if (
-        cause instanceof TesseractError &&
+        cause instanceof TessarError &&
         ["StorageUnavailable", "CommitConflict", "OwnershipLost"].includes(
           cause.code,
         )
       )
         throw cause;
-      const error = new TesseractError("PluginError", "Plugin handler failed", {
-        pluginId: registration.pluginId,
-        eventId: definition,
-        cause: errorInfo(cause),
-      });
+      const error =
+        cause !== null && typeof cause === "object"
+          ? cause
+          : new Error(String(cause), { cause });
+      const info = errorInfo(
+        error,
+        error instanceof TessarError
+          ? undefined
+          : {
+              source: "plugin",
+              pluginId: registration.pluginId,
+              eventId: definition,
+            },
+      );
       if (kind !== "notification") throw error;
       try {
-        diagnostics(error.toJSON());
+        diagnostics(info, context);
       } catch {
         /* diagnostics cannot control execution */
       }

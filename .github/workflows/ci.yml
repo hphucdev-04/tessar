@@ -1,6 +1,64 @@
 name: verify
-on: [push, pull_request]
+on:
+  push:
+    branches: ['release']
+  pull_request:
+permissions:
+  contents: read
 jobs:
+  server-storage:
+    # MongoDB 8.0 rejects newer runner kernels (SERVER-121912).
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: tessar
+          POSTGRES_PASSWORD: tessar
+          POSTGRES_DB: tessar_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tessar -d tessar_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TESSAR_TEST_POSTGRES_URL: postgres://tessar:tessar@localhost:5432/tessar_test
+      TESSAR_TEST_MONGODB_URL: mongodb://localhost:27017/?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+      - name: Start MongoDB replica set
+        run: |
+          wait_for_mongo() {
+            for attempt in $(seq 1 60); do
+              if [ "$(docker inspect --format '{{.State.Running}}' tessar-mongo)" != true ]; then
+                echo "::error::MongoDB container exited before it became ready"
+                return 1
+              fi
+              if docker exec tessar-mongo mongosh --quiet --eval "$1"; then return 0; fi
+              sleep 2
+            done
+            echo "::error::Timed out waiting for MongoDB: $1"
+            return 1
+          }
+          docker run -d --name tessar-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          wait_for_mongo 'quit(db.adminCommand({ping:1}).ok === 1 ? 0 : 1)'
+          docker exec tessar-mongo mongosh --quiet --eval 'quit(rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]}).ok === 1 ? 0 : 1)'
+          wait_for_mongo 'quit(db.hello().isWritablePrimary ? 0 : 1)'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:storage --maxWorkers 4
+      - name: Database logs on failure
+        if: failure()
+        run: |
+          uname -r
+          docker inspect --format '{{json .State}}' tessar-mongo || true
+          docker logs tessar-mongo || true
   verify:
     strategy:
       matrix:
@@ -18,6 +76,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
-      - run: pnpm test
-      - run: pnpm test:integration
+      - run: pnpm test --maxWorkers 4
+      - run: pnpm test:integration --maxWorkers 4
       - run: pnpm check:boundaries
